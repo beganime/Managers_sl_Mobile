@@ -1,33 +1,34 @@
-import { useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
+import { BlurView } from 'expo-blur';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text } from 'react-native';
+import ScreenWrapper from '../../components/ScreenWrapper';
 
 export default function DashboardScreen() {
-    const router = useRouter();
-
-    const handleLogout = async () => {
-        await SecureStore.deleteItemAsync('access_token');
-        await SecureStore.deleteItemAsync('refresh_token');
-        router.replace('/login');
-    };
-
     return (
-        <View style={styles.container}>
-            <Text style={styles.title}>Дашборд ERP</Text>
-            <Text style={styles.subtitle}>Здесь будут данные по сделкам и задачам</Text>
-            
-            <TouchableOpacity style={styles.button} onPress={handleLogout}>
-                <Text style={styles.buttonText}>Выйти</Text>
-            </TouchableOpacity>
-        </View>
+        <ScreenWrapper>
+            <ScrollView showsVerticalScrollIndicator={false}>
+                <BlurView intensity={40} tint="dark" style={styles.glassCard}>
+                    <Text style={styles.title}>🏆 Рейтинг месяца</Text>
+                    <Text style={styles.text}>Здесь будет список менеджеров из API /api/gamification/leaderboard/</Text>
+                </BlurView>
+
+                <BlurView intensity={40} tint="dark" style={[styles.glassCard, { marginTop: 15 }]}>
+                    <Text style={styles.title}>⏱ Моя смена</Text>
+                    <Text style={styles.text}>Кнопка "Начать день" (API /api/timetracking/shifts/)</Text>
+                </BlurView>
+            </ScrollView>
+        </ScreenWrapper>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f3f4f6' },
-    title: { fontSize: 24, fontWeight: 'bold', color: '#1f2937' },
-    subtitle: { fontSize: 16, color: '#6b7280', marginTop: 8, marginBottom: 24 },
-    button: { backgroundColor: '#ef4444', padding: 12, borderRadius: 8 },
-    buttonText: { color: '#fff', fontWeight: 'bold' }
+    glassCard: {
+        padding: 20,
+        borderRadius: 24,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    title: { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
+    text: { color: 'rgba(255, 255, 255, 0.7)', fontSize: 14 }
 });
