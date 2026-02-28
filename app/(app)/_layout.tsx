@@ -9,7 +9,6 @@ export default function AppLayout() {
     return (
         <Tabs
             screenOptions={{
-                // Включаем стеклянный хэдер
                 headerTransparent: true,
                 headerBackground: () => (
                     <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
@@ -21,22 +20,20 @@ export default function AppLayout() {
                 },
                 headerTitleAlign: 'center',
                 
-                // Включаем стеклянный нижний бар
                 tabBarStyle: {
                     position: 'absolute',
                     bottom: 0,
-                    elevation: 0, // Убираем тень на Android
-                    borderTopWidth: 0, // Убираем полоску сверху
+                    elevation: 0, 
+                    borderTopWidth: 0, 
                     backgroundColor: 'transparent',
-                    height: Platform.OS === 'ios' ? 85 : 70, // Чуть больше высоты для iOS из-за челки
+                    height: Platform.OS === 'ios' ? 85 : 70, 
                 },
                 tabBarBackground: () => (
                     <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFillObject} />
                 ),
                 
-                // Цвета иконок
-                tabBarActiveTintColor: '#3b82f6', // Электрический синий для активной вкладки
-                tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.4)', // Полупрозрачный белый для неактивных
+                tabBarActiveTintColor: '#3b82f6', 
+                tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.4)', 
                 tabBarShowLabel: true,
                 tabBarLabelStyle: {
                     fontSize: 10,
@@ -49,7 +46,7 @@ export default function AppLayout() {
                 name="index"
                 options={{
                     title: 'Дашборд',
-                    tabBarIcon: ({ color, size }) => <Ionicons name="analytics" size={size} color={color} />,
+                    tabBarIcon: ({ color, size }) => <Ionicons name="apps" size={size} color={color} />,
                 }}
             />
             <Tabs.Screen
@@ -59,11 +56,12 @@ export default function AppLayout() {
                     tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
                 }}
             />
+            {/* Заменили tasks на leaderboard */}
             <Tabs.Screen
-                name="tasks"
+                name="leaderboard"
                 options={{
-                    title: 'Задачи',
-                    tabBarIcon: ({ color, size }) => <Ionicons name="checkmark-done-circle" size={size} color={color} />,
+                    title: 'Рейтинг',
+                    tabBarIcon: ({ color, size }) => <Ionicons name="trophy" size={size} color={color} />,
                 }}
             />
             <Tabs.Screen
