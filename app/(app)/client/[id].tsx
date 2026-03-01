@@ -1,6 +1,7 @@
 // app/(app)/client/[id].tsx
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -25,7 +26,8 @@ export default function ClientDetailScreen() {
                     setLoading(false);
                     return;
                 }
-                const response = await apiClient.get(`/clients/${id}/`);
+                // Убрали начальный слэш для правильной работы Axios
+                const response = await apiClient.get(`clients/${id}/`);
                 setClient(response.data);
             } catch (error) {
                 console.error("Ошибка загрузки клиента", error);
@@ -36,49 +38,85 @@ export default function ClientDetailScreen() {
         fetchClient();
     }, [id]);
 
-    if (loading) return <ScreenWrapper><View style={styles.center}><ActivityIndicator size="large" color="#3b82f6" /></View></ScreenWrapper>;
+    if (loading) return <ScreenWrapper><View style={styles.center}><ActivityIndicator size="large" color="#0D416D" /></View></ScreenWrapper>;
     if (!client) return <ScreenWrapper><Text style={styles.errorText}>Клиент не найден</Text></ScreenWrapper>;
 
     return (
         <ScreenWrapper>
+            <View style={StyleSheet.absoluteFillObject}>
+                <LinearGradient colors={['#F1F5F9', '#E2E8F0']} style={StyleSheet.absoluteFillObject} />
+            </View>
+
             <View style={styles.header}>
-                {/* ЗАЩИТА: Явный редирект в CRM */}
                 <TouchableOpacity onPress={() => router.replace('/crm')} style={styles.backBtn}>
-                    <Ionicons name="arrow-back" size={24} color="#fff" />
+                    <Ionicons name="arrow-back" size={24} color="#0F172A" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Карточка клиента</Text>
                 <View style={{width: 40}} />
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
                 {client.isOffline && (
-                    <View style={{backgroundColor: 'rgba(245, 158, 11, 0.2)', padding: 10, borderRadius: 10, marginBottom: 15}}>
-                        <Text style={{color: '#fbbf24', textAlign: 'center', fontWeight: 'bold'}}>☁️ Офлайн клиент (Ожидает синхронизации)</Text>
+                    <View style={{backgroundColor: 'rgba(245, 158, 11, 0.15)', padding: 12, borderRadius: 16, marginBottom: 15, borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.4)'}}>
+                        <Text style={{color: '#d97706', textAlign: 'center', fontWeight: '800'}}>☁️ Офлайн клиент (Ожидает синхронизации)</Text>
                     </View>
                 )}
 
-                <BlurView intensity={40} tint="dark" style={styles.mainCard}>
+                <BlurView intensity={40} tint="light" style={styles.mainCard}>
                     <View style={styles.avatarPlaceholder}>
                         <Text style={styles.avatarText}>{client.full_name?.charAt(0).toUpperCase()}</Text>
                     </View>
                     <Text style={styles.clientName}>{client.is_priority ? '⭐ ' : ''}{client.full_name}</Text>
-                    <View style={styles.badge}><Text style={styles.badgeText}>{client.status || 'Новый'}</Text></View>
+                    <View style={styles.badge}><Text style={styles.badgeText}>{client.get_status_display || client.status || 'Новый'}</Text></View>
                 </BlurView>
 
-                <Text style={styles.sectionTitle}>Контакты</Text>
-                <BlurView intensity={30} tint="dark" style={styles.infoCard}>
+                <Text style={styles.sectionTitle}>Основная информация</Text>
+                <BlurView intensity={50} tint="light" style={styles.infoCard}>
                     <View style={styles.infoRow}>
-                        <Ionicons name="call" size={18} color="#3b82f6" style={styles.infoIcon} />
-                        <View><Text style={styles.infoLabel}>Телефон</Text><Text style={styles.infoValue}>{client.phone}</Text></View>
+                        <Ionicons name="call" size={18} color="#0D416D" style={styles.infoIcon} />
+                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Телефон</Text><Text style={styles.infoValue}>{client.phone || '—'}</Text></View>
                     </View>
                     <View style={styles.divider} />
                     <View style={styles.infoRow}>
-                        <Ionicons name="location" size={18} color="#3b82f6" style={styles.infoIcon} />
-                        <View><Text style={styles.infoLabel}>Город / Гражданство</Text><Text style={styles.infoValue}>{client.city || '—'} / {client.citizenship || '—'}</Text></View>
+                        <Ionicons name="mail" size={18} color="#0D416D" style={styles.infoIcon} />
+                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Email</Text><Text style={styles.infoValue}>{client.email || '—'}</Text></View>
+                    </View>
+                    <View style={styles.divider} />
+                    <View style={styles.infoRow}>
+                        <Ionicons name="calendar" size={18} color="#0D416D" style={styles.infoIcon} />
+                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Дата рождения</Text><Text style={styles.infoValue}>{client.dob || '—'}</Text></View>
+                    </View>
+                    <View style={styles.divider} />
+                    <View style={styles.infoRow}>
+                        <Ionicons name="location" size={18} color="#0D416D" style={styles.infoIcon} />
+                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Город / Гражданство</Text><Text style={styles.infoValue}>{client.city || '—'} / {client.citizenship || '—'}</Text></View>
                     </View>
                 </BlurView>
 
-                <TouchableOpacity style={styles.actionBtn} onPress={() => router.push({ pathname: '/deal/create', params: { clientId: client.id, clientName: client.full_name } })}>
+                <Text style={styles.sectionTitle}>Документы</Text>
+                <BlurView intensity={50} tint="light" style={styles.infoCard}>
+                    <View style={styles.infoRow}>
+                        <Ionicons name="card" size={18} color="#0D416D" style={styles.infoIcon} />
+                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Загранпаспорт</Text><Text style={styles.infoValue}>{client.passport_inter_num || '—'}</Text></View>
+                    </View>
+                    <View style={styles.divider} />
+                    <View style={styles.infoRow}>
+                        <Ionicons name="id-card" size={18} color="#0D416D" style={styles.infoIcon} />
+                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Внутренний паспорт</Text><Text style={styles.infoValue}>{client.passport_local_num || '—'}</Text></View>
+                    </View>
+                    <View style={styles.divider} />
+                    <View style={styles.infoRow}>
+                        <Ionicons name="business" size={18} color="#0D416D" style={styles.infoIcon} />
+                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Кем выдан / Дата</Text><Text style={styles.infoValue}>{client.passport_issued_by || '—'} {client.passport_issued_date ? `(${client.passport_issued_date})` : ''}</Text></View>
+                    </View>
+                    <View style={styles.divider} />
+                    <View style={styles.infoRow}>
+                        <Ionicons name="home" size={18} color="#0D416D" style={styles.infoIcon} />
+                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Прописка</Text><Text style={styles.infoValue}>{client.address_registration || '—'}</Text></View>
+                    </View>
+                </BlurView>
+
+                <TouchableOpacity style={styles.actionBtn} onPress={() => router.push({ pathname: '/add-deal', params: { clientId: client.id } })}>
                     <Ionicons name="briefcase" size={20} color="#fff" />
                     <Text style={styles.actionBtnText}>Создать сделку</Text>
                 </TouchableOpacity>
@@ -91,23 +129,27 @@ export default function ClientDetailScreen() {
 
 const styles = StyleSheet.create({
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
-    backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
-    headerTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-    errorText: { color: '#fca5a5', fontSize: 16, textAlign: 'center', marginTop: 40 },
-    mainCard: { alignItems: 'center', padding: 30, borderRadius: 24, marginBottom: 25, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-    avatarPlaceholder: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(59, 130, 246, 0.2)', justifyContent: 'center', alignItems: 'center', marginBottom: 15, borderWidth: 2, borderColor: '#3b82f6' },
-    avatarText: { color: '#60a5fa', fontSize: 32, fontWeight: 'bold' },
-    clientName: { color: '#fff', fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 8 },
-    badge: { backgroundColor: 'rgba(59, 130, 246, 0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8 },
-    badgeText: { color: '#60a5fa', fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1 },
-    sectionTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 10, marginLeft: 5 },
-    infoCard: { borderRadius: 20, marginBottom: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-    infoRow: { flexDirection: 'row', alignItems: 'center', padding: 15 },
-    infoIcon: { marginRight: 15, backgroundColor: 'rgba(255,255,255,0.05)', padding: 10, borderRadius: 12 },
-    infoLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginBottom: 2 },
-    infoValue: { color: '#fff', fontSize: 16, fontWeight: '500' },
-    divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginLeft: 60 },
-    actionBtn: { flexDirection: 'row', backgroundColor: '#3b82f6', padding: 16, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 10, gap: 10, shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-    actionBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 15 },
+    backBtn: { width: 44, height: 44, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.5)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)' },
+    headerTitle: { color: '#0F172A', fontSize: 18, fontWeight: '900' },
+    errorText: { color: '#ef4444', fontSize: 16, textAlign: 'center', marginTop: 40, fontWeight: '700' },
+    scrollContent: { paddingHorizontal: 20 },
+    
+    mainCard: { alignItems: 'center', padding: 30, borderRadius: 32, marginBottom: 25, borderWidth: 1, borderColor: 'rgba(255,255,255,0.7)', backgroundColor: 'rgba(255,255,255,0.4)' },
+    avatarPlaceholder: { width: 80, height: 80, borderRadius: 24, backgroundColor: '#0D416D', justifyContent: 'center', alignItems: 'center', marginBottom: 15, shadowColor: '#0D416D', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+    avatarText: { color: '#FFF', fontSize: 36, fontWeight: '900' },
+    clientName: { color: '#0F172A', fontSize: 22, fontWeight: '900', textAlign: 'center', marginBottom: 10 },
+    badge: { backgroundColor: 'rgba(13, 65, 109, 0.1)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 12 },
+    badgeText: { color: '#0D416D', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
+    
+    sectionTitle: { color: '#334155', fontSize: 13, fontWeight: '900', marginBottom: 10, marginLeft: 5, textTransform: 'uppercase', letterSpacing: 1.5 },
+    infoCard: { borderRadius: 24, marginBottom: 25, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.7)', backgroundColor: 'rgba(255,255,255,0.4)' },
+    infoRow: { flexDirection: 'row', alignItems: 'center', padding: 18 },
+    infoIcon: { marginRight: 15, backgroundColor: 'rgba(255,255,255,0.6)', padding: 12, borderRadius: 14, overflow: 'hidden' },
+    infoLabel: { color: '#64748B', fontSize: 11, marginBottom: 4, fontWeight: '800', textTransform: 'uppercase' },
+    infoValue: { color: '#1E293B', fontSize: 15, fontWeight: '700' },
+    divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.5)', marginLeft: 70 },
+    
+    actionBtn: { flexDirection: 'row', backgroundColor: '#0D416D', padding: 20, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginTop: 10, gap: 10, shadowColor: '#0D416D', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 10, elevation: 5 },
+    actionBtnText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 }
 });

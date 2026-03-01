@@ -11,11 +11,12 @@ export default function AppLayout() {
             screenOptions={{
                 headerTransparent: true,
                 headerBackground: () => (
-                    <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+                    // Светлое стекло для шапки
+                    <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />
                 ),
                 headerTitleStyle: {
-                    color: '#ffffff',
-                    fontWeight: '700',
+                    color: '#0F172A', // Темный цвет заголовка
+                    fontWeight: '900',
                     fontSize: 18,
                 },
                 headerTitleAlign: 'center',
@@ -24,20 +25,22 @@ export default function AppLayout() {
                     position: 'absolute',
                     bottom: 0,
                     elevation: 0, 
-                    borderTopWidth: 0, 
+                    borderTopWidth: 1, 
+                    borderTopColor: 'rgba(255, 255, 255, 0.7)', // Легкая белая граница сверху
                     backgroundColor: 'transparent',
                     height: Platform.OS === 'ios' ? 85 : 70, 
                 },
                 tabBarBackground: () => (
-                    <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFillObject} />
+                    // Светлое стекло для нижней панели
+                    <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFillObject} />
                 ),
                 
-                tabBarActiveTintColor: '#3b82f6', 
-                tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.4)', 
+                tabBarActiveTintColor: '#0D416D', // Фирменный цвет для активной иконки
+                tabBarInactiveTintColor: '#94A3B8', // Серо-голубой для неактивных иконок
                 tabBarShowLabel: true,
                 tabBarLabelStyle: {
-                    fontSize: 10,
-                    fontWeight: '600',
+                    fontSize: 11,
+                    fontWeight: '800',
                     marginBottom: Platform.OS === 'ios' ? 0 : 5,
                 }
             }}
@@ -82,7 +85,8 @@ export default function AppLayout() {
             {/* --- СКРЫТЫЕ СТРАНИЦЫ (ОСТАВЛЕНО ТОЛЬКО href: null) --- */}
             <Tabs.Screen name="client/[id]" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="deal/[id]" options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="deal/create" options={{ href: null, headerShown: false }} />
+            <Tabs.Screen name="add-deal" options={{ href: null, headerShown: false }} />
+            <Tabs.Screen name="add-client" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="payment/create" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="university/[id]" options={{ href: null, headerShown: false }} />
         </Tabs>

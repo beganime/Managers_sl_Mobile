@@ -1,8 +1,9 @@
 // app/(app)/leaderboard.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import apiClient from '../../src/api/apiClient';
 
@@ -40,9 +41,10 @@ export default function LeaderboardScreen() {
 
     const fetchGamificationData = async () => {
         try {
+            // ИСПРАВЛЕНИЕ: Убрал начальные слэши для правильной работы Axios
             const [leaderboardRes, teamRes] = await Promise.allSettled([
-                apiClient.get('/gamification/leaderboard/'), 
-                apiClient.get('/users/users/') // Запрос к твоему UserViewSet
+                apiClient.get('gamification/leaderboard/'), 
+                apiClient.get('users/users/')
             ]);
             
             if (leaderboardRes.status === 'fulfilled') {
@@ -71,7 +73,7 @@ export default function LeaderboardScreen() {
     if (loading) {
         return (
             <ScreenWrapper>
-                <View style={styles.center}><ActivityIndicator size="large" color="#fbbf24" /></View>
+                <View style={styles.center}><ActivityIndicator size="large" color="#f59e0b" /></View>
             </ScreenWrapper>
         );
     }
@@ -90,7 +92,11 @@ export default function LeaderboardScreen() {
 
     return (
         <ScreenWrapper>
-            <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}>
+            <View style={StyleSheet.absoluteFillObject}>
+                <LinearGradient colors={['#F1F5F9', '#E2E8F0']} style={StyleSheet.absoluteFillObject} />
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0D416D" />}>
                 
                 <Text style={styles.sectionTitle}>🏆 Лучшие менеджеры</Text>
                 
@@ -101,9 +107,9 @@ export default function LeaderboardScreen() {
                         {/* 2 МЕСТО (СЛЕВА) */}
                         {top2 && (
                             <View style={[styles.pedestalItem, { marginTop: 40 }]}>
-                                <View style={[styles.avatarWrapper, { borderColor: '#9ca3af' }]}>
-                                    {top2.avatar ? <Image source={{ uri: top2.avatar }} style={styles.avatarLarge} /> : <View style={styles.avatarPlaceholderLarge}><Text style={styles.avatarInitials}>{top2.first_name?.charAt(0) || '@'}</Text></View>}
-                                    <View style={[styles.rankBadgeSmall, { backgroundColor: '#9ca3af' }]}><Text style={styles.rankBadgeText}>2</Text></View>
+                                <View style={[styles.avatarWrapper, { borderColor: '#94a3b8' }]}>
+                                    {top2.avatar ? <Image source={{ uri: top2.avatar }} style={styles.avatarLarge} /> : <View style={[styles.avatarPlaceholderLarge, {backgroundColor: 'rgba(148, 163, 184, 0.2)'}]}><Text style={[styles.avatarInitials, {color: '#64748B'}]}>{top2.first_name?.charAt(0) || '@'}</Text></View>}
+                                    <View style={[styles.rankBadgeSmall, { backgroundColor: '#94a3b8', borderColor: '#F1F5F9' }]}><Text style={styles.rankBadgeText}>2</Text></View>
                                 </View>
                                 <Text style={styles.pedestalName}>{top2.first_name}</Text>
                                 <Text style={styles.pedestalRevenue}>${getRevenue(top2)}</Text>
@@ -115,25 +121,25 @@ export default function LeaderboardScreen() {
                             <View style={[styles.pedestalItem, { zIndex: 10 }]}>
                                 {/* АНИМИРОВАННАЯ КОРОНА */}
                                 <Animated.View style={{ transform: [{ translateY: crownTranslateY }], alignItems: 'center', marginBottom: -10, zIndex: 20 }}>
-                                    <Ionicons name="scan" size={40} color="#fbbf24" style={{ position: 'absolute', opacity: 0.3, transform: [{scale: 1.5}] }} />
+                                    <Ionicons name="scan" size={40} color="#f59e0b" style={{ position: 'absolute', opacity: 0.15, transform: [{scale: 1.5}] }} />
                                     <Text style={{ fontSize: 35 }}>👑</Text>
                                 </Animated.View>
                                 
-                                <View style={[styles.avatarWrapper, { borderColor: '#fbbf24', borderWidth: 4, width: 90, height: 90 }]}>
-                                    {top1.avatar ? <Image source={{ uri: top1.avatar }} style={[styles.avatarLarge, { width: 82, height: 82, borderRadius: 41 }]} /> : <View style={[styles.avatarPlaceholderLarge, { width: 82, height: 82, borderRadius: 41 }]}><Text style={[styles.avatarInitials, { fontSize: 32 }]}>{top1.first_name?.charAt(0) || '@'}</Text></View>}
-                                    <View style={[styles.rankBadgeSmall, { backgroundColor: '#fbbf24', bottom: -10 }]}><Text style={styles.rankBadgeText}>1</Text></View>
+                                <View style={[styles.avatarWrapper, { borderColor: '#f59e0b', borderWidth: 4, width: 90, height: 90, shadowColor: '#f59e0b', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 8 }]}>
+                                    {top1.avatar ? <Image source={{ uri: top1.avatar }} style={[styles.avatarLarge, { width: 82, height: 82, borderRadius: 41 }]} /> : <View style={[styles.avatarPlaceholderLarge, { width: 82, height: 82, borderRadius: 41, backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}><Text style={[styles.avatarInitials, { fontSize: 32, color: '#d97706' }]}>{top1.first_name?.charAt(0) || '@'}</Text></View>}
+                                    <View style={[styles.rankBadgeSmall, { backgroundColor: '#f59e0b', borderColor: '#F1F5F9', bottom: -10, width: 28, height: 28, borderRadius: 14 }]}><Text style={[styles.rankBadgeText, {fontSize: 14}]}>1</Text></View>
                                 </View>
-                                <Text style={[styles.pedestalName, { fontSize: 18, color: '#fbbf24', marginTop: 15 }]}>{top1.first_name}</Text>
-                                <Text style={[styles.pedestalRevenue, { fontSize: 16, color: '#fff' }]}>${getRevenue(top1)}</Text>
+                                <Text style={[styles.pedestalName, { fontSize: 18, color: '#d97706', marginTop: 15, fontWeight: '900' }]}>{top1.first_name}</Text>
+                                <Text style={[styles.pedestalRevenue, { fontSize: 16, color: '#10b981', fontWeight: '900' }]}>${getRevenue(top1)}</Text>
                             </View>
                         )}
 
                         {/* 3 МЕСТО (СПРАВА) */}
                         {top3 && (
                             <View style={[styles.pedestalItem, { marginTop: 60 }]}>
-                                <View style={[styles.avatarWrapper, { borderColor: '#b45309' }]}>
-                                    {top3.avatar ? <Image source={{ uri: top3.avatar }} style={styles.avatarLarge} /> : <View style={styles.avatarPlaceholderLarge}><Text style={styles.avatarInitials}>{top3.first_name?.charAt(0) || '@'}</Text></View>}
-                                    <View style={[styles.rankBadgeSmall, { backgroundColor: '#b45309' }]}><Text style={styles.rankBadgeText}>3</Text></View>
+                                <View style={[styles.avatarWrapper, { borderColor: '#d97706' }]}>
+                                    {top3.avatar ? <Image source={{ uri: top3.avatar }} style={styles.avatarLarge} /> : <View style={[styles.avatarPlaceholderLarge, {backgroundColor: 'rgba(217, 119, 6, 0.15)'}]}><Text style={[styles.avatarInitials, {color: '#b45309'}]}>{top3.first_name?.charAt(0) || '@'}</Text></View>}
+                                    <View style={[styles.rankBadgeSmall, { backgroundColor: '#d97706', borderColor: '#F1F5F9' }]}><Text style={styles.rankBadgeText}>3</Text></View>
                                 </View>
                                 <Text style={styles.pedestalName}>{top3.first_name}</Text>
                                 <Text style={styles.pedestalRevenue}>${getRevenue(top3)}</Text>
@@ -142,12 +148,12 @@ export default function LeaderboardScreen() {
 
                     </View>
                 ) : (
-                    <BlurView intensity={40} tint="dark" style={styles.leadersContainer}><Text style={styles.emptyText}>Рейтинг пока пуст</Text></BlurView>
+                    <BlurView intensity={50} tint="light" style={styles.leadersContainer}><Text style={styles.emptyText}>Рейтинг пока пуст</Text></BlurView>
                 )}
 
                 {/* --- ОСТАЛЬНЫЕ МЕСТА (4 и далее) --- */}
                 {restLeaders.length > 0 && (
-                    <BlurView intensity={40} tint="dark" style={styles.leadersContainer}>
+                    <BlurView intensity={50} tint="light" style={styles.leadersContainer}>
                         {restLeaders.map((user, index) => (
                             <View key={user.id} style={styles.leaderRow}>
                                 <View style={styles.rankBadge}>
@@ -168,53 +174,47 @@ export default function LeaderboardScreen() {
                     <Text style={styles.emptyText}>Сотрудники не найдены</Text>
                 ) : (
                     team.map((member) => {
-                        // Проверяем поле is_effective из бэкенда
                         const isIneffective = member.is_effective === false;
 
                         return (
                             <BlurView 
                                 key={member.id} 
-                                intensity={30} 
-                                tint="dark" 
+                                intensity={isIneffective ? 20 : 50} 
+                                tint="light" 
                                 style={[styles.teamCard, isIneffective && styles.teamCardIneffective]}
                             >
                                 <View style={styles.avatarWrapperSmall}>
                                     {member.avatar ? (
                                         <Image source={{ uri: member.avatar }} style={[styles.avatar, isIneffective && { opacity: 0.5 }]} />
                                     ) : (
-                                        <View style={[styles.avatarPlaceholder, isIneffective && { backgroundColor: 'rgba(156, 163, 175, 0.5)' }]}>
-                                            <Text style={styles.avatarInitials}>{member.first_name?.charAt(0) || '@'}</Text>
+                                        <View style={[styles.avatarPlaceholder, isIneffective && { backgroundColor: 'rgba(148, 163, 184, 0.3)' }]}>
+                                            <Text style={[styles.avatarInitialsSmall, isIneffective && {color: '#94A3B8'}]}>{member.first_name?.charAt(0) || '@'}</Text>
                                         </View>
                                     )}
                                 </View>
                                 
                                 <View style={styles.teamContent}>
-                                    <Text style={[styles.teamName, isIneffective && { color: '#9ca3af' }]}>
+                                    <Text style={[styles.teamName, isIneffective && { color: '#64748B' }]}>
                                         {member.first_name} {member.last_name}
                                     </Text>
                                     
-                                    {/* --- ОФИС (из поля office_name) --- */}
                                     <View style={styles.officeRow}>
-                                        <Ionicons name="location" size={12} color="rgba(255,255,255,0.4)" />
-                                        <Text style={styles.teamOffice}>{member.office_name || 'Офис не указан'}</Text>
+                                        <Ionicons name="location" size={12} color="#64748B" />
+                                        <Text style={styles.teamOffice}>{member.office?.city || 'Офис не указан'}</Text>
                                     </View>
                                     
                                     <Text style={styles.teamStatus}>
-                                        {member.work_status === 'working' ? '🟢 В офисе' : member.work_status === 'vacation' ? '🟡 В отпуске' : '🔴 На больничном'}
+                                        {member.work_status === 'working' ? '🟢 Работает' : member.work_status === 'vacation' ? '🟡 В отпуске' : '🔴 На больничном'}
                                     </Text>
 
-                                    {/* --- БЕЙДЖ НЕЭФФЕКТИВНОСТИ --- */}
                                     {isIneffective && (
                                         <View style={styles.ineffectiveBadge}>
-                                            <Ionicons name="warning" size={12} color="#fca5a5" style={{marginRight: 4}} />
+                                            <Ionicons name="warning" size={12} color="#ef4444" style={{marginRight: 4}} />
                                             <Text style={styles.ineffectiveText}>Низкая активность</Text>
                                         </View>
                                     )}
                                 </View>
                                 
-                                <TouchableOpacity style={styles.callBtn}>
-                                    <Ionicons name="call" size={18} color={isIneffective ? "#9ca3af" : "#3b82f6"} />
-                                </TouchableOpacity>
                             </BlurView>
                         );
                     })
@@ -228,45 +228,47 @@ export default function LeaderboardScreen() {
 
 const styles = StyleSheet.create({
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    sectionTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold', marginBottom: 20, marginLeft: 4, letterSpacing: 0.5 },
+    container: { padding: 20 },
+    sectionTitle: { color: '#0F172A', fontSize: 22, fontWeight: '900', marginBottom: 25, marginLeft: 4, letterSpacing: 0.5 },
     
     // Пьедестал
     pedestalContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end', marginBottom: 30, paddingHorizontal: 10, height: 180 },
     pedestalItem: { alignItems: 'center', marginHorizontal: 10, width: '30%' },
-    avatarWrapper: { borderRadius: 50, borderWidth: 3, padding: 2, position: 'relative', alignItems: 'center', justifyContent: 'center' },
+    avatarWrapper: { borderRadius: 50, borderWidth: 3, padding: 2, position: 'relative', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF' },
     avatarLarge: { width: 64, height: 64, borderRadius: 32 },
-    avatarPlaceholderLarge: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(59, 130, 246, 0.3)', justifyContent: 'center', alignItems: 'center' },
-    avatarInitials: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
-    rankBadgeSmall: { position: 'absolute', bottom: -8, width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#1f2937' },
+    avatarPlaceholderLarge: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(13, 65, 109, 0.1)', justifyContent: 'center', alignItems: 'center' },
+    avatarInitials: { color: '#0D416D', fontSize: 24, fontWeight: '900' },
+    avatarInitialsSmall: { color: '#0D416D', fontSize: 18, fontWeight: '900' },
+    rankBadgeSmall: { position: 'absolute', bottom: -8, width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 2 },
     rankBadgeText: { color: '#fff', fontSize: 12, fontWeight: '900' },
-    pedestalName: { color: '#fff', fontSize: 14, fontWeight: 'bold', marginTop: 12, textAlign: 'center' },
-    pedestalRevenue: { color: '#4ade80', fontSize: 13, fontWeight: '600', marginTop: 2 },
+    pedestalName: { color: '#0F172A', fontSize: 15, fontWeight: '800', marginTop: 12, textAlign: 'center' },
+    pedestalRevenue: { color: '#10b981', fontSize: 14, fontWeight: '800', marginTop: 2 },
 
     // Список лидеров (от 4 места)
-    leadersContainer: { borderRadius: 24, padding: 10, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.15)', backgroundColor: 'rgba(0,0,0,0.2)' },
-    leaderRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
-    rankBadge: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, marginRight: 15 },
-    rankText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+    leadersContainer: { borderRadius: 28, padding: 10, overflow: 'hidden', borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: 'rgba(255,255,255,0.6)' },
+    leaderRow: { flexDirection: 'row', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: 'rgba(15,23,42,0.05)' },
+    rankBadge: { backgroundColor: 'rgba(13, 65, 109, 0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, marginRight: 15 },
+    rankText: { color: '#0D416D', fontWeight: '900', fontSize: 14 },
     userInfo: { flex: 1 },
-    userName: { color: '#fff', fontSize: 16, fontWeight: '600' },
-    userRevenue: { color: '#4ade80', fontSize: 12, marginTop: 2, fontWeight: '500' },
+    userName: { color: '#1E293B', fontSize: 16, fontWeight: '800' },
+    userRevenue: { color: '#10b981', fontSize: 13, marginTop: 4, fontWeight: '700' },
     
     // Команда
-    teamCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 20, marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', backgroundColor: 'rgba(255, 255, 255, 0.05)' },
-    teamCardIneffective: { borderColor: 'rgba(239, 68, 68, 0.3)', backgroundColor: 'rgba(0, 0, 0, 0.4)' }, // Тусклая карточка для неэффективных
+    teamCard: { flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 24, marginBottom: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: 'rgba(255,255,255,0.6)' },
+    teamCardIneffective: { borderColor: '#E2E8F0', backgroundColor: 'rgba(241, 245, 249, 0.6)' },
     avatarWrapperSmall: { marginRight: 15 },
     avatar: { width: 50, height: 50, borderRadius: 25 },
-    avatarPlaceholder: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(59, 130, 246, 0.4)', justifyContent: 'center', alignItems: 'center' },
+    avatarPlaceholder: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(13, 65, 109, 0.1)', justifyContent: 'center', alignItems: 'center' },
     teamContent: { flex: 1 },
-    teamName: { color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 2 },
+    teamName: { color: '#0F172A', fontSize: 16, fontWeight: '800', marginBottom: 4 },
     officeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-    teamOffice: { color: 'rgba(255,255,255,0.5)', fontSize: 12, marginLeft: 4 },
-    teamStatus: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '500' },
+    teamOffice: { color: '#475569', fontSize: 13, marginLeft: 4, fontWeight: '600' },
+    teamStatus: { color: '#334155', fontSize: 12, fontWeight: '700', marginTop: 2 },
     
     // Бейдж неэффективности
-    ineffectiveBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(239, 68, 68, 0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginTop: 6, alignSelf: 'flex-start', borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)' },
-    ineffectiveText: { color: '#fca5a5', fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
+    ineffectiveBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(239, 68, 68, 0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginTop: 8, alignSelf: 'flex-start', borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.2)' },
+    ineffectiveText: { color: '#ef4444', fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
     
-    callBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255, 255, 255, 0.05)', justifyContent: 'center', alignItems: 'center' },
-    emptyText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, textAlign: 'center', padding: 20 },
+    callBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(13, 65, 109, 0.05)', justifyContent: 'center', alignItems: 'center' },
+    emptyText: { color: '#94A3B8', fontSize: 15, textAlign: 'center', padding: 20, fontWeight: '600', fontStyle: 'italic' },
 });

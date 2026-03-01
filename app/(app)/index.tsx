@@ -1,12 +1,31 @@
 // app/(app)/index.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    Easing,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from 'react-native';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import apiClient from '../../src/api/apiClient';
 import { getToken, saveToken } from '../../src/utils/storage';
+
+const { width, height } = Dimensions.get('window');
 
 export default function DashboardScreen() {
     const router = useRouter();
@@ -14,9 +33,7 @@ export default function DashboardScreen() {
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [tasks, setTasks] = useState<any[]>([]);
     const [leads, setLeads] = useState<any[]>([]);
-    const [clientsList, setClientsList] = useState<any[]>([]);
     const [dealsList, setDealsList] = useState<any[]>([]);
-    const [universitiesList, setUniversitiesList] = useState<any[]>([]);
     
     const [shiftActive, setShiftActive] = useState(false);
     const [hasReportToday, setHasReportToday] = useState(false);
@@ -25,32 +42,32 @@ export default function DashboardScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [submitLoading, setSubmitLoading] = useState(false);
     const [syncing, setSyncing] = useState(false);
-    const [activeModal, setActiveModal] = useState<'report' | 'client' | 'deal' | 'payment' | 'add_task' | 'edit_task' | null>(null);
-
-    const [selectedCountry, setSelectedCountry] = useState<string>('');
-    const [uniSearch, setUniSearch] = useState('');
-    const [progSearch, setProgSearch] = useState('');
-
+    
+    const [activeModal, setActiveModal] = useState<'report' | 'payment' | 'add_task' | 'edit_task' | null>(null);
     const [selectedTasks, setSelectedTasks] = useState<(number|string)[]>([]);
 
     const [formReport, setFormReport] = useState({ content: '', leads: '', deals: '' });
     const [formTask, setFormTask] = useState({ id: '', title: '', description: '', priority: 'medium', status: 'todo' });
-    
-    const [formClient, setFormClient] = useState({ 
-        full_name: '', phone: '', email: '', dob: '', city: '', citizenship: 'Туркменистан',
-        passport_local_num: '', passport_inter_num: '', passport_issued_by: '', 
-        passport_issued_date: '', address_registration: ''
-    });
-
-    const [formDeal, setFormDeal] = useState({ 
-        client: '', deal_type: 'university', university: '', program: '', 
-        currency: 1, price_client: '', expected_revenue_usd: '' 
-    });
-
     const [formPayment, setFormPayment] = useState({ 
         deal: '', amount: '', currency: 1, method: 'cash', net_income_usd: 0 
     });
 
+    const moveAnim = useRef(new Animated.Value(0)).current;
+    useEffect(() => {
+        Animated.loop(
+            Animated.timing(moveAnim, {
+                toValue: 1,
+                duration: 35000,
+                easing: Easing.inOut(Easing.sin),
+                useNativeDriver: false,
+            })
+        ).start();
+    }, []);
+
+    const orb1X = moveAnim.interpolate({ inputRange: [0, 1], outputRange: [-100, 100] });
+    const orb2Y = moveAnim.interpolate({ inputRange: [0, 1], outputRange: [50, -50] });
+
+    // --- ЛОГИКА ОФФЛАЙН ЗАДАЧ ---
     const getOfflineTasks = async () => {
         const stored = await getToken('offline_tasks');
         return stored ? JSON.parse(stored) : [];
@@ -63,8 +80,9 @@ export default function DashboardScreen() {
     const syncOfflineTasks = async (silent = true) => {
         if (!silent) setSyncing(true);
         const offlineTasks = await getOfflineTasks();
+        
         if (offlineTasks.length === 0) {
-            if (!silent) { Alert.alert("Синхронизация", "Все задачи уже синхронизированы."); setSyncing(false); }
+            if (!silent) { Alert.alert("Синхронизация", "Все данные актуальны."); setSyncing(false); }
             return;
         }
 
@@ -73,25 +91,33 @@ export default function DashboardScreen() {
 
         for (const task of offlineTasks) {
             try {
-                if (task.markedForDeletion) continue; 
-                await apiClient.post('/tasks/', {
-                    title: task.title,
-                    description: task.description,
-                    priority: task.priority,
-                    status: task.status,
-                    assigned_to: task.assigned_to // ИСПРАВЛЕНИЕ: Добавили assigned_to для устранения ошибки 400!
-                });
+                if (task._offlineAction === 'CREATE') {
+                    await apiClient.post('tasks/', {
+                        title: task.title, description: task.description,
+                        priority: task.priority, status: task.status, assigned_to: task.assigned_to
+                    });
+                } else if (task._offlineAction === 'UPDATE') {
+                    await apiClient.patch(`tasks/${task.id}/`, {
+                        title: task.title, description: task.description,
+                        priority: task.priority, status: task.status
+                    });
+                } else if (task._offlineAction === 'DELETE') {
+                    await apiClient.delete(`tasks/${task.id}/`);
+                }
                 syncedCount++;
-            } catch (e) {
-                remainingOffline.push(task);
+            } catch (e: any) {
+                // Если при удалении/обновлении сервер вернул 404, значит задача уже удалена. Пропускаем.
+                if (e.response?.status === 404) syncedCount++;
+                else remainingOffline.push(task);
             }
         }
-
+        
         await saveOfflineTasks(remainingOffline);
+        
         if (!silent) {
             setSyncing(false);
-            if (syncedCount > 0) Alert.alert("Успешно", `Синхронизировано задач: ${syncedCount}`);
-            else Alert.alert("Ошибка", "Нет связи с сервером или ошибка данных.");
+            if (syncedCount > 0) Alert.alert("Успешно", `Синхронизировано элементов: ${syncedCount}`);
+            else Alert.alert("Ошибка", "Нет связи с сервером.");
         }
         fetchData(false);
     };
@@ -99,20 +125,17 @@ export default function DashboardScreen() {
     const fetchData = async (showLoading = true) => {
         if (showLoading) setLoading(true);
         try {
-            const [tasksRes, leadsRes, shiftRes, reportRes, userRes, clientsRes, dealsRes] = await Promise.allSettled([
-                apiClient.get('/tasks/'),
-                apiClient.get('/leads/mobile/'),
-                apiClient.get('/timetracking/shifts/current/'),
-                apiClient.get('/reports/daily/today/'),
-                apiClient.get('/users/users/me/'),
-                apiClient.get('/clients/'),
-                apiClient.get('/analytics/deals/')
+            // Запросы БЕЗ начального слэша, чтобы Axios корректно склеил их с BASE_URL
+            const [tasksRes, leadsRes, shiftRes, reportRes, userRes] = await Promise.allSettled([
+                apiClient.get('tasks/'),
+                apiClient.get('leads/mobile/'),
+                apiClient.get('timetracking/shifts/current/'),
+                apiClient.get('reports/daily/today/'),
+                apiClient.get('users/users/me/')
             ]);
             
             if (userRes.status === 'fulfilled') setCurrentUser(userRes.value.data);
             if (leadsRes.status === 'fulfilled') setLeads(leadsRes.value.data.results || leadsRes.value.data);
-            if (clientsRes.status === 'fulfilled') setClientsList(clientsRes.value.data.results || clientsRes.value.data);
-            if (dealsRes.status === 'fulfilled') setDealsList(dealsRes.value.data.results || dealsRes.value.data);
             
             if (shiftRes.status === 'fulfilled' && shiftRes.value.data.is_active) setShiftActive(true);
             else setShiftActive(false);
@@ -122,9 +145,22 @@ export default function DashboardScreen() {
 
             let serverTasks = tasksRes.status === 'fulfilled' ? (tasksRes.value.data.results || tasksRes.value.data) : [];
             const offlineTasks = await getOfflineTasks();
-            const activeOfflineTasks = offlineTasks.filter((t: any) => !t.markedForDeletion);
             
-            setTasks([...activeOfflineTasks, ...serverTasks]);
+            // Объединяем серверные задачи с локальными модификациями
+            let mergedTasks = [...serverTasks];
+            offlineTasks.forEach((offTask: any) => {
+                if (offTask._offlineAction === 'DELETE') {
+                    mergedTasks = mergedTasks.filter(t => t.id !== offTask.id);
+                } else if (offTask._offlineAction === 'UPDATE') {
+                    const idx = mergedTasks.findIndex(t => t.id === offTask.id);
+                    if (idx > -1) mergedTasks[idx] = { ...mergedTasks[idx], ...offTask };
+                    else mergedTasks.push(offTask);
+                } else if (offTask._offlineAction === 'CREATE') {
+                    mergedTasks.push(offTask);
+                }
+            });
+
+            setTasks(mergedTasks);
 
         } catch (error) {
             console.error('Ошибка загрузки', error);
@@ -134,22 +170,17 @@ export default function DashboardScreen() {
         }
     };
 
-    const loadUniversities = async () => {
-        try {
-            const unisRes = await apiClient.get('/catalog/universities/');
-            setUniversitiesList(unisRes.data.results || unisRes.data);
-        } catch (e) { console.error(e); }
-    };
-
-    useEffect(() => { fetchData(); loadUniversities(); }, []);
+    useFocusEffect(
+        useCallback(() => {
+            fetchData(false);
+        }, [])
+    );
 
     const openModal = (type: typeof activeModal, taskData?: any) => {
-        if (type === 'deal') { setUniSearch(''); setProgSearch(''); }
         if (type === 'add_task') { setFormTask({ id: '', title: '', description: '', priority: 'medium', status: 'todo' }); }
         if (type === 'edit_task' && taskData) { setFormTask({ ...taskData }); }
-        if (type === 'deal' || type === 'payment') {
-            if (type === 'deal' && clientsList.length === 0) apiClient.get('/clients/').then(r => setClientsList(r.data.results || r.data));
-            if (type === 'payment' && dealsList.length === 0) apiClient.get('/analytics/deals/').then(r => setDealsList(r.data.results || r.data));
+        if (type === 'payment' && dealsList.length === 0) {
+            apiClient.get('analytics/deals/').then(r => setDealsList(r.data.results || r.data));
         }
         setActiveModal(type);
     };
@@ -160,598 +191,310 @@ export default function DashboardScreen() {
     };
 
     const handleBatchAction = async (action: 'done' | 'delete') => {
-        Alert.alert(
-            "Подтверждение",
-            `Вы уверены, что хотите ${action === 'done' ? 'завершить' : 'удалить'} ${selectedTasks.length} задач(и)?`,
-            [
-                { text: "Отмена", style: "cancel" },
-                { 
-                    text: action === 'done' ? "Завершить" : "Удалить", 
-                    style: action === 'delete' ? "destructive" : "default",
-                    onPress: async () => {
-                        setLoading(true);
-                        let offlineTasks = await getOfflineTasks();
-                        
-                        for (const id of selectedTasks) {
+        Alert.alert("Подтверждение", `Вы уверены?`, [
+            { text: "Отмена", style: "cancel" },
+            { 
+                text: "Да", 
+                onPress: async () => {
+                    setLoading(true);
+                    let offline = await getOfflineTasks();
+                    
+                    for (const id of selectedTasks) {
+                        try {
+                            if (action === 'done') await apiClient.patch(`tasks/${id}/`, { status: 'done' });
+                            if (action === 'delete') await apiClient.delete(`tasks/${id}/`);
+                        } catch (e) {
+                            // ЕСЛИ СЕРВЕР НЕДОСТУПЕН (ОФФЛАЙН), СОХРАНЯЕМ В ЛОКАЛЬНУЮ ОЧЕРЕДЬ
                             if (typeof id === 'string' && id.startsWith('temp_')) {
-                                const idx = offlineTasks.findIndex((t: any) => t.id === id);
-                                if (idx > -1) {
-                                    if (action === 'delete') offlineTasks[idx].markedForDeletion = true;
-                                    if (action === 'done') offlineTasks[idx].status = 'done';
+                                if (action === 'delete') offline = offline.filter((t: any) => t.id !== id);
+                                if (action === 'done') {
+                                    const idx = offline.findIndex((t: any) => t.id === id);
+                                    if (idx > -1) offline[idx].status = 'done';
                                 }
                             } else {
-                                try {
-                                    if (action === 'done') await apiClient.patch(`/tasks/${id}/`, { status: 'done' });
-                                    if (action === 'delete') await apiClient.delete(`/tasks/${id}/`);
-                                } catch (e) { console.error(`Ошибка с задачей ${id}`, e); }
+                                const existingIdx = offline.findIndex((t: any) => t.id === id);
+                                if (action === 'delete') {
+                                    if (existingIdx > -1) offline[existingIdx]._offlineAction = 'DELETE';
+                                    else offline.push({ id, _offlineAction: 'DELETE' });
+                                } else if (action === 'done') {
+                                    const taskData = tasks.find(t => t.id === id) || {};
+                                    if (existingIdx > -1) {
+                                        offline[existingIdx].status = 'done';
+                                        offline[existingIdx]._offlineAction = 'UPDATE';
+                                    } else {
+                                        offline.push({ ...taskData, status: 'done', _offlineAction: 'UPDATE', isOffline: true });
+                                    }
+                                }
                             }
                         }
-                        offlineTasks = offlineTasks.filter((t: any) => !t.markedForDeletion);
-                        await saveOfflineTasks(offlineTasks);
-                        setSelectedTasks([]);
-                        fetchData(false);
                     }
+                    
+                    await saveOfflineTasks(offline);
+                    setSelectedTasks([]);
+                    fetchData(false);
                 }
-            ]
-        );
+            }
+        ]);
     };
 
     const handleShiftToggle = async () => {
         if (!shiftActive) {
             try {
-                await apiClient.post('/timetracking/shifts/', {});
+                await apiClient.post('timetracking/shifts/', {});
                 setShiftActive(true);
-                Alert.alert("✅ Смена начата", "Хорошего дня!");
-            } catch (e: any) {
-                if (e.response?.status === 400) setShiftActive(true);
-                else Alert.alert("Ошибка", "Не удалось начать смену.");
-            }
+            } catch (e: any) { if (e.response?.status === 400) setShiftActive(true); }
         } else {
             if (!hasReportToday) {
-                Alert.alert("🛑 Внимание", "Сначала отправьте отчет за день!", [
-                    { text: "Написать отчет", onPress: () => setActiveModal('report') },
-                    { text: "Отмена", style: "cancel" }
-                ]);
+                Alert.alert("Внимание", "Сначала отправьте отчет!", [{ text: "Написать", onPress: () => setActiveModal('report') }, { text: "Отмена" }]);
                 return;
             }
-            try {
-                await apiClient.patch('/timetracking/shifts/current/');
-                setShiftActive(false);
-                Alert.alert("🛑 Смена завершена", "Можете отдыхать.");
-            } catch (e) {
-                Alert.alert("Ошибка", "Не удалось завершить смену.");
-            }
+            try { await apiClient.patch('timetracking/shifts/current/'); setShiftActive(false); } catch (e) {}
         }
     };
 
     const handleTakeLead = async (id: number) => {
         try {
-            await apiClient.patch(`/leads/mobile/${id}/`, { status: 'contacted' });
-            Alert.alert("✅ Успешно", "Заявка взята в работу!");
+            await apiClient.patch(`leads/mobile/${id}/`, { status: 'contacted' });
             fetchData();
-        } catch (e) { Alert.alert("Ошибка", "Не удалось взять заявку."); }
-    };
-
-    const uniqueCountries = Array.from(new Set(universitiesList.map(u => u.country))).filter(Boolean);
-    const filteredUnis = universitiesList
-        .filter(u => u.country === selectedCountry)
-        .filter(u => u.name.toLowerCase().includes(uniSearch.toLowerCase()));
-
-    const selectedUniObj = universitiesList.find(u => u.id === formDeal.university);
-    const availablePrograms = selectedUniObj ? selectedUniObj.programs.filter((p: any) => p.name.toLowerCase().includes(progSearch.toLowerCase())) : [];
-
-    const handleCountrySelect = (country: string) => {
-        setSelectedCountry(country);
-        setUniSearch(''); setProgSearch('');
-        setFormDeal({ ...formDeal, university: '', program: '', price_client: '', expected_revenue_usd: '' });
-    };
-
-    const handleUniversitySelect = (uniId: string) => {
-        setProgSearch('');
-        setFormDeal({ ...formDeal, university: uniId, program: '', price_client: '', expected_revenue_usd: '' });
-    };
-
-    const handleProgramSelect = (prog: any) => {
-        setFormDeal({ 
-            ...formDeal, program: prog.id, 
-            price_client: prog.tuition_fee ? prog.tuition_fee.toString() : '', 
-            expected_revenue_usd: prog.service_fee ? prog.service_fee.toString() : '' 
-        });
+        } catch (e) {}
     };
 
     const submitForm = async (type: string) => {
         setSubmitLoading(true);
         try {
             if (type === 'report') {
-                if (!formReport.content.trim()) throw new Error("Заполните описание отчета");
-                await apiClient.post('/reports/daily/', {
-                    content: formReport.content, leads_processed: parseInt(formReport.leads || '0', 10), deals_closed: parseInt(formReport.deals || '0', 10)
+                await apiClient.post('reports/daily/', {
+                    content: formReport.content, leads_processed: parseInt(formReport.leads || '0'), deals_closed: parseInt(formReport.deals || '0')
                 });
-                setHasReportToday(true); setFormReport({ content: '', leads: '', deals: '' });
-                Alert.alert("✅ Успешно", "Отчет отправлен");
-                setActiveModal(null);
+                setHasReportToday(true);
             } 
             else if (type === 'add_task') {
-                if (!formTask.title) throw new Error("Укажите заголовок задачи");
-                const newTask = {
-                    id: `temp_${Date.now()}`,
-                    title: formTask.title,
-                    description: formTask.description,
-                    priority: formTask.priority,
-                    status: formTask.status || 'todo',
-                    isOffline: true,
-                    assigned_to: currentUser?.id
-                };
-                const offlineTasks = await getOfflineTasks();
-                offlineTasks.push(newTask);
-                await saveOfflineTasks(offlineTasks);
-                setTasks(prev => [newTask, ...prev]); 
-                setFormTask({ id: '', title: '', description: '', priority: 'medium', status: 'todo' });
-                setActiveModal(null);
-                syncOfflineTasks(true); 
-                return;
+                const newTask = { id: `temp_${Date.now()}`, ...formTask, assigned_to: currentUser?.id, _offlineAction: 'CREATE', isOffline: true };
+                const offline = await getOfflineTasks();
+                offline.push(newTask); 
+                await saveOfflineTasks(offline);
+                syncOfflineTasks(true); // Пробуем сразу отправить
             }
             else if (type === 'edit_task') {
-                if (!formTask.title) throw new Error("Укажите заголовок задачи");
-                if (typeof formTask.id === 'string' && formTask.id.startsWith('temp_')) {
-                    const offlineTasks = await getOfflineTasks();
-                    const idx = offlineTasks.findIndex((t: any) => t.id === formTask.id);
+                try {
+                    if (typeof formTask.id === 'string' && formTask.id.startsWith('temp_')) throw new Error('Offline Task');
+                    await apiClient.patch(`tasks/${formTask.id}/`, formTask);
+                } catch (e) {
+                    // Если оффлайн задача или нет инета - пишем в локалку
+                    const offline = await getOfflineTasks();
+                    const idx = offline.findIndex((t: any) => t.id === formTask.id);
                     if (idx > -1) {
-                        offlineTasks[idx] = { ...offlineTasks[idx], ...formTask };
-                        await saveOfflineTasks(offlineTasks);
+                        offline[idx] = { ...offline[idx], ...formTask, _offlineAction: offline[idx]._offlineAction || 'UPDATE' };
+                    } else {
+                        offline.push({ ...formTask, _offlineAction: 'UPDATE', isOffline: true });
                     }
-                } else {
-                    await apiClient.patch(`/tasks/${formTask.id}/`, formTask);
+                    await saveOfflineTasks(offline);
                 }
-                setActiveModal(null);
-                fetchData(false);
-            }
-            else if (type === 'client') {
-                if (!formClient.full_name || !formClient.phone) throw new Error("ФИО и Телефон обязательны");
-                const payload = { ...formClient };
-                if (!payload.dob) delete payload.dob;
-                if (!payload.passport_issued_date) delete payload.passport_issued_date;
-                await apiClient.post('/clients/', payload);
-                Alert.alert("✅ Успешно", "Клиент добавлен!");
-                setActiveModal(null);
-                router.push('/crm'); 
-            }
-            else if (type === 'deal') {
-                if (!formDeal.client || !formDeal.price_client) throw new Error("Выберите клиента и укажите цену");
-                const payload = { ...formDeal };
-                if (payload.deal_type === 'service') { delete payload.university; delete payload.program; } 
-                else { if (!payload.university) delete payload.university; if (!payload.program) delete payload.program; }
-                if (!payload.expected_revenue_usd) payload.expected_revenue_usd = '0';
-                await apiClient.post('/analytics/deals/', payload);
-                Alert.alert("✅ Успешно", "Сделка создана!");
-                setActiveModal(null);
-                router.push('/crm'); 
             }
             else if (type === 'payment') {
-                if (!formPayment.deal || !formPayment.amount) throw new Error("Выберите сделку и укажите сумму");
-                
-                // ИСПРАВЛЕНИЕ: Гарантированно парсим amount в float
-                const payload = { 
-                    ...formPayment, 
-                    amount: parseFloat(formPayment.amount),
-                    net_income_usd: 0 
-                };
-                
-                await apiClient.post('/analytics/payments/', payload);
-                Alert.alert("✅ Успешно", "Платёж зафиксирован!");
-                setActiveModal(null);
-                router.push('/crm'); 
+                await apiClient.post('analytics/payments/', { ...formPayment, amount: parseFloat(formPayment.amount) });
             }
+            
+            setActiveModal(null);
+            fetchData(false); // Мгновенно обновляем интерфейс
         } catch (error: any) {
-            console.log(error.response?.data);
-            Alert.alert("Ошибка", error.response?.data?.detail || error.message || "Сбой при отправке данных");
-        } finally {
-            setSubmitLoading(false);
-        }
+            Alert.alert("Ошибка", "Проверьте данные");
+        } finally { setSubmitLoading(false); }
     };
 
-    const newLeads = leads.filter(l => l.status === 'new');
-    const myTasks = tasks.filter(t => t.isOffline || (currentUser && t.assigned_to === currentUser.id));
-    const tasksTodo = myTasks.filter(t => t.status === 'todo');
-    const tasksProcess = myTasks.filter(t => t.status === 'process' || t.status === 'review');
-    const tasksDone = myTasks.filter(t => t.status === 'done');
-
     const salaryInfo = currentUser?.managersalary || { monthly_plan: 0, current_month_revenue: 0, current_balance: 0, fixed_salary: 0, motivation_target: 0, motivation_reward: 0 };
-    const planProgress = salaryInfo.monthly_plan > 0 ? Math.min((salaryInfo.current_month_revenue / salaryInfo.monthly_plan) * 100, 100) : 0;
-    const leftToMot = Math.max(salaryInfo.motivation_target - salaryInfo.current_month_revenue, 0);
+    const planProgress = parseFloat(salaryInfo.monthly_plan) > 0 ? Math.min((parseFloat(salaryInfo.current_month_revenue) / parseFloat(salaryInfo.monthly_plan)) * 100, 100) : 0;
+    const leftToMot = Math.max(parseFloat(salaryInfo.motivation_target) - parseFloat(salaryInfo.current_month_revenue), 0);
 
-    if (loading) return <ScreenWrapper><View style={styles.center}><ActivityIndicator size="large" color="#3b82f6" /></View></ScreenWrapper>;
+    const newLeads = leads.filter(l => l.status === 'new');
+
+    if (loading) return <ScreenWrapper><View style={styles.center}><ActivityIndicator size="large" color="#0D416D" /></View></ScreenWrapper>;
 
     return (
         <ScreenWrapper>
-            <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor="#fff" />} contentContainerStyle={{ paddingBottom: 100 }}>
-                
-                <Text style={styles.sectionTitle}>📈 Мои показатели</Text>
-                <BlurView intensity={40} tint="dark" style={styles.kpiCard}>
+            <View style={StyleSheet.absoluteFillObject}>
+                <LinearGradient colors={['#F1F5F9', '#E2E8F0']} style={StyleSheet.absoluteFillObject} />
+                <Animated.View style={[styles.orb, { top: '5%', right: orb1X, backgroundColor: '#0D416D', opacity: 0.08 }]} />
+                <Animated.View style={[styles.orb, { bottom: '10%', left: orb1X, top: orb2Y, backgroundColor: '#B71D17', opacity: 0.05, width: 450, height: 450 }]} />
+            </View>
+
+            <ScrollView 
+                showsVerticalScrollIndicator={false} 
+                contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor="#0D416D" />}
+            >
+                <BlurView intensity={40} tint="light" style={styles.glassHeader}>
+                    <View style={styles.userRow}>
+                        <View style={styles.avatarCircle}><Text style={styles.avatarText}>{currentUser?.first_name?.[0] || 'M'}</Text></View>
+                        <View>
+                            <Text style={styles.welcomeText}>Managers SL ERP</Text>
+                            <Text style={styles.userNameText}>{currentUser?.first_name} {currentUser?.last_name}</Text>
+                        </View>
+                    </View>
+                    <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/profile')}>
+                        <Ionicons name="options-outline" size={22} color="#0D416D" />
+                    </TouchableOpacity>
+                </BlurView>
+
+                <Text style={styles.sectionTitle}>Показатели продаж</Text>
+                <BlurView intensity={50} tint="light" style={styles.glassCard}>
                     <View style={styles.kpiRow}>
                         <View style={styles.kpiBox}>
-                            <Text style={styles.kpiLabel}>Выручка / План</Text>
-                            <Text style={styles.kpiValue}>${parseFloat(salaryInfo.current_month_revenue).toLocaleString()} / ${parseFloat(salaryInfo.monthly_plan).toLocaleString()}</Text>
+                            <Text style={styles.kpiLabel}>Выручка</Text>
+                            <Text style={styles.kpiValue}>${parseFloat(salaryInfo.current_month_revenue).toLocaleString()}</Text>
                         </View>
                         <View style={styles.kpiBox}>
-                            <Text style={styles.kpiLabel}>К выплате</Text>
-                            <Text style={[styles.kpiValue, {color: '#34d399'}]}>${(parseFloat(salaryInfo.current_balance) + parseFloat(salaryInfo.fixed_salary)).toLocaleString()}</Text>
+                            <Text style={styles.kpiLabel}>План месяца</Text>
+                            <Text style={styles.kpiValue}>${parseFloat(salaryInfo.monthly_plan).toLocaleString()}</Text>
                         </View>
                     </View>
-                    
                     <View style={styles.progressContainer}>
-                        <View style={[styles.progressBar, { width: `${planProgress}%`, backgroundColor: planProgress === 100 ? '#10b981' : '#3b82f6' }]} />
+                        <LinearGradient colors={['#0D416D', '#2563EB']} start={{x:0, y:0}} end={{x:1, y:0}} style={[styles.progressBar, { width: `${planProgress}%` }]} />
                     </View>
-
                     <View style={styles.kpiFooter}>
-                        <Text style={styles.kpiFooterText}>👥 Клиентов: <Text style={{fontWeight:'bold', color:'#fff'}}>{clientsList.length}</Text></Text>
-                        <Text style={styles.kpiFooterText}>💼 Сделок: <Text style={{fontWeight:'bold', color:'#fff'}}>{dealsList.length}</Text></Text>
-                        <Text style={styles.kpiFooterText}>🎁 До бонуса (${salaryInfo.motivation_reward}): <Text style={{color: leftToMot === 0 ? '#34d399' : '#fbbf24'}}>${leftToMot}</Text></Text>
+                        <Text style={styles.kpiFooterText}>До бонуса: <Text style={{fontWeight:'900', color:'#0D416D'}}>${leftToMot}</Text></Text>
+                        <Text style={styles.kpiFooterText}>{Math.round(planProgress)}%</Text>
                     </View>
                 </BlurView>
 
-                <BlurView intensity={50} tint="dark" style={styles.glassCard}>
+                <BlurView intensity={50} tint="light" style={styles.glassCard}>
                     <View style={styles.shiftHeader}>
                         <View style={styles.shiftInfo}>
-                            <Ionicons name="time" size={24} color={shiftActive ? "#34d399" : "#3b82f6"} />
-                            <View style={{ marginLeft: 12 }}>
-                                <Text style={styles.shiftTitle}>Мой рабочий день</Text>
-                                <Text style={styles.shiftSubtitle}>{shiftActive ? '🟢 В офисе' : '🔴 Смена закрыта'}</Text>
-                            </View>
+                            <Ionicons name="radio-button-on" size={20} color={shiftActive ? "#10b981" : "#94a3b8"} />
+                            <Text style={styles.shiftTitle}>{shiftActive ? 'Смена открыта' : 'Смена закрыта'}</Text>
                         </View>
-                        <TouchableOpacity style={[styles.shiftBtn, { backgroundColor: shiftActive ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)' }]} onPress={handleShiftToggle}>
-                            <Text style={[styles.shiftBtnText, { color: shiftActive ? '#fca5a5' : '#6ee7b7' }]}>{shiftActive ? 'Завершить' : 'Начать'}</Text>
+                        <TouchableOpacity style={[styles.shiftBtn, { backgroundColor: shiftActive ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)' }]} onPress={handleShiftToggle}>
+                            <Text style={[styles.shiftBtnText, { color: shiftActive ? '#ef4444' : '#10b981' }]}>{shiftActive ? 'Завершить' : 'Начать'}</Text>
                         </TouchableOpacity>
                     </View>
-
                     <View style={styles.actionsGrid}>
-                        <TouchableOpacity style={styles.actionBtn} onPress={() => openModal('client')}>
-                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(59, 130, 246, 0.2)' }]}><Ionicons name="person-add" size={20} color="#60a5fa" /></View>
+                        <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/add-client')}>
+                            <View style={[styles.actionIcon, {backgroundColor:'rgba(255,255,255,0.7)'}]}><Ionicons name="person-add-outline" size={20} color="#0D416D" /></View>
                             <Text style={styles.actionText}>Клиент</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionBtn} onPress={() => openModal('deal')}>
-                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(245, 158, 11, 0.2)' }]}><Ionicons name="briefcase" size={20} color="#fbbf24" /></View>
+                        <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/add-deal')}>
+                            <View style={[styles.actionIcon, {backgroundColor:'rgba(255,255,255,0.7)'}]}><Ionicons name="briefcase-outline" size={20} color="#ea580c" /></View>
                             <Text style={styles.actionText}>Сделка</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.actionBtn} onPress={() => openModal('payment')}>
-                            <View style={[styles.actionIcon, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}><Ionicons name="cash" size={20} color="#34d399" /></View>
-                            <Text style={styles.actionText}>Платёж</Text>
+                            <View style={[styles.actionIcon, {backgroundColor:'rgba(255,255,255,0.7)'}]}><Ionicons name="card-outline" size={20} color="#16a34a" /></View>
+                            <Text style={styles.actionText}>Платеж</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.actionBtn} onPress={() => openModal('report')}>
-                            <View style={[styles.actionIcon, { backgroundColor: hasReportToday ? 'rgba(16, 185, 129, 0.2)' : 'rgba(168, 85, 247, 0.2)' }]}>
-                                <Ionicons name={hasReportToday ? "checkmark-done" : "document-text"} size={20} color={hasReportToday ? "#34d399" : "#c084fc"} />
-                            </View>
-                            <Text style={styles.actionText}>{hasReportToday ? 'Сдан!' : 'Отчет'}</Text>
+                            <View style={[styles.actionIcon, {backgroundColor: hasReportToday ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.7)'}]}><Ionicons name="document-text-outline" size={20} color={hasReportToday ? "#10b981" : "#7c3aed"} /></View>
+                            <Text style={styles.actionText}>Отчет</Text>
                         </TouchableOpacity>
                     </View>
                 </BlurView>
 
-                <Text style={styles.sectionTitle}>🔥 Новые заявки с сайта</Text>
-                {newLeads.length === 0 ? (
-                    <Text style={styles.emptyText}>Актуальных заявок нет</Text>
-                ) : (
-                    newLeads.map((lead) => (
-                        <BlurView key={lead.id} intensity={30} tint="dark" style={styles.listCard}>
-                            <View style={styles.listContent}>
-                                <Text style={styles.listTitle}>{lead.full_name}</Text>
-                                <Text style={styles.listSubtitle}>📞 {lead.phone} | {lead.direction || 'Без направления'}</Text>
-                            </View>
-                            <TouchableOpacity style={styles.takeBtn} onPress={() => handleTakeLead(lead.id)}>
-                                <Text style={styles.takeBtnText}>В работу</Text>
-                            </TouchableOpacity>
-                        </BlurView>
-                    ))
-                )}
+                <Text style={styles.sectionTitle}>Новые заявки</Text>
+                {newLeads.length === 0 ? <Text style={styles.emptyText}>Заявок пока нет</Text> : newLeads.map(l => (
+                    <BlurView key={l.id} intensity={50} tint="light" style={styles.listCard}>
+                        <View style={{flex:1}}>
+                            <Text style={styles.listTitle}>{l.full_name}</Text>
+                            <Text style={styles.listSubtitle}>{l.phone} | {l.direction || 'ВУЗ'}</Text>
+                        </View>
+                        <TouchableOpacity style={styles.takeBtn} onPress={() => handleTakeLead(l.id)}><Text style={styles.takeBtnText}>В работу</Text></TouchableOpacity>
+                    </BlurView>
+                ))}
 
-                <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 20}}>
-                    <Text style={styles.sectionTitle}>📋 Мои задачи</Text>
-                    <View style={{flexDirection: 'row', gap: 10}}>
+                <View style={styles.sectionRow}>
+                    <Text style={styles.sectionTitle}>Задачи</Text>
+                    <View style={{flexDirection:'row', gap:10}}>
                         <TouchableOpacity onPress={() => syncOfflineTasks(false)} style={styles.syncBtn}>
-                            {syncing ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="sync" size={14} color="#fff" />}
-                            <Text style={styles.syncBtnText}>Синхр.</Text>
+                            {syncing ? <ActivityIndicator size="small" color="#0D416D" /> : <Ionicons name="sync-outline" size={18} color="#0D416D" />}
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => openModal('add_task')} style={styles.addTaskBtn}>
-                            <Ionicons name="add" size={16} color="#fff" />
-                            <Text style={{color: '#fff', fontSize: 12, fontWeight: 'bold', marginLeft: 4}}>Создать</Text>
-                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => openModal('add_task')} style={styles.addBtn}><Ionicons name="add" size={24} color="#FFF" /></TouchableOpacity>
                     </View>
                 </View>
-                
-                {(() => {
-                    const renderTaskCard = (task: any, indicatorColor: string) => {
-                        const isSelected = selectedTasks.includes(task.id);
-                        return (
-                            <TouchableOpacity 
-                                key={task.id} 
-                                activeOpacity={0.8}
-                                onLongPress={() => toggleSelectTask(task.id)}
-                                onPress={() => {
-                                    if (selectedTasks.length > 0) toggleSelectTask(task.id);
-                                    else openModal('edit_task', task);
-                                }}
-                            >
-                                <BlurView intensity={20} tint="dark" style={[styles.taskCard, isSelected && styles.taskCardSelected, task.status === 'done' && {opacity: 0.5}, task.isOffline && {borderColor: '#f59e0b', borderStyle: 'dashed'}]}>
-                                    {isSelected ? (
-                                        <Ionicons name="checkmark-circle" size={20} color="#3b82f6" style={{marginRight: 10}} />
-                                    ) : (
-                                        <View style={[styles.statusIndicator, { backgroundColor: indicatorColor }]} />
-                                    )}
-                                    <View style={{flex: 1}}>
-                                        <Text style={[styles.taskText, task.status === 'done' && {textDecorationLine: 'line-through'}]}>{task.title}</Text>
-                                    </View>
-                                    {task.isOffline && <Ionicons name="cloud-offline" size={16} color="#f59e0b" />}
+
+                {['todo', 'process', 'done'].map(status => (
+                    <View key={status}>
+                        <Text style={styles.kanbanLabel}>{status === 'todo' ? '🎯 Сделать' : status === 'process' ? '⚙️ В работе' : '✅ Готово'}</Text>
+                        {tasks.filter(t => t.status === status).map(t => (
+                            <TouchableOpacity key={t.id} onLongPress={() => toggleSelectTask(t.id)} onPress={() => selectedTasks.length > 0 ? toggleSelectTask(t.id) : openModal('edit_task', t)}>
+                                <BlurView intensity={selectedTasks.includes(t.id) ? 100 : 50} tint={selectedTasks.includes(t.id) ? "dark" : "light"} style={styles.taskCard}>
+                                    <View style={[styles.statusDot, {backgroundColor: t.priority === 'high' ? '#ef4444' : '#0D416D'}]} />
+                                    <Text style={[styles.taskText, t.status === 'done' && {textDecorationLine:'line-through', opacity:0.5}]}>{t.title}</Text>
+                                    {t.isOffline && <Ionicons name="cloud-offline-outline" size={16} color="#ea580c" />}
                                 </BlurView>
                             </TouchableOpacity>
-                        );
-                    };
-
-                    return (
-                        <>
-                            <Text style={styles.kanbanHeader}>🟡 Нужно сделать</Text>
-                            {tasksTodo.length === 0 && <Text style={styles.emptyKanbanText}>Нет задач</Text>}
-                            {tasksTodo.map(t => renderTaskCard(t, '#f59e0b'))}
-
-                            <Text style={styles.kanbanHeader}>🔵 В работе / На проверке</Text>
-                            {tasksProcess.length === 0 && <Text style={styles.emptyKanbanText}>Нет задач</Text>}
-                            {tasksProcess.map(t => renderTaskCard(t, '#3b82f6'))}
-
-                            <Text style={styles.kanbanHeader}>🟢 Готово</Text>
-                            {tasksDone.length === 0 && <Text style={styles.emptyKanbanText}>Нет задач</Text>}
-                            {tasksDone.map(t => renderTaskCard(t, '#10b981'))}
-                        </>
-                    );
-                })()}
-
+                        ))}
+                    </View>
+                ))}
             </ScrollView>
 
             {selectedTasks.length > 0 && (
-                <View style={styles.batchActionBar}>
-                    <Text style={{color: '#fff', fontWeight: 'bold', marginRight: 10}}>{selectedTasks.length} выбрано</Text>
-                    <View style={{flexDirection: 'row', gap: 10}}>
-                        <TouchableOpacity style={[styles.batchBtn, {backgroundColor: '#10b981'}]} onPress={() => handleBatchAction('done')}>
-                            <Text style={styles.batchBtnText}>Готово</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.batchBtn, {backgroundColor: '#ef4444'}]} onPress={() => handleBatchAction('delete')}>
-                            <Text style={styles.batchBtnText}>Удалить</Text>
-                        </TouchableOpacity>
+                <BlurView intensity={80} tint="dark" style={styles.batchBar}>
+                    <Text style={{color:'#FFF', fontWeight:'900'}}>{selectedTasks.length} выбрано</Text>
+                    <View style={{flexDirection:'row', gap:10}}>
+                        <TouchableOpacity style={[styles.batchBtn, {backgroundColor:'rgba(16,185,129,0.8)'}]} onPress={() => handleBatchAction('done')}><Text style={styles.batchBtnText}>Готово</Text></TouchableOpacity>
+                        <TouchableOpacity style={[styles.batchBtn, {backgroundColor:'rgba(239,68,68,0.8)'}]} onPress={() => handleBatchAction('delete')}><Text style={styles.batchBtnText}>Удалить</Text></TouchableOpacity>
                     </View>
-                </View>
+                </BlurView>
             )}
 
             <Modal visible={activeModal !== null} animationType="slide" transparent>
                 <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
-                    <BlurView intensity={90} tint="dark" style={styles.modalContent}>
+                    <BlurView intensity={60} tint="light" style={styles.modalContent}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>
-                                {activeModal === 'report' ? 'Ежедневный отчет' : 
-                                 activeModal === 'client' ? 'Анкета Клиента' : 
-                                 activeModal === 'deal' ? 'Новая Сделка' : 
-                                 activeModal === 'add_task' ? 'Новая Задача' : 
-                                 activeModal === 'edit_task' ? 'Свойства Задачи' : 'Новый Платёж'}
+                                {activeModal === 'add_task' || activeModal === 'edit_task' ? 'Задача' : activeModal === 'report' ? 'Отчет за день' : 'Платеж'}
                             </Text>
-                            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.closeModalBtn}>
-                                <Ionicons name="close" size={24} color="#fff" />
-                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setActiveModal(null)}><Ionicons name="close-circle-outline" size={32} color="#0D416D" /></TouchableOpacity>
                         </View>
-
-                        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-                            
-                            {activeModal === 'report' && (
-                                <>
-                                    <Text style={styles.label}>Что проделано за день?</Text>
-                                    <TextInput style={[styles.input, { height: 100, textAlignVertical: 'top' }]} multiline value={formReport.content} onChangeText={(t) => setFormReport({...formReport, content: t})} />
-                                    <View style={styles.rowInputs}>
-                                        <View style={{flex: 1, marginRight: 10}}>
-                                            <Text style={styles.label}>Заявок</Text>
-                                            <TextInput style={styles.input} keyboardType="numeric" value={formReport.leads} onChangeText={(t) => setFormReport({...formReport, leads: t})} />
-                                        </View>
-                                        <View style={{flex: 1}}>
-                                            <Text style={styles.label}>Сделок</Text>
-                                            <TextInput style={styles.input} keyboardType="numeric" value={formReport.deals} onChangeText={(t) => setFormReport({...formReport, deals: t})} />
-                                        </View>
-                                    </View>
-                                </>
-                            )}
-
+                        <ScrollView showsVerticalScrollIndicator={false}>
                             {(activeModal === 'add_task' || activeModal === 'edit_task') && (
-                                <>
-                                    {formTask.id.toString().startsWith('temp_') && (
-                                        <Text style={{color: '#f59e0b', marginBottom: 15, fontStyle: 'italic'}}>☁️ Это локальная задача. Не забудьте нажать "Синхр." при появлении интернета.</Text>
-                                    )}
-                                    <Text style={styles.label}>Заголовок задачи *</Text>
-                                    <TextInput style={styles.input} placeholder="Например: Позвонить клиенту" placeholderTextColor="#666" value={formTask.title} onChangeText={(t) => setFormTask({...formTask, title: t})} />
+                                <View>
+                                    <Text style={styles.label}>Заголовок</Text>
+                                    <TextInput style={styles.input} value={formTask.title} onChangeText={v => setFormTask({...formTask, title:v})} />
                                     <Text style={styles.label}>Описание</Text>
-                                    <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top' }]} multiline placeholder="Уточнить список документов..." placeholderTextColor="#666" value={formTask.description} onChangeText={(t) => setFormTask({...formTask, description: t})} />
-                                    
-                                    <Text style={styles.label}>Приоритет</Text>
-                                    <View style={styles.rowInputs}>
-                                        {['low', 'medium', 'high'].map((p) => (
-                                            <TouchableOpacity key={p} style={[styles.chip, formTask.priority === p && styles.chipActive]} onPress={() => setFormTask({...formTask, priority: p})}>
-                                                <Text style={[styles.chipText, formTask.priority === p && {color: '#fff'}]}>{p === 'low' ? 'Низкий' : p === 'medium' ? 'Средний' : 'Высокий'}</Text>
+                                    <TextInput style={[styles.input, {height:100}]} multiline value={formTask.description} onChangeText={v => setFormTask({...formTask, description:v})} />
+                                    <Text style={styles.label}>Статус</Text>
+                                    <View style={styles.chipRow}>
+                                        {['todo', 'process', 'done'].map(s => (
+                                            <TouchableOpacity key={s} style={[styles.modalChip, formTask.status === s && styles.modalChipActive]} onPress={() => setFormTask({...formTask, status: s})}>
+                                                <Text style={[styles.modalChipText, formTask.status === s && {color:'#FFF'}]}>{s === 'todo' ? 'Сделать' : s === 'process' ? 'В работе' : 'Готово'}</Text>
                                             </TouchableOpacity>
                                         ))}
                                     </View>
-
-                                    {activeModal === 'edit_task' && (
-                                        <>
-                                            <Text style={styles.label}>Статус (Канбан)</Text>
-                                            <View style={styles.rowInputs}>
-                                                <TouchableOpacity style={[styles.chip, formTask.status === 'todo' && styles.chipActive]} onPress={() => setFormTask({...formTask, status: 'todo'})}><Text style={[styles.chipText, formTask.status==='todo' && {color:'#fff'}]}>Сделать</Text></TouchableOpacity>
-                                                <TouchableOpacity style={[styles.chip, formTask.status === 'process' && styles.chipActive]} onPress={() => setFormTask({...formTask, status: 'process'})}><Text style={[styles.chipText, formTask.status==='process' && {color:'#fff'}]}>В работе</Text></TouchableOpacity>
-                                                <TouchableOpacity style={[styles.chip, formTask.status === 'done' && styles.chipActive]} onPress={() => setFormTask({...formTask, status: 'done'})}><Text style={[styles.chipText, formTask.status==='done' && {color:'#fff'}]}>Готово</Text></TouchableOpacity>
-                                            </View>
-                                        </>
-                                    )}
-                                </>
+                                </View>
                             )}
-
-                            {activeModal === 'client' && (
-                                <>
-                                    <Text style={styles.sectionSubTitle}>Личные данные</Text>
-                                    <Text style={styles.label}>ФИО Клиента *</Text>
-                                    <TextInput style={styles.input} placeholder="Иванов Иван Иванович" placeholderTextColor="#666" value={formClient.full_name} onChangeText={(t) => setFormClient({...formClient, full_name: t})} />
-                                    
-                                    <View style={styles.rowInputs}>
-                                        <View style={{flex: 1, marginRight: 10}}>
-                                            <Text style={styles.label}>Телефон *</Text>
-                                            <TextInput style={styles.input} placeholder="+993..." placeholderTextColor="#666" keyboardType="phone-pad" value={formClient.phone} onChangeText={(t) => setFormClient({...formClient, phone: t})} />
+                            
+                            {activeModal === 'report' && (
+                                <View>
+                                    <Text style={styles.label}>Содержание работ</Text>
+                                    <TextInput style={[styles.input, {height:120}]} multiline value={formReport.content} onChangeText={v => setFormReport({...formReport, content:v})} />
+                                    <View style={styles.row}>
+                                        <View style={{flex:1, marginRight:10}}>
+                                            <Text style={styles.label}>Лидов</Text>
+                                            <TextInput style={styles.input} keyboardType="numeric" value={formReport.leads} onChangeText={v => setFormReport({...formReport, leads:v})} />
                                         </View>
-                                        <View style={{flex: 1}}>
-                                            <Text style={styles.label}>Дата рождения</Text>
-                                            <TextInput style={styles.input} placeholder="YYYY-MM-DD" placeholderTextColor="#666" value={formClient.dob} onChangeText={(t) => setFormClient({...formClient, dob: t})} />
+                                        <View style={{flex:1}}>
+                                            <Text style={styles.label}>Сделок</Text>
+                                            <TextInput style={styles.input} keyboardType="numeric" value={formReport.deals} onChangeText={v => setFormReport({...formReport, deals:v})} />
                                         </View>
                                     </View>
-
-                                    <View style={styles.rowInputs}>
-                                        <View style={{flex: 1, marginRight: 10}}>
-                                            <Text style={styles.label}>Город</Text>
-                                            <TextInput style={styles.input} placeholder="Ашхабад" placeholderTextColor="#666" value={formClient.city} onChangeText={(t) => setFormClient({...formClient, city: t})} />
-                                        </View>
-                                        <View style={{flex: 1}}>
-                                            <Text style={styles.label}>Гражданство</Text>
-                                            <TextInput style={styles.input} placeholder="Туркменистан" placeholderTextColor="#666" value={formClient.citizenship} onChangeText={(t) => setFormClient({...formClient, citizenship: t})} />
-                                        </View>
-                                    </View>
-                                    <Text style={styles.label}>Email</Text>
-                                    <TextInput style={styles.input} placeholder="example@mail.com" placeholderTextColor="#666" keyboardType="email-address" value={formClient.email} onChangeText={(t) => setFormClient({...formClient, email: t})} />
-
-                                    <Text style={[styles.sectionSubTitle, {marginTop: 15}]}>Паспортные данные</Text>
-                                    <View style={styles.rowInputs}>
-                                        <View style={{flex: 1, marginRight: 10}}>
-                                            <Text style={styles.label}>Внутренний №</Text>
-                                            <TextInput style={styles.input} placeholder="I-AН 123456" placeholderTextColor="#666" value={formClient.passport_local_num} onChangeText={(t) => setFormClient({...formClient, passport_local_num: t})} />
-                                        </View>
-                                        <View style={{flex: 1}}>
-                                            <Text style={styles.label}>Загран №</Text>
-                                            <TextInput style={styles.input} placeholder="A0123456" placeholderTextColor="#666" value={formClient.passport_inter_num} onChangeText={(t) => setFormClient({...formClient, passport_inter_num: t})} />
-                                        </View>
-                                    </View>
-                                    <Text style={styles.label}>Кем выдан</Text>
-                                    <TextInput style={styles.input} placeholder="МВД Туркменистана" placeholderTextColor="#666" value={formClient.passport_issued_by} onChangeText={(t) => setFormClient({...formClient, passport_issued_by: t})} />
-
-                                    <View style={styles.rowInputs}>
-                                        <View style={{flex: 1, marginRight: 10}}>
-                                            <Text style={styles.label}>Дата выдачи</Text>
-                                            <TextInput style={styles.input} placeholder="YYYY-MM-DD" placeholderTextColor="#666" value={formClient.passport_issued_date} onChangeText={(t) => setFormClient({...formClient, passport_issued_date: t})} />
-                                        </View>
-                                        <View style={{flex: 1}}></View>
-                                    </View>
-                                    <Text style={styles.label}>Адрес регистрации</Text>
-                                    <TextInput style={[styles.input, {height: 80, textAlignVertical: 'top'}]} multiline placeholder="Ул. Мира, д. 1, кв. 2" placeholderTextColor="#666" value={formClient.address_registration} onChangeText={(t) => setFormClient({...formClient, address_registration: t})} />
-                                </>
-                            )}
-
-                            {activeModal === 'deal' && (
-                                <>
-                                    <Text style={styles.label}>Выберите Клиента *</Text>
-                                    {clientsList.length === 0 ? (
-                                        <Text style={{color: '#9ca3af', marginBottom: 15, fontStyle: 'italic'}}>Нет клиентов. Сначала добавьте клиента.</Text>
-                                    ) : (
-                                        <ScrollView horizontal style={styles.chipScroll} showsHorizontalScrollIndicator={false}>
-                                            {clientsList.map(c => (
-                                                <TouchableOpacity key={c.id} style={[styles.chip, formDeal.client === c.id && styles.chipActive]} onPress={() => setFormDeal({...formDeal, client: c.id})}>
-                                                    <Text style={[styles.chipText, formDeal.client === c.id && {color: '#fff'}]}>{c.full_name}</Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </ScrollView>
-                                    )}
-
-                                    <Text style={styles.label}>Тип сделки</Text>
-                                    <View style={styles.rowInputs}>
-                                        <TouchableOpacity style={[styles.chip, formDeal.deal_type === 'university' && styles.chipActive]} onPress={() => setFormDeal({...formDeal, deal_type: 'university'})}>
-                                            <Text style={[styles.chipText, formDeal.deal_type === 'university' && {color: '#fff'}]}>ВУЗ</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity style={[styles.chip, formDeal.deal_type === 'service' && styles.chipActive]} onPress={() => setFormDeal({...formDeal, deal_type: 'service', university: '', program: ''})}>
-                                            <Text style={[styles.chipText, formDeal.deal_type === 'service' && {color: '#fff'}]}>Доп. Услуга</Text>
-                                        </TouchableOpacity>
-                                    </View>
-
-                                    {formDeal.deal_type === 'university' && (
-                                        <>
-                                            <Text style={styles.label}>Страна</Text>
-                                            <ScrollView horizontal style={styles.chipScroll} showsHorizontalScrollIndicator={false}>
-                                                {uniqueCountries.map((country: string) => (
-                                                    <TouchableOpacity key={country} style={[styles.chip, selectedCountry === country && styles.chipActive]} onPress={() => handleCountrySelect(country)}>
-                                                        <Text style={[styles.chipText, selectedCountry === country && {color: '#fff'}]}>{country}</Text>
-                                                    </TouchableOpacity>
-                                                ))}
-                                            </ScrollView>
-
-                                            {selectedCountry !== '' && (
-                                                <>
-                                                    <Text style={styles.label}>Университет</Text>
-                                                    <TextInput style={styles.searchInput} placeholder="🔍 Поиск ВУЗа..." placeholderTextColor="#666" value={uniSearch} onChangeText={setUniSearch} />
-                                                    <ScrollView horizontal style={styles.chipScroll} showsHorizontalScrollIndicator={false}>
-                                                        {filteredUnis.map(u => (
-                                                            <TouchableOpacity key={u.id} style={[styles.chip, formDeal.university === u.id && styles.chipActive]} onPress={() => handleUniversitySelect(u.id)}>
-                                                                <Text style={[styles.chipText, formDeal.university === u.id && {color: '#fff'}]}>{u.name}</Text>
-                                                            </TouchableOpacity>
-                                                        ))}
-                                                    </ScrollView>
-                                                </>
-                                            )}
-
-                                            {formDeal.university !== '' && (
-                                                <>
-                                                    <Text style={styles.label}>Программа</Text>
-                                                    <TextInput style={styles.searchInput} placeholder="🔍 Поиск программы..." placeholderTextColor="#666" value={progSearch} onChangeText={setProgSearch} />
-                                                    <ScrollView horizontal style={styles.chipScroll} showsHorizontalScrollIndicator={false}>
-                                                        {availablePrograms.length === 0 ? <Text style={{color:'#666'}}>Нет программ</Text> : null}
-                                                        {availablePrograms.map((p: any) => (
-                                                            <TouchableOpacity key={p.id} style={[styles.chip, formDeal.program === p.id && styles.chipActive]} onPress={() => handleProgramSelect(p)}>
-                                                                <Text style={[styles.chipText, formDeal.program === p.id && {color: '#fff'}]}>{p.name}</Text>
-                                                            </TouchableOpacity>
-                                                        ))}
-                                                    </ScrollView>
-                                                </>
-                                            )}
-                                        </>
-                                    )}
-
-                                    <View style={styles.rowInputs}>
-                                        <View style={{flex: 1, marginRight: 10}}>
-                                            <Text style={styles.label}>Цена Клиенту (USD) *</Text>
-                                            <TextInput style={styles.input} keyboardType="numeric" placeholder="1000" placeholderTextColor="#666" value={formDeal.price_client} onChangeText={(t) => setFormDeal({...formDeal, price_client: t})} />
-                                        </View>
-                                        <View style={{flex: 1}}>
-                                            <Text style={styles.label}>Наша Выручка (USD)</Text>
-                                            <TextInput style={styles.input} keyboardType="numeric" placeholder="300" placeholderTextColor="#666" value={formDeal.expected_revenue_usd} onChangeText={(t) => setFormDeal({...formDeal, expected_revenue_usd: t})} />
-                                        </View>
-                                    </View>
-                                </>
+                                </View>
                             )}
 
                             {activeModal === 'payment' && (
-                                <>
-                                    <Text style={styles.label}>Основание (Выберите сделку) *</Text>
-                                    {dealsList.length === 0 ? (
-                                        <Text style={{color: '#9ca3af', marginBottom: 15, fontStyle: 'italic'}}>У вас пока нет сделок.</Text>
-                                    ) : (
-                                        <ScrollView horizontal style={styles.chipScroll} showsHorizontalScrollIndicator={false}>
-                                            {dealsList.map(d => (
-                                                <TouchableOpacity key={d.id} style={[styles.chip, formPayment.deal === d.id && styles.chipActive]} onPress={() => setFormPayment({...formPayment, deal: d.id})}>
-                                                    <Text style={[styles.chipText, formPayment.deal === d.id && {color: '#fff'}]}>Сделка #{d.id} ({d.price_client}$)</Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </ScrollView>
-                                    )}
-
-                                    <Text style={styles.label}>Сумма платежа (USD) *</Text>
-                                    <TextInput style={styles.input} keyboardType="numeric" placeholder="500" placeholderTextColor="#666" value={formPayment.amount} onChangeText={(t) => setFormPayment({...formPayment, amount: t})} />
-
-                                    <Text style={styles.label}>Способ оплаты</Text>
-                                    <View style={styles.rowInputs}>
-                                        {['cash', 'card', 'bank'].map((m) => (
-                                            <TouchableOpacity key={m} style={[styles.chip, formPayment.method === m && styles.chipActive]} onPress={() => setFormPayment({...formPayment, method: m})}>
-                                                <Text style={[styles.chipText, formPayment.method === m && {color: '#fff'}]}>{m === 'cash' ? 'Наличные' : m === 'card' ? 'Карта' : 'Перевод'}</Text>
+                                <View>
+                                    <Text style={styles.label}>Сделка</Text>
+                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:15}}>
+                                        {dealsList.map(d => (
+                                            <TouchableOpacity key={d.id} style={[styles.modalChip, formPayment.deal === d.id && styles.modalChipActive]} onPress={() => setFormPayment({...formPayment, deal:d.id})}>
+                                                <Text style={[styles.modalChipText, formPayment.deal === d.id && {color:'#FFF'}]}>#{d.id} ({d.price_client}$)</Text>
                                             </TouchableOpacity>
                                         ))}
-                                    </View>
-                                </>
+                                    </ScrollView>
+                                    <Text style={styles.label}>Сумма платежа ($)</Text>
+                                    <TextInput style={styles.input} keyboardType="numeric" value={formPayment.amount} onChangeText={v => setFormPayment({...formPayment, amount:v})} />
+                                </View>
                             )}
 
                             <TouchableOpacity style={styles.submitBtn} onPress={() => submitForm(activeModal!)} disabled={submitLoading}>
-                                {submitLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Сохранить</Text>}
+                                {submitLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.submitBtnText}>Сохранить</Text>}
                             </TouchableOpacity>
                         </ScrollView>
                     </BlurView>
@@ -763,66 +506,63 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    glassCard: { padding: 20, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(0,0,0,0.2)', marginBottom: 25 },
+    orb: { position: 'absolute', width: 450, height: 450, borderRadius: 225 },
     
-    kpiCard: { padding: 20, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(59, 130, 246, 0.3)', backgroundColor: 'rgba(30, 58, 138, 0.2)', marginBottom: 25 },
-    kpiRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+    // Glassmorphism Styles
+    glassHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, borderRadius: 28, backgroundColor: 'rgba(255, 255, 255, 0.4)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.7)', marginBottom: 25, overflow: 'hidden' },
+    glassCard: { padding: 24, borderRadius: 32, backgroundColor: 'rgba(255, 255, 255, 0.4)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.7)', marginBottom: 30, overflow: 'hidden' },
+    listCard: { flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 24, backgroundColor: 'rgba(255, 255, 255, 0.45)', marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.8)', overflow: 'hidden' },
+    taskCard: { flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 20, marginBottom: 10, backgroundColor: 'rgba(255, 255, 255, 0.45)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.8)', overflow: 'hidden' },
+    
+    userRow: { flexDirection: 'row', alignItems: 'center' },
+    avatarCircle: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#0D416D', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+    avatarText: { color: '#FFF', fontSize: 20, fontWeight: '900' },
+    welcomeText: { fontSize: 11, color: '#64748B', fontWeight: '800', textTransform:'uppercase' },
+    userNameText: { fontSize: 17, color: '#0F172A', fontWeight: '900' },
+    iconBtn: { padding: 10, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.6)' },
+    sectionTitle: { fontSize: 13, fontWeight: '900', color: '#334155', marginBottom: 15, marginLeft: 5, textTransform:'uppercase', letterSpacing:1.5 },
+    kpiRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
     kpiBox: { flex: 1 },
-    kpiLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 12, textTransform: 'uppercase', fontWeight: 'bold', marginBottom: 4 },
-    kpiValue: { color: '#fff', fontSize: 20, fontWeight: '900' },
-    progressContainer: { height: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden', marginBottom: 15 },
-    progressBar: { height: '100%', borderRadius: 3 },
-    kpiFooter: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap' },
-    kpiFooterText: { color: 'rgba(255,255,255,0.6)', fontSize: 11 },
-
-    shiftHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)', paddingBottom: 15, marginBottom: 15 },
-    shiftInfo: { flexDirection: 'row', alignItems: 'center' },
-    shiftTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-    shiftSubtitle: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 2 },
-    shiftBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-    shiftBtnText: { fontWeight: '700', fontSize: 14 },
-    actionsGrid: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap' },
-    actionBtn: { alignItems: 'center', width: '23%' },
-    actionIcon: { width: 50, height: 50, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
-    actionText: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '600' },
-    
-    sectionTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 12, marginLeft: 4 },
-    sectionSubTitle: { color: '#60a5fa', fontSize: 14, fontWeight: '700', marginBottom: 15, marginTop: 5, textTransform: 'uppercase', letterSpacing: 1 },
-    listCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 20, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', backgroundColor: 'rgba(255, 255, 255, 0.05)' },
-    listContent: { flex: 1 },
-    listTitle: { color: '#fff', fontSize: 15, fontWeight: '600', marginBottom: 4 },
-    listSubtitle: { color: 'rgba(255,255,255,0.5)', fontSize: 12 },
-    takeBtn: { backgroundColor: 'rgba(59,130,246,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(59,130,246,0.4)' },
-    takeBtnText: { color: '#60a5fa', fontSize: 12, fontWeight: 'bold' },
-    emptyText: { color: 'rgba(255,255,255,0.4)', fontSize: 14, textAlign: 'center', paddingVertical: 10 },
-    
-    addTaskBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(59,130,246,0.3)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-    syncBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(16,185,129,0.3)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-    syncBtnText: { color: '#fff', fontSize: 12, fontWeight: 'bold', marginLeft: 4 },
-    kanbanHeader: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase', marginTop: 15, marginBottom: 8, marginLeft: 5 },
-    taskCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', backgroundColor: 'rgba(0,0,0,0.2)' },
-    taskCardSelected: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.15)' },
-    statusIndicator: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
-    taskText: { color: '#fff', fontSize: 14, fontWeight: '500', flex: 1 },
-    emptyKanbanText: { color: 'rgba(255,255,255,0.3)', fontSize: 12, marginLeft: 5, fontStyle: 'italic' },
-
-    batchActionBar: { position: 'absolute', bottom: 100, left: 20, right: 20, backgroundColor: 'rgba(31, 41, 55, 0.95)', borderRadius: 20, padding: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 10}, shadowOpacity: 0.5, shadowRadius: 10 },
-    batchBtn: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 10 },
-    batchBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
-
-    modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
-    modalContent: { borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 25, maxHeight: '90%', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { color: '#fff', fontSize: 22, fontWeight: '800' },
-    closeModalBtn: { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 15, padding: 6 },
-    label: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginBottom: 8, fontWeight: '600', textTransform: 'uppercase' },
-    input: { backgroundColor: 'rgba(0,0,0,0.2)', color: '#fff', borderRadius: 16, padding: 15, fontSize: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', marginBottom: 15 },
-    searchInput: { backgroundColor: 'rgba(255,255,255,0.05)', color: '#fff', borderRadius: 12, padding: 10, fontSize: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', marginBottom: 10 },
-    rowInputs: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
-    chipScroll: { marginBottom: 15, maxHeight: 50 },
-    chip: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 12, marginRight: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-    chipActive: { backgroundColor: '#3b82f6', borderColor: '#60a5fa' },
-    chipText: { color: 'rgba(255,255,255,0.6)', fontWeight: 'bold' },
-    submitBtn: { backgroundColor: '#3b82f6', padding: 18, borderRadius: 16, alignItems: 'center', marginTop: 10, shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-    submitBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }
+    kpiLabel: { fontSize: 10, color: '#64748B', fontWeight: '900', marginBottom: 6, textTransform:'uppercase' },
+    kpiValue: { fontSize: 24, fontWeight: '900', color: '#0D416D' },
+    progressContainer: { height: 12, backgroundColor: 'rgba(13, 65, 109, 0.08)', borderRadius: 6, overflow: 'hidden' },
+    progressBar: { height: '100%', borderRadius: 6 },
+    kpiFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
+    kpiFooterText: { fontSize: 13, color: '#475569', fontWeight: '800' },
+    shiftHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+    shiftInfo: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    shiftTitle: { fontSize: 14, fontWeight: '900', color: '#1E293B' },
+    shiftBtn: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 14 },
+    shiftBtnText: { fontSize: 14, fontWeight: '900' },
+    actionsGrid: { flexDirection: 'row', justifyContent: 'space-between' },
+    actionBtn: { alignItems: 'center', gap: 8 },
+    actionIcon: { width: 54, height: 54, borderRadius: 18, justifyContent:'center', alignItems:'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)' },
+    actionText: { fontSize: 12, fontWeight: '900', color: '#475569' },
+    listTitle: { fontSize: 16, fontWeight: '900', color: '#1E293B' },
+    listSubtitle: { fontSize: 13, color: '#64748B', fontWeight: '700' },
+    takeBtn: { backgroundColor: '#0D416D', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12 },
+    takeBtnText: { color: '#FFF', fontSize: 12, fontWeight: '900' },
+    sectionRow: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:15, marginTop: 10 },
+    addBtn: { backgroundColor:'#0D416D', width:44, height:44, borderRadius:16, justifyContent:'center', alignItems:'center', shadowColor: '#0D416D', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+    syncBtn: { backgroundColor:'rgba(255,255,255,0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)', width:44, height:44, borderRadius:16, justifyContent:'center', alignItems:'center' },
+    kanbanLabel: { fontSize:11, fontWeight:'900', color:'#64748B', marginLeft:5, marginBottom:10, marginTop:15, textTransform:'uppercase', letterSpacing:1 },
+    statusDot: { width:7, height:24, borderRadius:3.5, marginRight:15 },
+    taskText: { flex:1, fontSize:15, color:'#1E293B', fontWeight:'800' },
+    batchBar: { position:'absolute', bottom:40, left:20, right:20, padding:20, borderRadius:28, flexDirection:'row', justifyContent:'space-between', alignItems:'center', backgroundColor: 'rgba(15,23,42,0.85)', overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+    batchBtn: { paddingHorizontal:18, paddingVertical:10, borderRadius:14 },
+    batchBtnText: { color:'#FFF', fontWeight:'900', fontSize:13 },
+    modalOverlay: { flex:1, justifyContent:'flex-end', backgroundColor:'rgba(15,23,42,0.4)' },
+    modalContent: { borderTopLeftRadius:45, borderTopRightRadius:45, padding:32, maxHeight:'92%', backgroundColor: 'rgba(241, 245, 249, 0.95)', overflow: 'hidden' },
+    modalHeader: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:30 },
+    modalTitle: { fontSize:22, fontWeight:'900', color:'#0D416D' },
+    label: { fontSize:11, fontWeight:'900', color:'#475569', marginBottom:8, marginLeft:6, textTransform:'uppercase', letterSpacing: 0.5 },
+    input: { backgroundColor:'rgba(255, 255, 255, 0.7)', borderRadius:16, padding:16, fontSize:15, borderWidth:1, borderColor:'rgba(255, 255, 255, 0.9)', marginBottom:20, color:'#1E293B', fontWeight:'700' },
+    row: { flexDirection:'row' },
+    chipRow: { flexDirection:'row', gap:12, marginBottom:22 },
+    modalChip: { backgroundColor:'rgba(255, 255, 255, 0.7)', paddingHorizontal:16, paddingVertical:12, borderRadius:14, borderWidth:1, borderColor:'rgba(255, 255, 255, 0.9)', marginRight: 10 },
+    modalChipActive: { backgroundColor:'#0D416D', borderColor:'#0D416D' },
+    modalChipText: { fontSize:13, fontWeight:'800', color:'#475569' },
+    submitBtn: { backgroundColor:'#0D416D', padding:20, borderRadius:20, alignItems:'center', marginTop:10, shadowColor: '#0D416D', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 10, elevation: 5 },
+    submitBtnText: { color:'#FFF', fontSize:16, fontWeight:'900', letterSpacing: 0.5 },
+    emptyText: { color: '#94A3B8', textAlign: 'center', marginBottom: 20, fontStyle:'italic' }
 });

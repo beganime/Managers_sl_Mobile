@@ -1,12 +1,14 @@
+// app/_layout.tsx
 import { Stack, useRouter, useSegments } from 'expo-router';
-// import * as SecureStore from 'expo-secure-store';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StatusBar, View } from 'react-native';
+import { StatusBar } from 'react-native';
+import AnimatedSplash from '../components/AnimatedSplash';
 import { getToken } from '../src/utils/storage';
 
 export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showSplashAnimation, setShowSplashAnimation] = useState(true);
   
   const segments = useSegments();
   const router = useRouter();
@@ -16,7 +18,6 @@ export default function RootLayout() {
     const checkAuth = async () => {
       try {
         const token = await getToken('access_token');
-        // const token = await SecureStore.getItemAsync('access_token');
         setIsAuthenticated(!!token);
       } catch (e) {
         setIsAuthenticated(false);
@@ -27,33 +28,31 @@ export default function RootLayout() {
     checkAuth();
   }, []);
 
-  // Логика редиректа
+  // Логика редиректа срабатывает, когда и данные загружены, и анимация завершена
   useEffect(() => {
-    if (!isReady) return;
+    if (!isReady || showSplashAnimation) return;
 
     const inAuthGroup = segments[0] === '(app)';
     const isLoginScreen = segments[0] === 'login';
     
     if (!isAuthenticated && !isLoginScreen) {
-      // Если не авторизован и не на странице логина -> кидаем на логин
       router.replace('/login');
     } else if (isAuthenticated && isLoginScreen) {
-      // Если авторизован, но зашел на логин -> кидаем в приложение
       router.replace('/(app)');
     }
-  }, [isAuthenticated, isReady, segments]);
+  }, [isAuthenticated, isReady, showSplashAnimation, segments]);
 
-  if (!isReady) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111827' }}>
-        <ActivityIndicator size="large" color="#3b82f6" />
-      </View>
-    );
+  // Пока смотрим анимацию — скрываем остальное приложение
+  if (showSplashAnimation) {
+    return <AnimatedSplash onAnimationFinish={() => setShowSplashAnimation(false)} />;
   }
+
+  // Приложение не успело проверить токен (обычно это миллисекунды)
+  if (!isReady) return null; 
 
   return (
     <>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="login" options={{ animation: 'fade' }} />
         <Stack.Screen name="(app)" options={{ animation: 'fade' }} />
