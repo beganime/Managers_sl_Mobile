@@ -11,7 +11,6 @@ import { getToken, saveToken } from '../../src/utils/storage';
 export default function DashboardScreen() {
     const router = useRouter();
 
-    // --- ДАННЫЕ ДАШБОРДА ---
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [tasks, setTasks] = useState<any[]>([]);
     const [leads, setLeads] = useState<any[]>([]);
@@ -22,22 +21,18 @@ export default function DashboardScreen() {
     const [shiftActive, setShiftActive] = useState(false);
     const [hasReportToday, setHasReportToday] = useState(false);
     
-    // --- СОСТОЯНИЯ ЗАГРУЗКИ ---
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [submitLoading, setSubmitLoading] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [activeModal, setActiveModal] = useState<'report' | 'client' | 'deal' | 'payment' | 'add_task' | 'edit_task' | null>(null);
 
-    // --- ПОИСК В КАТАЛОГЕ ---
     const [selectedCountry, setSelectedCountry] = useState<string>('');
     const [uniSearch, setUniSearch] = useState('');
     const [progSearch, setProgSearch] = useState('');
 
-    // --- КАНБАН: ВЫДЕЛЕНИЕ ЗАДАЧ ---
     const [selectedTasks, setSelectedTasks] = useState<(number|string)[]>([]);
 
-    // --- СТЕЙТЫ ФОРМ ---
     const [formReport, setFormReport] = useState({ content: '', leads: '', deals: '' });
     const [formTask, setFormTask] = useState({ id: '', title: '', description: '', priority: 'medium', status: 'todo' });
     
@@ -53,12 +48,9 @@ export default function DashboardScreen() {
     });
 
     const [formPayment, setFormPayment] = useState({ 
-        deal: '', amount: '', currency: 1, method: 'cash' 
+        deal: '', amount: '', currency: 1, method: 'cash', net_income_usd: 0 
     });
 
-    // ==========================================
-    // OFFLINE-FIRST ЛОГИКА ДЛЯ ЗАДАЧ
-    // ==========================================
     const getOfflineTasks = async () => {
         const stored = await getToken('offline_tasks');
         return stored ? JSON.parse(stored) : [];
@@ -81,18 +73,16 @@ export default function DashboardScreen() {
 
         for (const task of offlineTasks) {
             try {
-                // Если задача была отмечена на удаление локально, мы ее просто не отправляем
                 if (task.markedForDeletion) continue; 
-
                 await apiClient.post('/tasks/', {
                     title: task.title,
                     description: task.description,
                     priority: task.priority,
-                    status: task.status
+                    status: task.status,
+                    assigned_to: task.assigned_to // ИСПРАВЛЕНИЕ: Добавили assigned_to для устранения ошибки 400!
                 });
                 syncedCount++;
             } catch (e) {
-                // Если нет инета - оставляем в локальной очереди
                 remainingOffline.push(task);
             }
         }
@@ -101,12 +91,11 @@ export default function DashboardScreen() {
         if (!silent) {
             setSyncing(false);
             if (syncedCount > 0) Alert.alert("Успешно", `Синхронизировано задач: ${syncedCount}`);
-            else Alert.alert("Ошибка", "Нет связи с сервером.");
+            else Alert.alert("Ошибка", "Нет связи с сервером или ошибка данных.");
         }
-        fetchData(false); // Обновляем экран
+        fetchData(false);
     };
 
-    // --- ЗАГРУЗКА ДАННЫХ ---
     const fetchData = async (showLoading = true) => {
         if (showLoading) setLoading(true);
         try {
@@ -131,7 +120,6 @@ export default function DashboardScreen() {
             if (reportRes.status === 'fulfilled' && reportRes.value.data.id) setHasReportToday(true);
             else setHasReportToday(false);
 
-            // МЕРДЖ ЗАДАЧ С СЕРВЕРА И ЛОКАЛЬНЫХ
             let serverTasks = tasksRes.status === 'fulfilled' ? (tasksRes.value.data.results || tasksRes.value.data) : [];
             const offlineTasks = await getOfflineTasks();
             const activeOfflineTasks = offlineTasks.filter((t: any) => !t.markedForDeletion);
@@ -160,14 +148,12 @@ export default function DashboardScreen() {
         if (type === 'add_task') { setFormTask({ id: '', title: '', description: '', priority: 'medium', status: 'todo' }); }
         if (type === 'edit_task' && taskData) { setFormTask({ ...taskData }); }
         if (type === 'deal' || type === 'payment') {
-            // Подгружаем списки при открытии нужных модалок, если они пусты
             if (type === 'deal' && clientsList.length === 0) apiClient.get('/clients/').then(r => setClientsList(r.data.results || r.data));
             if (type === 'payment' && dealsList.length === 0) apiClient.get('/analytics/deals/').then(r => setDealsList(r.data.results || r.data));
         }
         setActiveModal(type);
     };
 
-    // --- КАНБАН ЭКШЕНЫ ---
     const toggleSelectTask = (id: number | string) => {
         if (selectedTasks.includes(id)) setSelectedTasks(selectedTasks.filter(tId => tId !== id));
         else setSelectedTasks([...selectedTasks, id]);
@@ -184,8 +170,6 @@ export default function DashboardScreen() {
                     style: action === 'delete' ? "destructive" : "default",
                     onPress: async () => {
                         setLoading(true);
-                        
-                        // Обрабатываем оффлайн-задачи
                         let offlineTasks = await getOfflineTasks();
                         
                         for (const id of selectedTasks) {
@@ -196,18 +180,14 @@ export default function DashboardScreen() {
                                     if (action === 'done') offlineTasks[idx].status = 'done';
                                 }
                             } else {
-                                // Серверные задачи
                                 try {
                                     if (action === 'done') await apiClient.patch(`/tasks/${id}/`, { status: 'done' });
                                     if (action === 'delete') await apiClient.delete(`/tasks/${id}/`);
                                 } catch (e) { console.error(`Ошибка с задачей ${id}`, e); }
                             }
                         }
-                        
-                        // Если удалили оффлайн, чистим массив
                         offlineTasks = offlineTasks.filter((t: any) => !t.markedForDeletion);
                         await saveOfflineTasks(offlineTasks);
-
                         setSelectedTasks([]);
                         fetchData(false);
                     }
@@ -216,7 +196,6 @@ export default function DashboardScreen() {
         );
     };
 
-    // --- ЛОГИКА СМЕНЫ ---
     const handleShiftToggle = async () => {
         if (!shiftActive) {
             try {
@@ -253,7 +232,6 @@ export default function DashboardScreen() {
         } catch (e) { Alert.alert("Ошибка", "Не удалось взять заявку."); }
     };
 
-    // --- ПОИСК ВУЗОВ И АВТОПОДСТАНОВКА ЦЕН ---
     const uniqueCountries = Array.from(new Set(universitiesList.map(u => u.country))).filter(Boolean);
     const filteredUnis = universitiesList
         .filter(u => u.country === selectedCountry)
@@ -281,7 +259,6 @@ export default function DashboardScreen() {
         });
     };
 
-    // --- ОТПРАВКА ФОРМ ---
     const submitForm = async (type: string) => {
         setSubmitLoading(true);
         try {
@@ -296,8 +273,6 @@ export default function DashboardScreen() {
             } 
             else if (type === 'add_task') {
                 if (!formTask.title) throw new Error("Укажите заголовок задачи");
-                
-                // СОЗДАЕМ ОФФЛАЙН ЗАДАЧУ
                 const newTask = {
                     id: `temp_${Date.now()}`,
                     title: formTask.title,
@@ -307,23 +282,18 @@ export default function DashboardScreen() {
                     isOffline: true,
                     assigned_to: currentUser?.id
                 };
-
                 const offlineTasks = await getOfflineTasks();
                 offlineTasks.push(newTask);
                 await saveOfflineTasks(offlineTasks);
-                
-                setTasks(prev => [newTask, ...prev]); // Оптимистичный UI
+                setTasks(prev => [newTask, ...prev]); 
                 setFormTask({ id: '', title: '', description: '', priority: 'medium', status: 'todo' });
                 setActiveModal(null);
-                
-                syncOfflineTasks(true); // Пробуем отправить в фоне незаметно
+                syncOfflineTasks(true); 
                 return;
             }
             else if (type === 'edit_task') {
                 if (!formTask.title) throw new Error("Укажите заголовок задачи");
-                
                 if (typeof formTask.id === 'string' && formTask.id.startsWith('temp_')) {
-                    // Редактируем локальную
                     const offlineTasks = await getOfflineTasks();
                     const idx = offlineTasks.findIndex((t: any) => t.id === formTask.id);
                     if (idx > -1) {
@@ -331,10 +301,8 @@ export default function DashboardScreen() {
                         await saveOfflineTasks(offlineTasks);
                     }
                 } else {
-                    // Редактируем серверную
                     await apiClient.patch(`/tasks/${formTask.id}/`, formTask);
                 }
-                
                 setActiveModal(null);
                 fetchData(false);
             }
@@ -361,26 +329,33 @@ export default function DashboardScreen() {
             }
             else if (type === 'payment') {
                 if (!formPayment.deal || !formPayment.amount) throw new Error("Выберите сделку и укажите сумму");
-                await apiClient.post('/analytics/payments/', formPayment);
+                
+                // ИСПРАВЛЕНИЕ: Гарантированно парсим amount в float
+                const payload = { 
+                    ...formPayment, 
+                    amount: parseFloat(formPayment.amount),
+                    net_income_usd: 0 
+                };
+                
+                await apiClient.post('/analytics/payments/', payload);
                 Alert.alert("✅ Успешно", "Платёж зафиксирован!");
                 setActiveModal(null);
                 router.push('/crm'); 
             }
         } catch (error: any) {
+            console.log(error.response?.data);
             Alert.alert("Ошибка", error.response?.data?.detail || error.message || "Сбой при отправке данных");
         } finally {
             setSubmitLoading(false);
         }
     };
 
-    // ФИЛЬТРАЦИЯ ДАННЫХ ДЛЯ ОТОБРАЖЕНИЯ
     const newLeads = leads.filter(l => l.status === 'new');
     const myTasks = tasks.filter(t => t.isOffline || (currentUser && t.assigned_to === currentUser.id));
     const tasksTodo = myTasks.filter(t => t.status === 'todo');
     const tasksProcess = myTasks.filter(t => t.status === 'process' || t.status === 'review');
     const tasksDone = myTasks.filter(t => t.status === 'done');
 
-    // ФИНАНСОВАЯ АНАЛИТИКА (Из сериализатора Users)
     const salaryInfo = currentUser?.managersalary || { monthly_plan: 0, current_month_revenue: 0, current_balance: 0, fixed_salary: 0, motivation_target: 0, motivation_reward: 0 };
     const planProgress = salaryInfo.monthly_plan > 0 ? Math.min((salaryInfo.current_month_revenue / salaryInfo.monthly_plan) * 100, 100) : 0;
     const leftToMot = Math.max(salaryInfo.motivation_target - salaryInfo.current_month_revenue, 0);
@@ -391,7 +366,6 @@ export default function DashboardScreen() {
         <ScreenWrapper>
             <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} tintColor="#fff" />} contentContainerStyle={{ paddingBottom: 100 }}>
                 
-                {/* 1. ФИНАНСОВЫЕ KPI И АНАЛИТИКА */}
                 <Text style={styles.sectionTitle}>📈 Мои показатели</Text>
                 <BlurView intensity={40} tint="dark" style={styles.kpiCard}>
                     <View style={styles.kpiRow}>
@@ -416,7 +390,6 @@ export default function DashboardScreen() {
                     </View>
                 </BlurView>
 
-                {/* 2. БЛОК СМЕНЫ И БЫСТРЫЕ ДЕЙСТВИЯ */}
                 <BlurView intensity={50} tint="dark" style={styles.glassCard}>
                     <View style={styles.shiftHeader}>
                         <View style={styles.shiftInfo}>
@@ -453,7 +426,6 @@ export default function DashboardScreen() {
                     </View>
                 </BlurView>
 
-                {/* 3. ЛИДЫ (ТОЛЬКО НОВЫЕ) */}
                 <Text style={styles.sectionTitle}>🔥 Новые заявки с сайта</Text>
                 {newLeads.length === 0 ? (
                     <Text style={styles.emptyText}>Актуальных заявок нет</Text>
@@ -471,7 +443,6 @@ export default function DashboardScreen() {
                     ))
                 )}
 
-                {/* 4. КАНБАН ДОСКА С ВЫДЕЛЕНИЕМ */}
                 <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 20}}>
                     <Text style={styles.sectionTitle}>📋 Мои задачи</Text>
                     <View style={{flexDirection: 'row', gap: 10}}>
@@ -486,7 +457,6 @@ export default function DashboardScreen() {
                     </View>
                 </View>
                 
-                {/* ФУНКЦИЯ РЕНДЕРА КАРТОЧКИ ЗАДАЧИ */}
                 {(() => {
                     const renderTaskCard = (task: any, indicatorColor: string) => {
                         const isSelected = selectedTasks.includes(task.id);
@@ -534,7 +504,6 @@ export default function DashboardScreen() {
 
             </ScrollView>
 
-            {/* ВСПЛЫВАЮЩАЯ ПАНЕЛЬ ПАКЕТНЫХ ДЕЙСТВИЙ */}
             {selectedTasks.length > 0 && (
                 <View style={styles.batchActionBar}>
                     <Text style={{color: '#fff', fontWeight: 'bold', marginRight: 10}}>{selectedTasks.length} выбрано</Text>
@@ -549,7 +518,6 @@ export default function DashboardScreen() {
                 </View>
             )}
 
-            {/* --- УНИВЕРСАЛЬНАЯ МОДАЛКА --- */}
             <Modal visible={activeModal !== null} animationType="slide" transparent>
                 <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
                     <BlurView intensity={90} tint="dark" style={styles.modalContent}>
@@ -568,7 +536,6 @@ export default function DashboardScreen() {
 
                         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
                             
-                            {/* --- ФОРМА ОТЧЕТА --- */}
                             {activeModal === 'report' && (
                                 <>
                                     <Text style={styles.label}>Что проделано за день?</Text>
@@ -586,7 +553,6 @@ export default function DashboardScreen() {
                                 </>
                             )}
 
-                            {/* --- ФОРМА ЗАДАЧИ --- */}
                             {(activeModal === 'add_task' || activeModal === 'edit_task') && (
                                 <>
                                     {formTask.id.toString().startsWith('temp_') && (
@@ -619,7 +585,6 @@ export default function DashboardScreen() {
                                 </>
                             )}
 
-                            {/* --- ФОРМА КЛИЕНТА --- */}
                             {activeModal === 'client' && (
                                 <>
                                     <Text style={styles.sectionSubTitle}>Личные данные</Text>
@@ -676,7 +641,6 @@ export default function DashboardScreen() {
                                 </>
                             )}
 
-                            {/* --- ФОРМА СДЕЛКИ --- */}
                             {activeModal === 'deal' && (
                                 <>
                                     <Text style={styles.label}>Выберите Клиента *</Text>
@@ -757,7 +721,6 @@ export default function DashboardScreen() {
                                 </>
                             )}
 
-                            {/* --- ФОРМА ПЛАТЕЖА --- */}
                             {activeModal === 'payment' && (
                                 <>
                                     <Text style={styles.label}>Основание (Выберите сделку) *</Text>
@@ -802,7 +765,6 @@ const styles = StyleSheet.create({
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     glassCard: { padding: 20, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', backgroundColor: 'rgba(0,0,0,0.2)', marginBottom: 25 },
     
-    // Стили Финансов
     kpiCard: { padding: 20, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(59, 130, 246, 0.3)', backgroundColor: 'rgba(30, 58, 138, 0.2)', marginBottom: 25 },
     kpiRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
     kpiBox: { flex: 1 },
@@ -834,7 +796,6 @@ const styles = StyleSheet.create({
     takeBtnText: { color: '#60a5fa', fontSize: 12, fontWeight: 'bold' },
     emptyText: { color: 'rgba(255,255,255,0.4)', fontSize: 14, textAlign: 'center', paddingVertical: 10 },
     
-    // Стили Канбан
     addTaskBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(59,130,246,0.3)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
     syncBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(16,185,129,0.3)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
     syncBtnText: { color: '#fff', fontSize: 12, fontWeight: 'bold', marginLeft: 4 },
@@ -845,12 +806,10 @@ const styles = StyleSheet.create({
     taskText: { color: '#fff', fontSize: 14, fontWeight: '500', flex: 1 },
     emptyKanbanText: { color: 'rgba(255,255,255,0.3)', fontSize: 12, marginLeft: 5, fontStyle: 'italic' },
 
-    // Плавающая панель пакетных действий
     batchActionBar: { position: 'absolute', bottom: 100, left: 20, right: 20, backgroundColor: 'rgba(31, 41, 55, 0.95)', borderRadius: 20, padding: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#000', shadowOffset: {width: 0, height: 10}, shadowOpacity: 0.5, shadowRadius: 10 },
     batchBtn: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 10 },
     batchBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
 
-    // Стили Модалки и Инпутов
     modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
     modalContent: { borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 25, maxHeight: '90%', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },

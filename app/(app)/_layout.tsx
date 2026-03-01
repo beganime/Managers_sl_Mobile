@@ -42,6 +42,7 @@ export default function AppLayout() {
                 }
             }}
         >
+            {/* --- ОСНОВНЫЕ ВКЛАДКИ --- */}
             <Tabs.Screen
                 name="index"
                 options={{
@@ -56,7 +57,6 @@ export default function AppLayout() {
                     tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
                 }}
             />
-            {/* Заменили tasks на leaderboard */}
             <Tabs.Screen
                 name="leaderboard"
                 options={{
@@ -78,6 +78,13 @@ export default function AppLayout() {
                     tabBarIcon: ({ color, size }) => <Ionicons name="person-circle" size={size} color={color} />,
                 }}
             />
+
+            {/* --- СКРЫТЫЕ СТРАНИЦЫ (ОСТАВЛЕНО ТОЛЬКО href: null) --- */}
+            <Tabs.Screen name="client/[id]" options={{ href: null, headerShown: false }} />
+            <Tabs.Screen name="deal/[id]" options={{ href: null, headerShown: false }} />
+            <Tabs.Screen name="deal/create" options={{ href: null, headerShown: false }} />
+            <Tabs.Screen name="payment/create" options={{ href: null, headerShown: false }} />
+            <Tabs.Screen name="university/[id]" options={{ href: null, headerShown: false }} />
         </Tabs>
     );
 }
