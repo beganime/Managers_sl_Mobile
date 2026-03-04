@@ -61,9 +61,9 @@ export default function LoginScreen() {
 
         setLoading(true);
         try {
-            // АДАПТАЦИЯ ПОД БЭКЕНД: В users/urls.py путь 'token/' 
-            // С учетом префикса в students_life/urls.py ('api/users/') получается '/users/token/'
-            const response = await apiClient.post('/users/token/', { 
+            // Исправленный путь: теперь запрос идет на /api/token/ 
+            // (предполагается, что apiClient добавляет /api/ автоматически)
+            const response = await apiClient.post('token/', { 
                 email: email.trim(), 
                 password: password 
             });
@@ -76,7 +76,7 @@ export default function LoginScreen() {
                 await saveToken('remember_me', 'true');
             }
 
-            // ИСПРАВЛЕНИЕ: Мгновенный редирект в основной стек (app)
+            // Мгновенный редирект в основной стек (app)
             router.replace('/(app)');
             
         } catch (error: any) {
@@ -95,16 +95,16 @@ export default function LoginScreen() {
         >
             {/* Анимированный премиальный фон */}
             <View style={StyleSheet.absoluteFillObject}>
-                <LinearGradient colors={['#FFFFFF', '#F0F4F8']} style={StyleSheet.absoluteFillObject} />
+                <LinearGradient colors={['#F8FAFC', '#E2E8F0']} style={StyleSheet.absoluteFillObject} />
                 
                 {/* Синяя сфера */}
                 <Animated.View style={[
                     styles.orb, 
                     { 
-                        top: '10%', 
+                        top: '5%', 
                         left: orb1X, 
                         backgroundColor: '#0D416D', 
-                        opacity: 0.15 
+                        opacity: 0.08 
                     }
                 ]} />
                 
@@ -112,24 +112,24 @@ export default function LoginScreen() {
                 <Animated.View style={[
                     styles.orb, 
                     { 
-                        bottom: '15%', 
+                        bottom: '10%', 
                         right: orb1X, 
                         top: orb2Y,
                         backgroundColor: '#B71D17', 
-                        opacity: 0.1,
-                        width: 400,
-                        height: 400
+                        opacity: 0.05,
+                        width: 500,
+                        height: 500
                     }
                 ]} />
             </View>
 
             <View style={styles.content}>
                 {/* Максимальный эффект стекла (Glassmorphism) */}
-                <BlurView intensity={Platform.OS === 'ios' ? 45 : 90} tint="extraLight" style={styles.glassCard}>
+                <BlurView intensity={Platform.OS === 'ios' ? 45 : 90} tint="light" style={styles.glassCard}>
                     <View style={styles.header}>
-                        {/* Интеграция SVG логотипа */}
+                        {/* Интеграция SVG логотипа (немного уменьшен для изящности) */}
                         <View style={styles.logoWrapper}>
-                            <Svg width="220" height="52" viewBox="0 0 271 65" fill="none">
+                            <Svg width="180" height="42" viewBox="0 0 271 65" fill="none">
                                 <Path d="M27.6688 47.1472C33.1961 47.1472 37.6768 42.6671 37.6768 37.1408C37.6768 31.6144 33.1961 27.1344 27.6688 27.1344C22.1415 27.1344 17.6608 31.6144 17.6608 37.1408C17.6608 42.6671 22.1415 47.1472 27.6688 47.1472Z" fill="#0D416D"/>
                                 <Path d="M40.2732 34.8842C41.0691 34.8842 41.7143 34.239 41.7143 33.4431C41.7143 32.6472 41.0691 32.002 40.2732 32.002C39.4773 32.002 38.8322 32.6472 38.8322 33.4431C38.8322 34.239 39.4773 34.8842 40.2732 34.8842Z" fill="#B71D17"/>
                                 <Path d="M41.0048 16.4604H13.3982V19.6324H41.0048V16.4604Z" fill="#B71D17"/>
@@ -168,7 +168,7 @@ export default function LoginScreen() {
                     <View style={styles.form}>
                         <Text style={styles.label}>Электронная почта</Text>
                         <View style={styles.inputContainer}>
-                            <Ionicons name="mail-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
+                            <Ionicons name="mail-outline" size={18} color="#64748B" style={styles.inputIcon} />
                             <TextInput
                                 style={styles.input}
                                 placeholder="manager@studentslife.com"
@@ -182,7 +182,7 @@ export default function LoginScreen() {
 
                         <Text style={styles.label}>Пароль доступа</Text>
                         <View style={styles.inputContainer}>
-                            <Ionicons name="lock-closed-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
+                            <Ionicons name="lock-closed-outline" size={18} color="#64748B" style={styles.inputIcon} />
                             <TextInput
                                 style={styles.input}
                                 placeholder="••••••••"
@@ -197,7 +197,7 @@ export default function LoginScreen() {
                             >
                                 <Ionicons 
                                     name={showPassword ? "eye-off" : "eye"} 
-                                    size={22} 
+                                    size={20} 
                                     color="#64748B" 
                                 />
                             </TouchableOpacity>
@@ -209,7 +209,7 @@ export default function LoginScreen() {
                                 onPress={() => setRememberMe(!rememberMe)}
                             >
                                 <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
-                                    {rememberMe && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                                    {rememberMe && <Ionicons name="checkmark" size={12} color="#FFF" />}
                                 </View>
                                 <Text style={styles.checkboxLabel}>Запомнить меня</Text>
                             </Pressable>
@@ -219,20 +219,23 @@ export default function LoginScreen() {
                             style={[styles.loginButton, loading && styles.disabledButton]} 
                             onPress={handleLogin}
                             disabled={loading}
+                            activeOpacity={0.8}
                         >
-                            {loading ? (
-                                <ActivityIndicator color="#FFF" />
-                            ) : (
-                                <LinearGradient
-                                    colors={['#0D416D', '#1E40AF']}
-                                    start={{x: 0, y: 0}}
-                                    end={{x: 1, y: 0}}
-                                    style={styles.gradientButton}
-                                >
-                                    <Text style={styles.loginButtonText}>Войти в аккаунт</Text>
-                                    <Ionicons name="chevron-forward" size={18} color="#FFF" />
-                                </LinearGradient>
-                            )}
+                            <LinearGradient
+                                colors={['#0D416D', '#164E80']}
+                                start={{x: 0, y: 0}}
+                                end={{x: 1, y: 0}}
+                                style={styles.gradientButton}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator color="#FFF" />
+                                ) : (
+                                    <>
+                                        <Text style={styles.loginButtonText}>Войти в систему</Text>
+                                        <Ionicons name="arrow-forward" size={18} color="#FFF" />
+                                    </>
+                                )}
+                            </LinearGradient>
                         </TouchableOpacity>
                     </View>
 
@@ -249,125 +252,130 @@ const styles = StyleSheet.create({
     },
     orb: {
         position: 'absolute',
-        width: 450,
-        height: 450,
-        borderRadius: 225,
+        width: 400,
+        height: 400,
+        borderRadius: 200,
+        filter: Platform.OS === 'web' ? 'blur(60px)' : undefined, // Усиленный блюр для Web
     },
     content: {
         flex: 1,
         justifyContent: 'center',
-        paddingHorizontal: 24,
+        paddingHorizontal: 20,
     },
     glassCard: {
-        borderRadius: 40,
-        padding: 32,
-        backgroundColor: 'rgba(255, 255, 255, 0.25)', 
+        borderRadius: 32,
+        padding: 28,
+        backgroundColor: 'rgba(255, 255, 255, 0.65)', 
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.4)',
+        borderColor: 'rgba(255, 255, 255, 0.9)',
         overflow: 'hidden',
         ...Platform.select({
             ios: {
                 shadowColor: '#000',
-                shadowOffset: { width: 0, height: 20 },
-                shadowOpacity: 0.1,
-                shadowRadius: 30,
+                shadowOffset: { width: 0, height: 10 },
+                shadowOpacity: 0.05,
+                shadowRadius: 20,
             },
             android: {
-                elevation: 10,
+                elevation: 4,
             },
         }),
     },
     header: {
         alignItems: 'center',
-        marginBottom: 40,
+        marginBottom: 32,
     },
     logoWrapper: {
-        marginBottom: 12,
+        marginBottom: 8,
         alignItems: 'center',
         justifyContent: 'center',
     },
     subtitle: {
-        fontSize: 13,
-        color: '#475569',
-        marginTop: 6,
+        fontSize: 12,
+        color: '#64748B',
+        marginTop: 4,
         fontWeight: '600',
-        letterSpacing: 0.3,
-        opacity: 0.7,
+        letterSpacing: 0.5,
     },
     form: {
         width: '100%',
     },
     label: {
         fontSize: 11,
-        fontWeight: '900',
-        color: '#1E293B',
-        marginBottom: 10,
-        marginLeft: 6,
+        fontWeight: '700',
+        color: '#475569',
+        marginBottom: 8,
+        marginLeft: 4,
         textTransform: 'uppercase',
-        letterSpacing: 1.2,
+        letterSpacing: 1,
     },
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.7)',
-        borderRadius: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.85)',
+        borderRadius: 16,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.8)',
-        marginBottom: 24,
-        height: 64,
-        paddingHorizontal: 20,
+        borderColor: '#E2E8F0',
+        marginBottom: 20,
+        height: 54,
+        paddingHorizontal: 16,
     },
     inputIcon: {
-        marginRight: 12,
+        marginRight: 10,
     },
     input: {
         flex: 1,
-        fontSize: 16,
+        fontSize: 15,
         color: '#0F172A',
         fontWeight: '600',
+        ...Platform.select({
+            web: {
+                outlineStyle: 'none',
+            }
+        })
     },
     eyeIcon: {
-        padding: 8,
+        padding: 6,
     },
     optionsRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 32,
+        marginBottom: 28,
     },
     checkboxContainer: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     checkbox: {
-        width: 24,
-        height: 24,
-        borderRadius: 8,
-        borderWidth: 2,
+        width: 20,
+        height: 20,
+        borderRadius: 6,
+        borderWidth: 1.5,
         borderColor: '#94A3B8',
-        marginRight: 12,
+        marginRight: 10,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.5)',
+        backgroundColor: 'rgba(255, 255, 255, 0.6)',
     },
     checkboxChecked: {
         backgroundColor: '#0D416D',
         borderColor: '#0D416D',
     },
     checkboxLabel: {
-        fontSize: 14,
-        color: '#1E293B',
-        fontWeight: '700',
+        fontSize: 13,
+        color: '#334155',
+        fontWeight: '600',
     },
     loginButton: {
-        borderRadius: 22,
-        height: 66,
+        borderRadius: 16,
+        height: 56,
         overflow: 'hidden',
         shadowColor: '#0D416D',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.3,
-        shadowRadius: 20,
-        elevation: 12,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.25,
+        shadowRadius: 16,
+        elevation: 8,
     },
     gradientButton: {
         flex: 1,
@@ -377,22 +385,21 @@ const styles = StyleSheet.create({
     },
     loginButtonText: {
         color: '#FFFFFF',
-        fontSize: 18,
-        fontWeight: '800',
-        marginRight: 10,
-        letterSpacing: 0.8,
+        fontSize: 15,
+        fontWeight: '700',
+        marginRight: 8,
+        letterSpacing: 0.5,
     },
     disabledButton: {
-        opacity: 0.6,
+        opacity: 0.7,
     },
     versionText: {
         textAlign: 'center',
-        marginTop: 28,
+        marginTop: 24,
         fontSize: 10,
-        color: '#64748B',
-        fontWeight: '800',
-        letterSpacing: 2,
+        color: '#94A3B8',
+        fontWeight: '700',
+        letterSpacing: 1.5,
         textTransform: 'uppercase',
-        opacity: 0.7,
     }
 });

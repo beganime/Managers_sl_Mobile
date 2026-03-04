@@ -1,9 +1,13 @@
 // app/_layout.tsx
 import { Stack, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'react-native';
 import AnimatedSplash from '../components/AnimatedSplash';
 import { getToken } from '../src/utils/storage';
+
+// Запрещаем автоматическое скрытие нативного сплеш-скрина
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
@@ -13,22 +17,27 @@ export default function RootLayout() {
   const segments = useSegments();
   const router = useRouter();
 
-  // Проверяем наличие токена при старте
+  // Проверяем наличие токена при старте И при каждом переходе по страницам
   useEffect(() => {
     const checkAuth = async () => {
       try {
         const token = await getToken('access_token');
-        setIsAuthenticated(!!token);
+        setIsAuthenticated(!!token); // Если токен есть - true, если удален - false
       } catch (e) {
         setIsAuthenticated(false);
       } finally {
-        setIsReady(true);
+        if (!isReady) {
+          setIsReady(true);
+          // Скрываем нативный сплеш-скрин, как только стейт готов при первом запуске
+          await SplashScreen.hideAsync();
+        }
       }
     };
+    
     checkAuth();
-  }, []);
+  }, [segments]); // <-- Добавили segments сюда. Теперь проверка актуальна всегда.
 
-  // Логика редиректа срабатывает, когда и данные загружены, и анимация завершена
+  // Логика редиректа срабатывает, когда данные загружены и анимация завершена
   useEffect(() => {
     if (!isReady || showSplashAnimation) return;
 
@@ -36,8 +45,10 @@ export default function RootLayout() {
     const isLoginScreen = segments[0] === 'login';
     
     if (!isAuthenticated && !isLoginScreen) {
+      // Если токена нет, а мы не на странице логина - выкидываем на логин
       router.replace('/login');
     } else if (isAuthenticated && isLoginScreen) {
+      // Если токен есть, а мы пытаемся зайти на логин - пускаем в приложение
       router.replace('/(app)');
     }
   }, [isAuthenticated, isReady, showSplashAnimation, segments]);

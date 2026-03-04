@@ -9,40 +9,55 @@ export default function AppLayout() {
     return (
         <Tabs
             screenOptions={{
+                // Настройки шапки остаются без изменений (простое стекло)
                 headerTransparent: true,
                 headerBackground: () => (
-                    // Светлое стекло для шапки
                     <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />
                 ),
                 headerTitleStyle: {
-                    color: '#0F172A', // Темный цвет заголовка
+                    color: '#0F172A',
                     fontWeight: '900',
                     fontSize: 18,
                 },
                 headerTitleAlign: 'center',
                 
+                // --- ПРЕМИАЛЬНАЯ ПАРЯЩАЯ НАВИГАЦИЯ ---
                 tabBarStyle: {
                     position: 'absolute',
-                    bottom: 0,
-                    elevation: 0, 
-                    borderTopWidth: 1, 
-                    borderTopColor: 'rgba(255, 255, 255, 0.7)', // Легкая белая граница сверху
+                    bottom: Platform.OS === 'ios' ? 25 : 15, // Отступ от нижнего края экрана
+                    left: 20, // Отступ слева
+                    right: 20, // Отступ справа
+                    elevation: 10, // Тень для Android
+                    shadowColor: '#0D416D', // Тень для iOS
+                    shadowOffset: { width: 0, height: 10 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 20,
                     backgroundColor: 'transparent',
-                    height: Platform.OS === 'ios' ? 85 : 70, 
+                    borderTopWidth: 0, // Убираем стандартную полоску
+                    height: 70, // Высота самого островка
+                    borderRadius: 35, // Закругления по краям
+                    overflow: 'hidden', // Чтобы блюр не вылезал за скругления
                 },
+                // Задний фон таб-бара делаем матовым стеклом
                 tabBarBackground: () => (
-                    // Светлое стекло для нижней панели
-                    <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFillObject} />
+                    <BlurView intensity={60} tint="light" style={StyleSheet.absoluteFillObject} />
                 ),
                 
-                tabBarActiveTintColor: '#0D416D', // Фирменный цвет для активной иконки
-                tabBarInactiveTintColor: '#94A3B8', // Серо-голубой для неактивных иконок
+                // Настройка активных/неактивных элементов
+                tabBarActiveTintColor: '#0D416D', 
+                tabBarInactiveTintColor: '#94A3B8', 
                 tabBarShowLabel: true,
+                tabBarItemStyle: {
+                    paddingTop: 8,
+                    paddingBottom: 8,
+                },
                 tabBarLabelStyle: {
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: '800',
-                    marginBottom: Platform.OS === 'ios' ? 0 : 5,
-                }
+                    marginTop: 2,
+                },
+                // Прячем таб-бар при открытии клавиатуры на Android
+                tabBarHideOnKeyboard: true, 
             }}
         >
             {/* --- ОСНОВНЫЕ ВКЛАДКИ --- */}
@@ -50,42 +65,53 @@ export default function AppLayout() {
                 name="index"
                 options={{
                     title: 'Дашборд',
-                    tabBarIcon: ({ color, size }) => <Ionicons name="apps" size={size} color={color} />,
+                    tabBarIcon: ({ color, size, focused }) => (
+                        <Ionicons name={focused ? "apps" : "apps-outline"} size={size} color={color} />
+                    ),
                 }}
             />
             <Tabs.Screen
                 name="crm"
                 options={{
                     title: 'CRM',
-                    tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
+                    tabBarIcon: ({ color, size, focused }) => (
+                        <Ionicons name={focused ? "people" : "people-outline"} size={size} color={color} />
+                    ),
                 }}
             />
             <Tabs.Screen
                 name="leaderboard"
                 options={{
                     title: 'Рейтинг',
-                    tabBarIcon: ({ color, size }) => <Ionicons name="trophy" size={size} color={color} />,
+                    tabBarIcon: ({ color, size, focused }) => (
+                        <Ionicons name={focused ? "trophy" : "trophy-outline"} size={size} color={color} />
+                    ),
                 }}
             />
             <Tabs.Screen
                 name="catalog"
                 options={{
                     title: 'Каталог',
-                    tabBarIcon: ({ color, size }) => <Ionicons name="library" size={size} color={color} />,
+                    tabBarIcon: ({ color, size, focused }) => (
+                        <Ionicons name={focused ? "library" : "library-outline"} size={size} color={color} />
+                    ),
                 }}
             />
             <Tabs.Screen
                 name="profile"
                 options={{
                     title: 'Профиль',
-                    tabBarIcon: ({ color, size }) => <Ionicons name="person-circle" size={size} color={color} />,
+                    tabBarIcon: ({ color, size, focused }) => (
+                        <Ionicons name={focused ? "person-circle" : "person-circle-outline"} size={size} color={color} />
+                    ),
                 }}
             />
 
-            {/* --- СКРЫТЫЕ СТРАНИЦЫ (ОСТАВЛЕНО ТОЛЬКО href: null) --- */}
+            {/* --- СКРЫТЫЕ СТРАНИЦЫ --- */}
             <Tabs.Screen name="client/[id]" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="deal/[id]" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="add-deal" options={{ href: null, headerShown: false }} />
+            <Tabs.Screen name="create-document" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="add-client" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="payment/create" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="university/[id]" options={{ href: null, headerShown: false }} />

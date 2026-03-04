@@ -1,7 +1,7 @@
-// src/components/ScreenWrapper.tsx
+// components/ScreenWrapper.tsx
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { Dimensions, StyleSheet, View } from 'react-native';
+import { Dimensions, Platform, StyleSheet, View } from 'react-native'; // Добавлен Platform
 
 const { width, height } = Dimensions.get('window');
 

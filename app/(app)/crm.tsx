@@ -24,7 +24,6 @@ export default function CRMScreen() {
 
     const loadData = async () => {
         try {
-            // Убрали начальные слеши для правильной работы Axios baseURL
             const clientsResult = await fetchWithCache('clients/', 'cache_clients');
             const offlineClients = JSON.parse(await getToken('offline_clients') || '[]');
             setClients([...offlineClients, ...(clientsResult.data?.results || clientsResult.data || [])]);
@@ -51,7 +50,6 @@ export default function CRMScreen() {
         }, [])
     );
 
-    // --- МОЩНАЯ ЛОГИКА СИНХРОНИЗАЦИИ ---
     const syncOfflineData = async () => {
         setSyncing(true);
         let syncedCount = 0;
@@ -153,10 +151,17 @@ export default function CRMScreen() {
 
             <View style={styles.pageHeader}>
                 <Text style={styles.pageTitle}>CRM База</Text>
-                <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/add-client')}>
-                    <Ionicons name="add" size={20} color="#FFF" />
-                    <Text style={styles.addBtnText}>Клиент</Text>
-                </TouchableOpacity>
+                {/* --- БЛОК КНОПОК В ШАПКЕ --- */}
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity style={styles.aiBtn} onPress={() => router.push('/create-document' as any)}>
+                        <Ionicons name="color-wand" size={18} color="#FFF" />
+                        <Text style={styles.addBtnText}>Документ</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/add-client')}>
+                        <Ionicons name="add" size={20} color="#FFF" />
+                        <Text style={styles.addBtnText}>Клиент</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {setRefreshing(true); loadData();}} tintColor="#0D416D" />}>
@@ -241,8 +246,12 @@ const styles = StyleSheet.create({
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     pageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 5 },
     pageTitle: { fontSize: 24, fontWeight: '900', color: '#0F172A' },
-    addBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0D416D', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 16, shadowColor: '#0D416D', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8 },
-    addBtnText: { color: '#FFF', fontWeight: '800', marginLeft: 6, fontSize: 14 },
+    
+    // Новые стили кнопок в шапке
+    addBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0D416D', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, shadowColor: '#0D416D', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8 },
+    aiBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#8b5cf6', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, shadowColor: '#8b5cf6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+    addBtnText: { color: '#FFF', fontWeight: '800', marginLeft: 6, fontSize: 13 },
+    
     syncBanner: { flexDirection: 'row', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: 12, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 15, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.3)' },
     syncText: { color: '#10b981', marginLeft: 8, fontSize: 14, fontWeight: '800' },
     tabsContainer: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.4)', borderRadius: 16, padding: 4, marginBottom: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.6)' },
