@@ -32,7 +32,7 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import RenderHtml from 'react-native-render-html';
 
-// Настройка поведения уведомлений
+// Настройка поведения уведомлений (чтобы они показывались даже если приложение открыто)
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
         shouldShowAlert: true,
@@ -65,7 +65,7 @@ export default function DashboardScreen() {
 
     const [formReport, setFormReport] = useState({ content: '', leads: '', deals: '' });
     
-    // Стейты для задачи (deadline теперь храним как объект Date для пикера)
+    // Стейты для задачи (deadline храним как объект Date для пикера)
     const [formTask, setFormTask] = useState({ id: '', title: '', description: '', priority: 'medium', status: 'todo' });
     const [taskDeadline, setTaskDeadline] = useState<Date | null>(null);
     const [showDatePicker, setShowDatePicker] = useState(false);
@@ -76,7 +76,7 @@ export default function DashboardScreen() {
 
     const moveAnim = useRef(new Animated.Value(0)).current;
 
-    // --- ИНИЦИАЛИЗАЦИЯ ПУШ-УВЕДОМЛЕНИЙ ---
+    // --- ИНИЦИАЛИЗАЦИЯ ПУШ-УВЕДОМЛЕНИЙ И АНИМАЦИИ ---
     useEffect(() => {
         const requestPushPermissions = async () => {
             if (Device.isDevice) {
@@ -146,6 +146,7 @@ export default function DashboardScreen() {
                 }
                 syncedCount++;
             } catch (e: any) {
+                // Если задача уже удалена на сервере (404), считаем её синхронизированной
                 if (e.response?.status === 404) syncedCount++;
                 else remainingOffline.push(task);
             }
@@ -287,7 +288,7 @@ export default function DashboardScreen() {
             } catch (e: any) { if (e.response?.status === 400) setShiftActive(true); }
         } else {
             if (!hasReportToday) {
-                Alert.alert("Внимание", "Сначала отправьте отчет за день!", [{ text: "Написать", onPress: () => setActiveModal('report') }, { text: "Отмена" }]);
+                Alert.alert("Внимание", "Сначала отправьте отчет за смену!", [{ text: "Написать", onPress: () => setActiveModal('report') }, { text: "Отмена" }]);
                 return;
             }
             try { await apiClient.patch('timetracking/shifts/current/'); setShiftActive(false); } catch (e) {}
@@ -339,6 +340,7 @@ export default function DashboardScreen() {
             else if (type === 'add_task') {
                 const deadlineIso = taskDeadline ? taskDeadline.toISOString() : null;
                 const newTask = { id: `temp_${Date.now()}`, ...formTask, deadline: deadlineIso, assigned_to: currentUser?.id, _offlineAction: 'CREATE', isOffline: true };
+                
                 const offline = await getOfflineTasks();
                 offline.push(newTask); 
                 await saveOfflineTasks(offline);
