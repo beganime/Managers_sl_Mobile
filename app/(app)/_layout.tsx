@@ -108,6 +108,7 @@ export default function AppLayout() {
             />
 
             {/* --- СКРЫТЫЕ СТРАНИЦЫ --- */}
+            <Tabs.Screen name="documents" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="client/[id]" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="deal/[id]" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="add-deal" options={{ href: null, headerShown: false }} />

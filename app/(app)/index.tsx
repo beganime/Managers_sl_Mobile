@@ -173,9 +173,13 @@ export default function DashboardScreen() {
                 apiClient.get('users/users/me/')
             ]);
             
-            if (userRes.status === 'fulfilled') setCurrentUser(userRes.value.data);
+            let loadedUser = currentUser;
+            if (userRes.status === 'fulfilled') {
+                loadedUser = userRes.value.data;
+                setCurrentUser(loadedUser);
+            }
+
             if (leadsRes.status === 'fulfilled') setLeads(leadsRes.value.data.results || leadsRes.value.data);
-            
             if (shiftRes.status === 'fulfilled' && shiftRes.value.data.is_active) setShiftActive(true);
             else setShiftActive(false);
 
@@ -185,6 +189,7 @@ export default function DashboardScreen() {
             let serverTasks = tasksRes.status === 'fulfilled' ? (tasksRes.value.data.results || tasksRes.value.data) : [];
             const offlineTasks = await getOfflineTasks();
             
+            // Объединяем серверные задачи с локальными модификациями
             let mergedTasks = [...serverTasks];
             offlineTasks.forEach((offTask: any) => {
                 if (offTask._offlineAction === 'DELETE') {
@@ -197,6 +202,14 @@ export default function DashboardScreen() {
                     mergedTasks.push(offTask);
                 }
             });
+
+            // КЛИЕНТСКАЯ ФИЛЬТРАЦИЯ: Оставляем только те задачи, которые назначены текущему юзеру
+            if (loadedUser?.id) {
+                mergedTasks = mergedTasks.filter(t => 
+                    t.assigned_to === loadedUser.id || 
+                    (typeof t.assigned_to === 'object' && t.assigned_to?.id === loadedUser.id)
+                );
+            }
 
             setTasks(mergedTasks);
 

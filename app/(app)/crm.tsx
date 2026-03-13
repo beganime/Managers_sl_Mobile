@@ -50,6 +50,7 @@ export default function CRMScreen() {
         }, [])
     );
 
+    // --- МОЩНАЯ ЛОГИКА СИНХРОНИЗАЦИИ ---
     const syncOfflineData = async () => {
         setSyncing(true);
         let syncedCount = 0;
@@ -151,11 +152,11 @@ export default function CRMScreen() {
 
             <View style={styles.pageHeader}>
                 <Text style={styles.pageTitle}>CRM База</Text>
-                {/* --- БЛОК КНОПОК В ШАПКЕ --- */}
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TouchableOpacity style={styles.aiBtn} onPress={() => router.push('/create-document' as any)}>
-                        <Ionicons name="color-wand" size={18} color="#FFF" />
-                        <Text style={styles.addBtnText}>Документ</Text>
+                
+                {/* --- НОВЫЙ БЛОК КНОПОК --- */}
+                <View style={{flexDirection: 'row', gap: 10, alignItems: 'center'}}>
+                    <TouchableOpacity style={styles.docBtn} onPress={() => router.push('/documents')}>
+                        <Ionicons name="document-text-outline" size={22} color="#0D416D" />
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/add-client')}>
                         <Ionicons name="add" size={20} color="#FFF" />
@@ -247,10 +248,11 @@ const styles = StyleSheet.create({
     pageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 5 },
     pageTitle: { fontSize: 24, fontWeight: '900', color: '#0F172A' },
     
-    // Новые стили кнопок в шапке
-    addBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0D416D', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, shadowColor: '#0D416D', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8 },
-    aiBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#8b5cf6', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, shadowColor: '#8b5cf6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-    addBtnText: { color: '#FFF', fontWeight: '800', marginLeft: 6, fontSize: 13 },
+    // Новая кнопка документов
+    docBtn: { backgroundColor: 'rgba(255,255,255,0.7)', width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
+    
+    addBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0D416D', height: 44, paddingHorizontal: 16, borderRadius: 14, shadowColor: '#0D416D', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8 },
+    addBtnText: { color: '#FFF', fontWeight: '800', marginLeft: 6, fontSize: 14 },
     
     syncBanner: { flexDirection: 'row', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: 12, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 15, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.3)' },
     syncText: { color: '#10b981', marginLeft: 8, fontSize: 14, fontWeight: '800' },

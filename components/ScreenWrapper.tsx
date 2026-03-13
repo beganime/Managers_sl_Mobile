@@ -1,7 +1,7 @@
 // components/ScreenWrapper.tsx
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { Dimensions, Platform, StyleSheet, View } from 'react-native'; // Добавлен Platform
+import { Dimensions, Platform, StyleSheet, View } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
 
@@ -35,21 +35,23 @@ export default function ScreenWrapper({ children }: ScreenWrapperProps) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F8FAFC', // Светлый фон по умолчанию
+        backgroundColor: '#F8FAFC', 
     },
     circle: {
         position: 'absolute',
         width: width * 1.2,
         height: width * 1.2,
         borderRadius: (width * 1.2) / 2,
-        // Для Web будет работать CSS-фильтр, для Native просто мягкая прозрачность
-        filter: 'blur(80px)', 
+        // Для Web работает CSS-фильтр, для Native просто мягкая прозрачность
+        ...Platform.select({
+            web: { filter: 'blur(80px)' as any },
+            default: {}
+        })
     },
     content: {
         flex: 1,
-        // Отступы, чтобы контент не перекрывался прозрачным хедером и таббаром
-        paddingTop: Platform.OS === 'ios' ? 100 : 90, 
-        paddingBottom: Platform.OS === 'ios' ? 95 : 85,
-        // Убрали paddingHorizontal, чтобы страницы могли делать edge-to-edge дизайн (например, для шапок)
+        // Адаптивные отступы под прозрачный хедер для всех платформ
+        paddingTop: Platform.OS === 'web' ? 80 : (Platform.OS === 'ios' ? 100 : 90), 
+        paddingBottom: Platform.OS === 'web' ? 80 : (Platform.OS === 'ios' ? 95 : 85),
     }
 });
