@@ -5,11 +5,14 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Platform, StyleSheet } from 'react-native';
 
+// ✅ Высота навбара с учётом safe area
+const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 65 : 60;
+const TAB_BAR_BOTTOM = Platform.OS === 'ios' ? 20 : 12;
+
 export default function AppLayout() {
     return (
         <Tabs
             screenOptions={{
-                // Настройки шапки остаются без изменений (простое стекло)
                 headerTransparent: true,
                 headerBackground: () => (
                     <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />
@@ -20,53 +23,54 @@ export default function AppLayout() {
                     fontSize: 18,
                 },
                 headerTitleAlign: 'center',
-                
-                // --- ПРЕМИАЛЬНАЯ ПАРЯЩАЯ НАВИГАЦИЯ ---
+
+                // ✅ ИСПРАВЛЕНИЕ: Корректный парящий таббар без обрезки
                 tabBarStyle: {
                     position: 'absolute',
-                    bottom: Platform.OS === 'ios' ? 25 : 15, // Отступ от нижнего края экрана
-                    left: 20, // Отступ слева
-                    right: 20, // Отступ справа
-                    elevation: 10, // Тень для Android
-                    shadowColor: '#0D416D', // Тень для iOS
-                    shadowOffset: { width: 0, height: 10 },
-                    shadowOpacity: 0.15,
-                    shadowRadius: 20,
+                    bottom: TAB_BAR_BOTTOM,
+                    left: 16,
+                    right: 16,
+                    elevation: 8,
+                    shadowColor: '#0D416D',
+                    shadowOffset: { width: 0, height: 8 },
+                    shadowOpacity: 0.12,
+                    shadowRadius: 16,
                     backgroundColor: 'transparent',
-                    borderTopWidth: 0, // Убираем стандартную полоску
-                    height: 70, // Высота самого островка
-                    borderRadius: 35, // Закругления по краям
-                    overflow: 'hidden', // Чтобы блюр не вылезал за скругления
+                    borderTopWidth: 0,
+                    height: TAB_BAR_HEIGHT,
+                    borderRadius: TAB_BAR_HEIGHT / 2,
+                    overflow: 'hidden',
                 },
-                // Задний фон таб-бара делаем матовым стеклом
                 tabBarBackground: () => (
-                    <BlurView intensity={60} tint="light" style={StyleSheet.absoluteFillObject} />
+                    <BlurView
+                        intensity={70}
+                        tint="light"
+                        style={[StyleSheet.absoluteFillObject, { borderRadius: TAB_BAR_HEIGHT / 2, overflow: 'hidden' }]}
+                    />
                 ),
-                
-                // Настройка активных/неактивных элементов
-                tabBarActiveTintColor: '#0D416D', 
-                tabBarInactiveTintColor: '#94A3B8', 
+
+                tabBarActiveTintColor: '#0D416D',
+                tabBarInactiveTintColor: '#94A3B8',
                 tabBarShowLabel: true,
                 tabBarItemStyle: {
-                    paddingTop: 8,
-                    paddingBottom: 8,
+                    paddingTop: 6,
+                    paddingBottom: Platform.OS === 'ios' ? 6 : 8,
                 },
                 tabBarLabelStyle: {
                     fontSize: 10,
                     fontWeight: '800',
-                    marginTop: 2,
+                    marginTop: 1,
                 },
-                // Прячем таб-бар при открытии клавиатуры на Android
-                tabBarHideOnKeyboard: true, 
+                tabBarHideOnKeyboard: true,
             }}
         >
-            {/* --- ОСНОВНЫЕ ВКЛАДКИ --- */}
+            {/* ОСНОВНЫЕ ВКЛАДКИ */}
             <Tabs.Screen
                 name="index"
                 options={{
-                    title: 'Дашборд',
+                    title: 'Главная',
                     tabBarIcon: ({ color, size, focused }) => (
-                        <Ionicons name={focused ? "apps" : "apps-outline"} size={size} color={color} />
+                        <Ionicons name={focused ? 'apps' : 'apps-outline'} size={size} color={color} />
                     ),
                 }}
             />
@@ -75,7 +79,7 @@ export default function AppLayout() {
                 options={{
                     title: 'CRM',
                     tabBarIcon: ({ color, size, focused }) => (
-                        <Ionicons name={focused ? "people" : "people-outline"} size={size} color={color} />
+                        <Ionicons name={focused ? 'people' : 'people-outline'} size={size} color={color} />
                     ),
                 }}
             />
@@ -84,7 +88,7 @@ export default function AppLayout() {
                 options={{
                     title: 'Рейтинг',
                     tabBarIcon: ({ color, size, focused }) => (
-                        <Ionicons name={focused ? "trophy" : "trophy-outline"} size={size} color={color} />
+                        <Ionicons name={focused ? 'trophy' : 'trophy-outline'} size={size} color={color} />
                     ),
                 }}
             />
@@ -93,7 +97,7 @@ export default function AppLayout() {
                 options={{
                     title: 'Каталог',
                     tabBarIcon: ({ color, size, focused }) => (
-                        <Ionicons name={focused ? "library" : "library-outline"} size={size} color={color} />
+                        <Ionicons name={focused ? 'library' : 'library-outline'} size={size} color={color} />
                     ),
                 }}
             />
@@ -102,12 +106,16 @@ export default function AppLayout() {
                 options={{
                     title: 'Профиль',
                     tabBarIcon: ({ color, size, focused }) => (
-                        <Ionicons name={focused ? "person-circle" : "person-circle-outline"} size={size} color={color} />
+                        <Ionicons
+                            name={focused ? 'person-circle' : 'person-circle-outline'}
+                            size={size}
+                            color={color}
+                        />
                     ),
                 }}
             />
 
-            {/* --- СКРЫТЫЕ СТРАНИЦЫ --- */}
+            {/* СКРЫТЫЕ СТРАНИЦЫ */}
             <Tabs.Screen name="documents" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="client/[id]" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="deal/[id]" options={{ href: null, headerShown: false }} />
@@ -116,6 +124,11 @@ export default function AppLayout() {
             <Tabs.Screen name="add-client" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="payment/create" options={{ href: null, headerShown: false }} />
             <Tabs.Screen name="university/[id]" options={{ href: null, headerShown: false }} />
+            <Tabs.Screen name="knowledge-base"   options={{ href: null, headerShown: false }} />
+            <Tabs.Screen name="admin-staff"      options={{ href: null, headerShown: false }} />
+            <Tabs.Screen name="admin-reports"    options={{ href: null, headerShown: false }} />
+            <Tabs.Screen name="admin-payments"   options={{ href: null, headerShown: false }} />
+            <Tabs.Screen name="tasks"            options={{ href: null, headerShown: false }} />
         </Tabs>
     );
 }

@@ -2,30 +2,33 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { Dimensions, Platform, StyleSheet, View } from 'react-native';
+import { useTheme } from '../src/context/ThemeContext';
 
 const { width, height } = Dimensions.get('window');
 
-interface ScreenWrapperProps {
-    children: React.ReactNode;
+const BOTTOM_PADDING =
+    Platform.OS === 'ios'   ? 65 + 20 + 16 :
+    Platform.OS === 'web'   ? 80            : 60 + 12 + 16;
+
+interface Props {
+    children:   React.ReactNode;
+    noPadding?: boolean;
 }
 
-export default function ScreenWrapper({ children }: ScreenWrapperProps) {
+export default function ScreenWrapper({ children, noPadding }: Props) {
+    const { theme } = useTheme();
+
     return (
-        <View style={styles.container}>
-            {/* Базовый градиент в стиле iOS (Светлая тема) */}
+        <View style={[styles.container, { backgroundColor: theme.bg }]}>
             <LinearGradient
-                colors={['#F8FAFC', '#F1F5F9', '#E2E8F0']}
+                colors={theme.gradientBg as [string, string, ...string[]]}
                 style={StyleSheet.absoluteFillObject}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
             />
-            
-            {/* Декоративные пятна (Блюр) для глубины под матовым стеклом */}
-            <View style={[styles.circle, { top: -height * 0.1, left: -width * 0.2, backgroundColor: '#0D416D', opacity: 0.08 }]} />
-            <View style={[styles.circle, { top: height * 0.4, right: -width * 0.4, backgroundColor: '#10b981', opacity: 0.05 }]} />
-
-            {/* Контент страницы */}
-            <View style={styles.content}>
+            <View style={[styles.circle, { top: -height * 0.1, left: -width * 0.2, backgroundColor: theme.primaryDeep, opacity: 0.07 }]} />
+            <View style={[styles.circle, { top: height * 0.4, right: -width * 0.4, backgroundColor: theme.accent, opacity: 0.05 }]} />
+            <View style={[styles.content, noPadding && styles.noPadding]}>
                 {children}
             </View>
         </View>
@@ -33,25 +36,18 @@ export default function ScreenWrapper({ children }: ScreenWrapperProps) {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#F8FAFC', 
-    },
+    container: { flex: 1 },
     circle: {
         position: 'absolute',
         width: width * 1.2,
         height: width * 1.2,
         borderRadius: (width * 1.2) / 2,
-        // Для Web работает CSS-фильтр, для Native просто мягкая прозрачность
-        ...Platform.select({
-            web: { filter: 'blur(80px)' as any },
-            default: {}
-        })
+        ...Platform.select({ web: { filter: 'blur(80px)' as any }, default: {} }),
     },
     content: {
         flex: 1,
-        // Адаптивные отступы под прозрачный хедер для всех платформ
-        paddingTop: Platform.OS === 'web' ? 80 : (Platform.OS === 'ios' ? 100 : 90), 
-        paddingBottom: Platform.OS === 'web' ? 80 : (Platform.OS === 'ios' ? 95 : 85),
-    }
+        paddingTop: Platform.OS === 'web' ? 80 : Platform.OS === 'ios' ? 100 : 90,
+        paddingBottom: Platform.OS === 'web' ? 80 : BOTTOM_PADDING,
+    },
+    noPadding: { paddingBottom: 0 },
 });
