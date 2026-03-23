@@ -9,7 +9,11 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.beganime.ManagersSL",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -51,7 +55,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "da22e5bd-7b6c-48eb-a871-906b44bec729"
+        "projectId": "98911d49-c99a-492c-94d9-c6c566ba4687"
       }
     }
   }
