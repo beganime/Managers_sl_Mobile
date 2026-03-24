@@ -3,6 +3,7 @@ import { ActivityIndicator, View } from 'react-native';
 import AdminDashboard from '../../components/dashboard/AdminDashboard';
 import ManagerDashboard from '../../components/dashboard/ManagerDashboard';
 import ScreenWrapper from '../../components/ScreenWrapper';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useTheme } from '../../src/context/ThemeContext';
 
 export default function DashboardScreen() {
