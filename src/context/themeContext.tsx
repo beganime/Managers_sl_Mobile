@@ -1,6 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { getToken, saveToken } from '../utils/storage';
-import { STORAGE_KEYS } from '../config/app';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -10,28 +9,31 @@ export interface ThemePalette {
   background: string;
   backgroundSoft: string;
   surface: string;
+  surfaceSoft: string;
   glass: string;
   glassStrong: string;
-  border: string;
+
   text: string;
   textSecondary: string;
   textMuted: string;
-  white: string;
+  textOnDark: string;
+
+  border: string;
+  divider: string;
+  shadow: string;
+
   red: string;
   redSoft: string;
   blue: string;
   blueSoft: string;
-  green: string;
-  yellow: string;
+  success: string;
+  warning: string;
   danger: string;
-  shadow: string;
-  overlay: string;
-  tabBar: string;
-  gradientMain: [string, string, string];
-  gradientRed: [string, string];
-  gradientBlue: [string, string];
 
-  // legacy aliases for existing screens
+  gradientMain: string[];
+  gradientSurface: string[];
+
+  // legacy aliases чтобы старые экраны не умерли
   bg: string;
   bgCard: string;
   bgGlass: string;
@@ -44,134 +46,156 @@ export interface ThemePalette {
   primary: string;
   primaryDeep: string;
   accent: string;
-  warning: string;
   purple: string;
   borderGlass: string;
   gradientBg: string[];
 }
 
-const lightTheme: ThemePalette = {
-  mode: 'light',
-  background: '#F8FAFC',
-  backgroundSoft: '#FFFFFF',
-  surface: 'rgba(255,255,255,0.84)',
-  glass: 'rgba(255,255,255,0.72)',
-  glassStrong: 'rgba(255,255,255,0.90)',
-  border: 'rgba(15,23,42,0.08)',
-  text: '#0F172A',
-  textSecondary: '#475569',
-  textMuted: '#94A3B8',
-  white: '#FFFFFF',
-  red: '#C81E1E',
-  redSoft: '#FFF1F2',
-  blue: '#164E9A',
-  blueSoft: '#EFF6FF',
-  green: '#059669',
-  yellow: '#D97706',
-  danger: '#DC2626',
-  shadow: 'rgba(15,23,42,0.16)',
-  overlay: 'rgba(15,23,42,0.16)',
-  tabBar: 'rgba(255,255,255,0.86)',
-  gradientMain: ['#FFFFFF', '#F8FAFC', '#EFF6FF'],
-  gradientRed: ['#FFF5F5', '#FEE2E2'],
-  gradientBlue: ['#F8FBFF', '#DBEAFE'],
+function buildLightTheme(): ThemePalette {
+  return {
+    mode: 'light',
 
-  bg: '#F8FAFC',
-  bgCard: '#FFFFFF',
-  bgGlass: 'rgba(255,255,255,0.72)',
-  bgGlass2: 'rgba(255,255,255,0.54)',
-  bgInput: 'rgba(255,255,255,0.90)',
-  bgChip: '#F1F5F9',
-  bgSection: '#F8FAFC',
-  textSub: '#475569',
-  textInvert: '#FFFFFF',
-  primary: '#164E9A',
-  primaryDeep: '#0F3D78',
-  accent: '#059669',
-  warning: '#D97706',
-  purple: '#7C3AED',
-  borderGlass: 'rgba(255,255,255,0.9)',
-  gradientBg: ['#FFFFFF', '#F8FAFC', '#EFF6FF'],
-};
+    background: '#F7F9FC',
+    backgroundSoft: '#EEF3FA',
+    surface: '#FFFFFF',
+    surfaceSoft: '#F8FBFF',
+    glass: 'rgba(255,255,255,0.72)',
+    glassStrong: 'rgba(255,255,255,0.9)',
 
-const darkTheme: ThemePalette = {
-  mode: 'dark',
-  background: '#07111F',
-  backgroundSoft: '#0B1526',
-  surface: 'rgba(11,21,38,0.86)',
-  glass: 'rgba(15,23,42,0.74)',
-  glassStrong: 'rgba(15,23,42,0.90)',
-  border: 'rgba(255,255,255,0.10)',
-  text: '#F8FAFC',
-  textSecondary: '#CBD5E1',
-  textMuted: '#94A3B8',
-  white: '#FFFFFF',
-  red: '#F87171',
-  redSoft: '#2A1113',
-  blue: '#60A5FA',
-  blueSoft: '#0B2240',
-  green: '#34D399',
-  yellow: '#FBBF24',
-  danger: '#F87171',
-  shadow: 'rgba(0,0,0,0.40)',
-  overlay: 'rgba(0,0,0,0.42)',
-  tabBar: 'rgba(11,21,38,0.88)',
-  gradientMain: ['#07111F', '#0B1526', '#102242'],
-  gradientRed: ['#2A1113', '#4C1D1D'],
-  gradientBlue: ['#0B1526', '#0F2545'],
+    text: '#102033',
+    textSecondary: '#4A607A',
+    textMuted: '#7E93AB',
+    textOnDark: '#FFFFFF',
 
-  bg: '#07111F',
-  bgCard: '#0B1526',
-  bgGlass: 'rgba(15,23,42,0.74)',
-  bgGlass2: 'rgba(15,23,42,0.60)',
-  bgInput: 'rgba(15,23,42,0.90)',
-  bgChip: '#1E293B',
-  bgSection: '#0B1526',
-  textSub: '#CBD5E1',
-  textInvert: '#07111F',
-  primary: '#60A5FA',
-  primaryDeep: '#3B82F6',
-  accent: '#34D399',
-  warning: '#FBBF24',
-  purple: '#A78BFA',
-  borderGlass: 'rgba(255,255,255,0.10)',
-  gradientBg: ['#07111F', '#0B1526', '#102242'],
-};
+    border: '#DCE6F1',
+    divider: '#E8EEF6',
+    shadow: '#0D2740',
 
-type ThemeContextShape = {
+    red: '#C62828',
+    redSoft: '#FDECEC',
+    blue: '#1E5EFF',
+    blueSoft: '#EAF1FF',
+    success: '#12A150',
+    warning: '#D98B07',
+    danger: '#D9363E',
+
+    gradientMain: ['#F7F9FC', '#EEF4FF', '#FFF6F6'],
+    gradientSurface: ['#FFFFFF', '#F8FBFF'],
+
+    bg: '#F7F9FC',
+    bgCard: '#FFFFFF',
+    bgGlass: 'rgba(255,255,255,0.72)',
+    bgGlass2: 'rgba(255,255,255,0.56)',
+    bgInput: 'rgba(255,255,255,0.92)',
+    bgChip: '#F3F7FC',
+    bgSection: '#EEF3FA',
+    textSub: '#4A607A',
+    textInvert: '#FFFFFF',
+    primary: '#1E5EFF',
+    primaryDeep: '#103D96',
+    accent: '#12A150',
+    purple: '#715CFF',
+    borderGlass: 'rgba(255,255,255,0.95)',
+    gradientBg: ['#F7F9FC', '#EEF4FF', '#FFF6F6'],
+  };
+}
+
+function buildDarkTheme(): ThemePalette {
+  return {
+    mode: 'dark',
+
+    background: '#0E1724',
+    backgroundSoft: '#132033',
+    surface: '#162235',
+    surfaceSoft: '#1B2A40',
+    glass: 'rgba(22,34,53,0.76)',
+    glassStrong: 'rgba(22,34,53,0.92)',
+
+    text: '#F3F7FF',
+    textSecondary: '#B9C6D8',
+    textMuted: '#8DA0B8',
+    textOnDark: '#FFFFFF',
+
+    border: '#2A3C57',
+    divider: '#23344E',
+    shadow: '#000000',
+
+    red: '#FF5A5F',
+    redSoft: '#3B1E22',
+    blue: '#69A1FF',
+    blueSoft: '#1C2C4A',
+    success: '#35C979',
+    warning: '#F3B43F',
+    danger: '#FF6E73',
+
+    gradientMain: ['#0E1724', '#132033', '#1B2433'],
+    gradientSurface: ['#162235', '#1A2940'],
+
+    bg: '#0E1724',
+    bgCard: '#162235',
+    bgGlass: 'rgba(22,34,53,0.76)',
+    bgGlass2: 'rgba(22,34,53,0.58)',
+    bgInput: 'rgba(22,34,53,0.92)',
+    bgChip: '#223249',
+    bgSection: '#132033',
+    textSub: '#B9C6D8',
+    textInvert: '#FFFFFF',
+    primary: '#69A1FF',
+    primaryDeep: '#69A1FF',
+    accent: '#35C979',
+    purple: '#9A89FF',
+    borderGlass: 'rgba(255,255,255,0.08)',
+    gradientBg: ['#0E1724', '#132033', '#1B2433'],
+  };
+}
+
+interface ThemeContextValue {
   theme: ThemePalette;
-  isDark: boolean;
   themeMode: ThemeMode;
-  setTheme: (mode: ThemeMode) => Promise<void>;
-};
+  isDark: boolean;
+  setTheme: (mode: ThemeMode) => void;
+}
 
-const ThemeContext = createContext<ThemeContextShape>({
-  theme: lightTheme,
-  isDark: false,
+const ThemeContext = createContext<ThemeContextValue>({
+  theme: buildLightTheme(),
   themeMode: 'light',
-  setTheme: async () => {},
+  isDark: false,
+  setTheme: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [themeMode, setThemeMode] = useState<ThemeMode>('light');
 
   useEffect(() => {
-    getToken(STORAGE_KEYS.theme).then((saved) => {
-      if (saved === 'dark' || saved === 'light') setThemeMode(saved);
+    getToken('app_theme').then((saved) => {
+      if (saved === 'light' || saved === 'dark') {
+        setThemeMode(saved);
+      }
     });
   }, []);
 
   const setTheme = useCallback(async (mode: ThemeMode) => {
     setThemeMode(mode);
-    await saveToken(STORAGE_KEYS.theme, mode);
+    await saveToken('app_theme', mode);
   }, []);
 
-  const value = useMemo(() => {
-    const isDark = themeMode === 'dark';
-    return { theme: isDark ? darkTheme : lightTheme, isDark, themeMode, setTheme };
-  }, [themeMode, setTheme]);
+  const theme = useMemo(
+    () => (themeMode === 'dark' ? buildDarkTheme() : buildLightTheme()),
+    [themeMode]
+  );
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider
+      value={{
+        theme,
+        themeMode,
+        isDark: themeMode === 'dark',
+        setTheme,
+      }}
+    >
+      {children}
+    </ThemeContext.Provider>
+  );
 }
 
 export function useTheme() {

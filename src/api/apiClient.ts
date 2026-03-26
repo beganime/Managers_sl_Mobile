@@ -1,10 +1,9 @@
-import axios, { AxiosError, AxiosRequestConfig } from 'axios';
-import { APP_CONFIG, STORAGE_KEYS } from '../config/app';
-import { clearSession, getToken, saveToken } from '../utils/storage';
+import axios from 'axios';
+import { deleteToken, getToken, saveToken } from '../utils/storage';
 
-const BASE_URL = APP_CONFIG.apiBaseUrl;
+const BASE_URL = 'https://manager-sl.ru/api/';
 
-export const apiClient = axios.create({
+const apiClient = axios.create({
   baseURL: BASE_URL,
   timeout: 20000,
   headers: {
@@ -12,85 +11,136 @@ export const apiClient = axios.create({
   },
 });
 
-async function tryRefresh() {
-  const refreshToken = await getToken(STORAGE_KEYS.refreshToken);
-  if (!refreshToken) {
-    throw new Error('No refresh token');
+function normalizePath(path: string) {
+  if (!path) return '';
+  return path.startsWith('/') ? path.slice(1) : path;
+}
+
+export function extractList(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.results)) return payload.results;
+  return [];
+}
+
+export async function fetchAllPages(path: string, limit = 100) {
+  let url = normalizePath(path);
+  if (!url.includes('limit=')) {
+    url += `${url.includes('?') ? '&' : '?'}limit=${limit}&offset=0`;
   }
 
-  const candidates = ['auth/refresh/', 'token/refresh/'];
-  for (const endpoint of candidates) {
-    try {
-      const response = await axios.post(`${BASE_URL}${endpoint}`, { refresh: refreshToken }, { timeout: 15000 });
-      if (response.data?.access) {
-        await saveToken(STORAGE_KEYS.accessToken, response.data.access);
-      }
-      if (response.data?.refresh) {
-        await saveToken(STORAGE_KEYS.refreshToken, response.data.refresh);
-      }
-      return response.data;
-    } catch {}
+  const all: any[] = [];
+  let nextUrl: string | null = url;
+
+  while (nextUrl) {
+    const response = await apiClient.get(nextUrl);
+    const data = response.data;
+    all.push(...extractList(data));
+
+    if (typeof data?.next === 'string' && data.next.length > 0) {
+      const cleanBase = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
+      nextUrl = data.next.startsWith(cleanBase) ? data.next.replace(cleanBase, '') : data.next;
+    } else {
+      nextUrl = null;
+    }
   }
 
-  throw new Error('Refresh failed');
+  return all;
+}
+
+export async function loginRequest(email: string, password: string) {
+  try {
+    const response = await apiClient.post('auth/login/', { email, password });
+    if (response.data?.access) {
+      await saveToken('access_token', response.data.access);
+    }
+    if (response.data?.refresh) {
+      await saveToken('refresh_token', response.data.refresh);
+    }
+    if (response.data?.user) {
+      await saveToken('cache_my_profile', JSON.stringify(response.data.user));
+    }
+    return response.data;
+  } catch {
+    const fallback = await apiClient.post('token/', { email, password });
+    if (fallback.data?.access) {
+      await saveToken('access_token', fallback.data.access);
+    }
+    if (fallback.data?.refresh) {
+      await saveToken('refresh_token', fallback.data.refresh);
+    }
+    return fallback.data;
+  }
+}
+
+export async function logoutRequest() {
+  const refresh = await getToken('refresh_token');
+  try {
+    if (refresh) {
+      await apiClient.post('auth/logout/', { refresh });
+    }
+  } catch {
+    // молча, всё равно чистим локально
+  } finally {
+    await deleteToken('access_token');
+    await deleteToken('refresh_token');
+    await deleteToken('cache_my_profile');
+  }
 }
 
 apiClient.interceptors.request.use(
   async (config) => {
-    const token = await getToken(STORAGE_KEYS.accessToken);
+    const token = await getToken('access_token');
     if (token) {
+      config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
-  async (error) => Promise.reject(error)
+  (error) => Promise.reject(error)
 );
 
 apiClient.interceptors.response.use(
   (response) => response,
-  async (error: AxiosError<any>) => {
-    const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
+  async (error) => {
+    const originalRequest = error.config;
 
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+    if (error?.response?.status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
+
       try {
-        const refreshed = await tryRefresh();
-        const access = refreshed.access;
-        if (originalRequest.headers && access) {
-          originalRequest.headers.Authorization = `Bearer ${access}`;
+        const refreshToken = await getToken('refresh_token');
+        if (!refreshToken) {
+          throw new Error('No refresh token');
         }
+
+        let refreshResponse;
+        try {
+          refreshResponse = await axios.post(`${BASE_URL}auth/refresh/`, { refresh: refreshToken });
+        } catch {
+          refreshResponse = await axios.post(`${BASE_URL}token/refresh/`, { refresh: refreshToken });
+        }
+
+        const newAccess = refreshResponse.data?.access;
+        if (!newAccess) {
+          throw new Error('No new access token');
+        }
+
+        await saveToken('access_token', newAccess);
+
+        originalRequest.headers = originalRequest.headers || {};
+        originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+
         return apiClient(originalRequest);
-      } catch {
-        await clearSession();
+      } catch (refreshError) {
+        await deleteToken('access_token');
+        await deleteToken('refresh_token');
+        await deleteToken('cache_my_profile');
+        return Promise.reject(refreshError);
       }
     }
 
     return Promise.reject(error);
   }
 );
-
-export async function fetchAllPages<T = any>(endpoint: string, limit = 100): Promise<T[]> {
-  let offset = 0;
-  let output: T[] = [];
-
-  while (true) {
-    const response = await apiClient.get(endpoint, { params: { limit, offset } });
-    const data = response.data;
-    const items = Array.isArray(data) ? data : (data.results ?? []);
-    output = output.concat(items);
-
-    if (Array.isArray(data) || !data.next || items.length === 0) {
-      break;
-    }
-
-    offset += limit;
-  }
-
-  return output;
-}
-
-export function extractResults<T = any>(payload: any): T[] {
-  return Array.isArray(payload) ? payload : (payload?.results ?? []);
-}
 
 export default apiClient;

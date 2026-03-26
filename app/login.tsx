@@ -1,12 +1,25 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import BrandMark from '../components/BrandMark';
-import PremiumCard from '../components/PremiumCard';
-import { APP_CONFIG } from '../src/config/app';
-import { login } from '../src/api/mobile';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+
+import ManagerSLBrand from '../components/branding/ManagerSLBrand';
+import { loginRequest } from '../src/api/apiClient';
 import { useTheme } from '../src/context/ThemeContext';
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -14,21 +27,47 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const disabled = useMemo(() => !email.trim() || !password.trim(), [email, password]);
+  const emailError = useMemo(() => {
+    if (!email.trim()) return '';
+    return isValidEmail(email.trim()) ? '' : 'Неверный формат email';
+  }, [email]);
 
-  const handleLogin = async () => {
-    if (disabled) return;
+  const passwordError = useMemo(() => {
+    if (!password) return '';
+    if (password.length < 6) return 'Пароль должен быть не меньше 6 символов';
+    return '';
+  }, [password]);
+
+  const canSubmit =
+    !!email.trim() &&
+    !!password &&
+    !emailError &&
+    !passwordError &&
+    !loading;
+
+  const submit = async () => {
+    if (!email.trim() || !password) {
+      Alert.alert('Внимание', 'Заполни email и пароль.');
+      return;
+    }
+
+    if (emailError || passwordError) {
+      Alert.alert('Проверь данные', emailError || passwordError);
+      return;
+    }
+
     setLoading(true);
     try {
-      await login(email.trim(), password);
+      await loginRequest(email.trim(), password);
       router.replace('/(app)');
     } catch (error: any) {
       const message =
         error?.response?.data?.detail ||
         error?.response?.data?.non_field_errors?.[0] ||
-        'Не удалось войти. Проверь почту, пароль и доступность сервера.';
+        'Не удалось войти. Если это web-режим, сначала исправь CORS на сервере.';
       Alert.alert('Ошибка входа', message);
     } finally {
       setLoading(false);
@@ -36,65 +75,96 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.container, { backgroundColor: theme.background }]}>
-      <LinearGradient colors={theme.gradientMain} style={StyleSheet.absoluteFillObject} />
-      <View style={[styles.orb, { backgroundColor: theme.red, top: 60, right: -40, opacity: 0.10 }]} />
-      <View style={[styles.orb, styles.largeOrb, { backgroundColor: theme.blue, bottom: 40, left: -80, opacity: 0.10 }]} />
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: theme.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <LinearGradient
+        colors={theme.gradientMain as [string, string, ...string[]]}
+        style={StyleSheet.absoluteFillObject}
+      />
+
+      <View style={[styles.orbBlue, { backgroundColor: theme.blue }]} />
+      <View style={[styles.orbRed, { backgroundColor: theme.red }]} />
 
       <View style={styles.content}>
-        <BrandMark />
+        <ManagerSLBrand />
 
-        <PremiumCard style={styles.card}>
-          <Text style={[styles.title, { color: theme.text }]}>Вход в CRM</Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Премиальное рабочее приложение для команды {APP_CONFIG.companyName}
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: theme.glassStrong,
+              borderColor: theme.border,
+              shadowColor: theme.shadow,
+            },
+          ]}
+        >
+          <Text style={[styles.cardTitle, { color: theme.text }]}>Вход в систему</Text>
+          <Text style={[styles.cardSub, { color: theme.textSecondary }]}>
+            Надёжный доступ для менеджеров и администраторов
           </Text>
 
           <View style={styles.form}>
-            <View style={[styles.inputWrap, { backgroundColor: theme.glassStrong, borderColor: theme.border }]}>
+            <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: emailError ? theme.red : theme.border }]}>
               <Text style={[styles.label, { color: theme.textSecondary }]}>Email</Text>
               <TextInput
-                autoCapitalize="none"
-                keyboardType="email-address"
-                placeholder="manager@studentslife"
-                placeholderTextColor={theme.textMuted}
-                style={[styles.input, { color: theme.text }]}
                 value={email}
                 onChangeText={setEmail}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                placeholder="manager@studentslife.com"
+                placeholderTextColor={theme.textMuted}
+                style={[styles.input, { color: theme.text }]}
               />
+              {!!emailError && <Text style={[styles.errorText, { color: theme.red }]}>{emailError}</Text>}
             </View>
 
-            <View style={[styles.inputWrap, { backgroundColor: theme.glassStrong, borderColor: theme.border }]}>
-              <Text style={[styles.label, { color: theme.textSecondary }]}>Пароль</Text>
+            <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: passwordError ? theme.red : theme.border }]}>
+              <View style={styles.passwordHead}>
+                <Text style={[styles.label, { color: theme.textSecondary }]}>Пароль</Text>
+                <Pressable onPress={() => setPasswordVisible((v) => !v)}>
+                  <Text style={[styles.toggleText, { color: theme.blue }]}>
+                    {passwordVisible ? 'Скрыть' : 'Показать'}
+                  </Text>
+                </Pressable>
+              </View>
+
               <TextInput
-                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!passwordVisible}
                 placeholder="Введите пароль"
                 placeholderTextColor={theme.textMuted}
                 style={[styles.input, { color: theme.text }]}
-                value={password}
-                onChangeText={setPassword}
               />
+              {!!passwordError && <Text style={[styles.errorText, { color: theme.red }]}>{passwordError}</Text>}
             </View>
 
             <Pressable
-              onPress={handleLogin}
+              onPress={submit}
+              disabled={!canSubmit}
               style={({ pressed }) => [
-                styles.button,
-                { opacity: pressed || disabled ? 0.88 : 1 },
+                styles.buttonShell,
+                { opacity: !canSubmit ? 0.55 : pressed ? 0.9 : 1 },
               ]}
-              disabled={disabled || loading}
             >
-              <LinearGradient colors={[theme.red, theme.blue]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.buttonGradient}>
-                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Войти</Text>}
+              <LinearGradient
+                colors={['#B71D17', '#D93B2C', '#F05A3C']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.button}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Войти</Text>
+                )}
               </LinearGradient>
             </Pressable>
           </View>
-
-          <View style={styles.footer}>
-            <Text style={[styles.footerText, { color: theme.textMuted }]}>{APP_CONFIG.domain}</Text>
-            <Text style={[styles.footerText, { color: theme.textMuted }]}>{APP_CONFIG.appName} · {APP_CONFIG.companyName}</Text>
-          </View>
-        </PremiumCard>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -102,19 +172,97 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  orb: { position: 'absolute', width: 220, height: 220, borderRadius: 999 },
-  largeOrb: { width: 320, height: 320 },
-  content: { flex: 1, justifyContent: 'center', paddingHorizontal: 22, gap: 22 },
-  card: { padding: 22 },
-  title: { fontSize: 28, fontWeight: '900' },
-  subtitle: { marginTop: 8, lineHeight: 20 },
-  form: { marginTop: 24, gap: 14 },
-  inputWrap: { borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 12 },
-  label: { fontSize: 12, fontWeight: '700', marginBottom: 8 },
-  input: { fontSize: 16, fontWeight: '600' },
-  button: { marginTop: 6, borderRadius: 20, overflow: 'hidden' },
-  buttonGradient: { paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '900' },
-  footer: { marginTop: 18, gap: 4 },
-  footerText: { fontSize: 12, fontWeight: '600' }
-}
+  orbBlue: {
+    position: 'absolute',
+    width: 320,
+    height: 320,
+    borderRadius: 999,
+    top: 20,
+    right: -120,
+    opacity: 0.08,
+  },
+  orbRed: {
+    position: 'absolute',
+    width: 420,
+    height: 420,
+    borderRadius: 999,
+    bottom: -80,
+    left: -140,
+    opacity: 0.08,
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+  },
+  card: {
+    borderWidth: 1,
+    borderRadius: 28,
+    padding: 22,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.14,
+    shadowRadius: 28,
+    elevation: 10,
+  },
+  cardTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: -0.6,
+  },
+  cardSub: {
+    marginTop: 6,
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  form: {
+    marginTop: 22,
+    gap: 14,
+  },
+  inputWrap: {
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  input: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  passwordHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  toggleText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  errorText: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  buttonShell: {
+    marginTop: 4,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  button: {
+    paddingVertical: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+});

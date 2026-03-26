@@ -1,36 +1,57 @@
+import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import AppScreen from '../../components/AppScreen';
-import EmptyState from '../../components/EmptyState';
-import PremiumCard from '../../components/PremiumCard';
-import SectionHeader from '../../components/SectionHeader';
-import { STORAGE_KEYS } from '../../src/config/app';
-import { getUniversities } from '../../src/api/mobile';
-import { useTheme } from '../../src/context/ThemeContext';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
-const PAGE_SIZE = 15;
+import ScreenWrapper from '../../components/ScreenWrapper';
+import { fetchAllPages } from '../../src/api/apiClient';
+import { useTheme } from '../../src/context/ThemeContext';
+import { getToken, saveToken } from '../../src/utils/storage';
+
+type TabKey = 'universities' | 'programs';
+type SortKey = 'name' | 'price_asc' | 'price_desc';
+
+function money(value: any, currency: string) {
+  const num = parseFloat(String(value || 0));
+  return `${num.toLocaleString('ru-RU')} ${currency || ''}`.trim();
+}
 
 export default function CatalogScreen() {
+  const router = useRouter();
   const { theme } = useTheme();
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [universities, setUniversities] = useState<any[]>([]);
+
+  const [activeTab, setActiveTab] = useState<TabKey>('universities');
   const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [isOffline, setIsOffline] = useState(false);
+
+  const [universities, setUniversities] = useState<any[]>([]);
+  const [countryFilter, setCountryFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<SortKey>('name');
+  const [maxPrice, setMaxPrice] = useState<string>('');
 
   const load = useCallback(async () => {
     try {
-      const res = await getUniversities({ limit: 300, offset: 0 });
-      setUniversities(res.items);
-      await AsyncStorage.setItem(STORAGE_KEYS.cachedUniversities, JSON.stringify(res.items));
-      setIsOffline(false);
-    } catch {
-      const cached = await AsyncStorage.getItem(STORAGE_KEYS.cachedUniversities);
-      setUniversities(cached ? JSON.parse(cached) : []);
-      setIsOffline(true);
+      const cached = await getToken('cache_universities_full');
+      if (cached) {
+        setUniversities(JSON.parse(cached));
+        setLoading(false);
+      }
+
+      const fullUniversities = await fetchAllPages('catalog/universities/');
+      setUniversities(fullUniversities);
+      await saveToken('cache_universities_full', JSON.stringify(fullUniversities));
+    } catch (e) {
+      console.log('Catalog load error', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -41,67 +62,290 @@ export default function CatalogScreen() {
     load();
   }, [load]);
 
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return universities;
-    return universities.filter((uni) => [uni.name, uni.city, uni.country].filter(Boolean).join(' ').toLowerCase().includes(query));
-  }, [search, universities]);
+  const allPrograms = useMemo(() => {
+    const result: any[] = [];
+    universities.forEach((uni) => {
+      const programs = Array.isArray(uni.programs) ? uni.programs : [];
+      programs.forEach((program: any) => {
+        result.push({
+          ...program,
+          university: uni,
+        });
+      });
+    });
+    return result;
+  }, [universities]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const pageItems = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const countries = useMemo(() => {
+    const list = Array.from(new Set(universities.map((u) => u.country).filter(Boolean)));
+    return ['all', ...list];
+  }, [universities]);
+
+  const filteredUniversities = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let data = [...universities];
+
+    if (countryFilter !== 'all') {
+      data = data.filter((u) => u.country === countryFilter);
+    }
+
+    if (q) {
+      data = data.filter(
+        (u) =>
+          String(u.name || '').toLowerCase().includes(q) ||
+          String(u.city || '').toLowerCase().includes(q) ||
+          String(u.country || '').toLowerCase().includes(q)
+      );
+    }
+
+    data.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    return data;
+  }, [universities, search, countryFilter]);
+
+  const filteredPrograms = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let data = [...allPrograms];
+
+    if (countryFilter !== 'all') {
+      data = data.filter((p) => p.university?.country === countryFilter);
+    }
+
+    if (q) {
+      data = data.filter(
+        (p) =>
+          String(p.name || '').toLowerCase().includes(q) ||
+          String(p.university?.name || '').toLowerCase().includes(q) ||
+          String(p.degree || '').toLowerCase().includes(q)
+      );
+    }
+
+    if (maxPrice.trim()) {
+      const limit = parseFloat(maxPrice);
+      if (!Number.isNaN(limit)) {
+        data = data.filter((p) => parseFloat(String(p.tuition_fee || 0)) <= limit);
+      }
+    }
+
+    if (sortBy === 'name') {
+      data.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    }
+    if (sortBy === 'price_asc') {
+      data.sort((a, b) => parseFloat(String(a.tuition_fee || 0)) - parseFloat(String(b.tuition_fee || 0)));
+    }
+    if (sortBy === 'price_desc') {
+      data.sort((a, b) => parseFloat(String(b.tuition_fee || 0)) - parseFloat(String(a.tuition_fee || 0)));
+    }
+
+    return data;
+  }, [allPrograms, countryFilter, maxPrice, search, sortBy]);
 
   if (loading) {
     return (
-      <AppScreen scroll={false} contentContainerStyle={{ justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={theme.blue} />
-      </AppScreen>
+      <ScreenWrapper>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={theme.blue} />
+        </View>
+      </ScreenWrapper>
     );
   }
 
   return (
-    <AppScreen scroll={false}>
-      <View style={{ gap: 16 }}>
-        <SectionHeader title="Вузы" subtitle={isOffline ? 'Данные из локального кэша' : 'Каталог направлений и университетов'} />
+    <ScreenWrapper>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+            tintColor={theme.blue}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={[styles.title, { color: theme.text }]}>Каталог вузов</Text>
+        <Text style={[styles.sub, { color: theme.textSecondary }]}>
+          Все вузы подгружаются в фоне и остаются в локальном кэше.
+        </Text>
 
-        <PremiumCard>
+        <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <TextInput
             value={search}
             onChangeText={setSearch}
-            placeholder="Поиск по вузу, городу, стране"
+            placeholder={activeTab === 'universities' ? 'Поиск по вузам' : 'Поиск по программам'}
             placeholderTextColor={theme.textMuted}
-            style={{ color: theme.text, fontSize: 15, fontWeight: '600' }}
+            style={[styles.searchInput, { color: theme.text }]}
           />
-        </PremiumCard>
+        </View>
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ gap: 12 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
-        >
-          {pageItems.length ? pageItems.map((uni) => (
-            <TouchableOpacity key={uni.id} onPress={() => router.push(`/(app)/university/${uni.id}` as any)}>
-              <PremiumCard>
-                <Text style={{ color: theme.text, fontSize: 17, fontWeight: '900' }}>{uni.name}</Text>
-                <Text style={{ color: theme.textSecondary, marginTop: 6 }}>{[uni.city, uni.country].filter(Boolean).join(', ') || 'Локация не указана'}</Text>
-                {uni.description ? <Text numberOfLines={2} style={{ color: theme.textMuted, marginTop: 8 }}>{uni.description}</Text> : null}
-              </PremiumCard>
-            </TouchableOpacity>
-          )) : <EmptyState title="Каталог пуст" subtitle="Сначала синхронизируй данные с сервером." />}
+        <View style={[styles.tabs, { backgroundColor: theme.backgroundSoft }]}>
+          <Pressable
+            onPress={() => setActiveTab('universities')}
+            style={[styles.tab, { backgroundColor: activeTab === 'universities' ? theme.surface : 'transparent', borderColor: activeTab === 'universities' ? theme.border : 'transparent' }]}
+          >
+            <Text style={{ color: activeTab === 'universities' ? theme.text : theme.textSecondary, fontWeight: '900' }}>Вузы</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setActiveTab('programs')}
+            style={[styles.tab, { backgroundColor: activeTab === 'programs' ? theme.surface : 'transparent', borderColor: activeTab === 'programs' ? theme.border : 'transparent' }]}
+          >
+            <Text style={{ color: activeTab === 'programs' ? theme.text : theme.textSecondary, fontWeight: '900' }}>Программы</Text>
+          </Pressable>
+        </View>
+
+        <Text style={[styles.section, { color: theme.text }]}>Фильтр по стране</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+          <View style={styles.chipsRow}>
+            {countries.map((country) => {
+              const active = countryFilter === country;
+              return (
+                <Pressable
+                  key={country}
+                  onPress={() => setCountryFilter(country)}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? theme.blue : theme.surface,
+                      borderColor: active ? theme.blue : theme.border,
+                    },
+                  ]}
+                >
+                  <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '800' }}>
+                    {country === 'all' ? 'Все страны' : country}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </ScrollView>
 
-        <PremiumCard>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <TouchableOpacity disabled={safePage <= 1} onPress={() => setPage((p) => Math.max(1, p - 1))}>
-              <Text style={{ color: safePage <= 1 ? theme.textMuted : theme.blue, fontWeight: '800' }}>Назад</Text>
-            </TouchableOpacity>
-            <Text style={{ color: theme.text, fontWeight: '800' }}>Страница {safePage} / {totalPages}</Text>
-            <TouchableOpacity disabled={safePage >= totalPages} onPress={() => setPage((p) => Math.min(totalPages, p + 1))}>
-              <Text style={{ color: safePage >= totalPages ? theme.textMuted : theme.blue, fontWeight: '800' }}>Вперёд</Text>
-            </TouchableOpacity>
-          </View>
-        </PremiumCard>
-      </View>
-    </AppScreen>
+        {activeTab === 'programs' && (
+          <>
+            <Text style={[styles.section, { color: theme.text }]}>Цена и сортировка</Text>
+            <View style={styles.filtersRow}>
+              <View style={[styles.smallInputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <TextInput
+                  value={maxPrice}
+                  onChangeText={setMaxPrice}
+                  placeholder="Макс. цена"
+                  placeholderTextColor={theme.textMuted}
+                  keyboardType="numeric"
+                  style={[styles.smallInput, { color: theme.text }]}
+                />
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.chipsRow}>
+                  {[
+                    { key: 'name', label: 'По названию' },
+                    { key: 'price_asc', label: 'Цена ↑' },
+                    { key: 'price_desc', label: 'Цена ↓' },
+                  ].map((s) => {
+                    const active = sortBy === s.key;
+                    return (
+                      <Pressable
+                        key={s.key}
+                        onPress={() => setSortBy(s.key as SortKey)}
+                        style={[
+                          styles.chip,
+                          {
+                            backgroundColor: active ? theme.red : theme.surface,
+                            borderColor: active ? theme.red : theme.border,
+                          },
+                        ]}
+                      >
+                        <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '800' }}>{s.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            </View>
+          </>
+        )}
+
+        <Text style={[styles.count, { color: theme.textSecondary }]}>
+          {activeTab === 'universities'
+            ? `Найдено вузов: ${filteredUniversities.length}`
+            : `Найдено программ: ${filteredPrograms.length}`}
+        </Text>
+
+        <View style={{ gap: 12 }}>
+          {activeTab === 'universities' &&
+            filteredUniversities.map((uni) => (
+              <Pressable
+                key={uni.id}
+                onPress={() => router.push(`/university/${uni.id}` as any)}
+                style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              >
+                <Text style={[styles.cardTitle, { color: theme.text }]}>{uni.name}</Text>
+                <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
+                  {uni.city || 'Без города'} · {uni.country || 'Без страны'}
+                </Text>
+                <Text style={[styles.cardMeta, { color: theme.blue }]}>
+                  Программ: {Array.isArray(uni.programs) ? uni.programs.length : 0}
+                </Text>
+              </Pressable>
+            ))}
+
+          {activeTab === 'programs' &&
+            filteredPrograms.map((program) => {
+              const currency = program.currency?.code || program.university?.local_currency?.code || '';
+              return (
+                <View
+                  key={`${program.university?.id}-${program.id}-${program.name}`}
+                  style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                >
+                  <Text style={[styles.cardTitle, { color: theme.text }]}>{program.name}</Text>
+                  <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
+                    {program.university?.name || 'Без вуза'}
+                  </Text>
+                  <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
+                    {program.degree || 'program'} · {program.duration || '—'}
+                  </Text>
+                  <View style={styles.priceRow}>
+                    <Text style={[styles.priceLabel, { color: theme.textSecondary }]}>Контракт</Text>
+                    <Text style={[styles.priceValue, { color: theme.text }]}>
+                      {money(program.tuition_fee, currency)}
+                    </Text>
+                  </View>
+                  <View style={styles.priceRow}>
+                    <Text style={[styles.priceLabel, { color: theme.textSecondary }]}>Услуги</Text>
+                    <Text style={[styles.priceValue, { color: theme.red }]}>
+                      {money(program.service_fee, currency)}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+        </View>
+      </ScrollView>
+    </ScreenWrapper>
   );
 }
+
+const styles = StyleSheet.create({
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { padding: 20, paddingBottom: 120 },
+  title: { fontSize: 28, fontWeight: '900' },
+  sub: { marginTop: 6, fontSize: 13, fontWeight: '600' },
+  searchBox: { marginTop: 18, borderWidth: 1, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14 },
+  searchInput: { fontSize: 15, fontWeight: '600' },
+  tabs: { marginTop: 14, borderRadius: 18, padding: 4, flexDirection: 'row', gap: 4 },
+  tab: { flex: 1, borderWidth: 1, borderRadius: 14, paddingVertical: 12, alignItems: 'center' },
+  section: { fontSize: 16, fontWeight: '900', marginTop: 18, marginBottom: 10 },
+  chipsRow: { flexDirection: 'row', gap: 8, paddingRight: 16 },
+  chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10 },
+  filtersRow: { gap: 10 },
+  smallInputWrap: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
+  smallInput: { fontSize: 14, fontWeight: '600' },
+  count: { marginTop: 14, marginBottom: 12, fontSize: 13, fontWeight: '700' },
+  card: { borderWidth: 1, borderRadius: 22, padding: 16 },
+  cardTitle: { fontSize: 16, fontWeight: '900' },
+  cardMeta: { marginTop: 6, fontSize: 13, fontWeight: '600' },
+  priceRow: { marginTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  priceLabel: { fontSize: 13, fontWeight: '700' },
+  priceValue: { fontSize: 14, fontWeight: '900' },
+});

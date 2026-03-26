@@ -1,87 +1,140 @@
 import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Shadow } from '../../constants/theme';
+import { Platform, StyleSheet, Text } from 'react-native';
+
+import AppTabIcon from '../../components/ui/AppTabIcon';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useTheme } from '../../src/context/ThemeContext';
-import { CrmIcon, HomeIcon, LibraryIcon, TrophyIcon, UserIcon } from '../../components/icons';
 
-function TabIcon({ route, color }: { route: string; color: string }) {
-  switch (route) {
-    case 'index':
-      return <HomeIcon color={color} size={22} />;
-    case 'crm':
-      return <CrmIcon color={color} size={22} />;
-    case 'leaderboard':
-      return <TrophyIcon color={color} size={22} />;
-    case 'catalog':
-      return <LibraryIcon color={color} size={22} />;
-    default:
-      return <UserIcon color={color} size={22} />;
-  }
-}
+const TAB_HEIGHT = Platform.OS === 'ios' ? 88 : 76;
+const TAB_BOTTOM = Platform.OS === 'ios' ? 18 : 12;
 
-export default function AppLayout() {
-  const { theme, isDark } = useTheme();
-  const insets = useSafeAreaInsets();
+export default function AppTabsLayout() {
+  const { user } = useCurrentUser();
+  const { theme } = useTheme();
 
-  const bottom = Math.max(insets.bottom, Platform.OS === 'ios' ? 18 : 14);
-  const height = 70 + Math.max(insets.bottom - 4, 0);
+  const isAdmin = !!user && (user.is_superuser || user.is_staff || user.role === 'admin');
 
   return (
     <Tabs
-      screenOptions={({ route }) => ({
+      screenOptions={{
         headerShown: false,
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: theme.text,
         tabBarInactiveTintColor: theme.textMuted,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '800', marginTop: 4 },
+        tabBarLabelPosition: 'below-icon',
         tabBarStyle: {
           position: 'absolute',
-          left: 16,
-          right: 16,
-          bottom,
-          height,
-          paddingTop: 10,
-          paddingBottom: Math.max(insets.bottom, 10),
-          borderTopWidth: 0,
+          left: 14,
+          right: 14,
+          bottom: TAB_BOTTOM,
+          height: TAB_HEIGHT,
+          borderRadius: 28,
           backgroundColor: 'transparent',
-          borderRadius: 999,
+          borderTopWidth: 0,
+          elevation: 0,
+          shadowColor: theme.shadow,
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.12,
+          shadowRadius: 18,
           overflow: 'hidden',
-          ...Shadow.floating,
         },
         tabBarBackground: () => (
           <BlurView
-            intensity={Platform.OS === 'ios' ? 40 : 65}
-            tint={isDark ? 'dark' : 'light'}
+            intensity={90}
+            tint="light"
             style={[
               StyleSheet.absoluteFillObject,
-              { backgroundColor: theme.tabBar, borderRadius: 999, borderWidth: 1, borderColor: theme.border },
+              {
+                borderRadius: 28,
+                overflow: 'hidden',
+                backgroundColor: theme.glassStrong,
+                borderWidth: 1,
+                borderColor: theme.border,
+              },
             ]}
           />
         ),
-        tabBarIcon: ({ color }) => <TabIcon route={route.name} color={color} />,
-      })}
+        tabBarItemStyle: {
+          paddingTop: 8,
+          paddingBottom: Platform.OS === 'ios' ? 12 : 10,
+        },
+        tabBarIconStyle: {
+          marginBottom: 2,
+        },
+      }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Главная' }} />
-      <Tabs.Screen name="crm" options={{ title: 'CRM' }} />
-      <Tabs.Screen name="leaderboard" options={{ title: 'Рейтинг' }} />
-      <Tabs.Screen name="catalog" options={{ title: 'Вузы' }} />
-      <Tabs.Screen name="profile" options={{ title: 'Профиль' }} />
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Главная',
+          tabBarLabel: ({ color, focused }) => (
+            <Text style={{ color, fontSize: 11, fontWeight: focused ? '900' : '700' }}>Главная</Text>
+          ),
+          tabBarIcon: ({ color, focused }) => <AppTabIcon name="home" color={color} focused={focused} size={22} />,
+        }}
+      />
 
-      <Tabs.Screen name="tasks" options={{ href: null }} />
-      <Tabs.Screen name="documents" options={{ href: null }} />
-      <Tabs.Screen name="knowledge-base" options={{ href: null }} />
-      <Tabs.Screen name="add-client" options={{ href: null }} />
-      <Tabs.Screen name="add-deal" options={{ href: null }} />
-      <Tabs.Screen name="create-document" options={{ href: null }} />
-      <Tabs.Screen name="payment/create" options={{ href: null }} />
-      <Tabs.Screen name="client/[id]" options={{ href: null }} />
-      <Tabs.Screen name="deal/[id]" options={{ href: null }} />
-      <Tabs.Screen name="university/[id]" options={{ href: null }} />
-      <Tabs.Screen name="admin-staff" options={{ href: null }} />
-      <Tabs.Screen name="admin-reports" options={{ href: null }} />
-      <Tabs.Screen name="admin-payments" options={{ href: null }} />
+      <Tabs.Screen
+        name="crm"
+        options={{
+          title: 'CRM',
+          tabBarLabel: ({ color, focused }) => (
+            <Text style={{ color, fontSize: 11, fontWeight: focused ? '900' : '700' }}>CRM</Text>
+          ),
+          tabBarIcon: ({ color, focused }) => <AppTabIcon name="crm" color={color} focused={focused} size={22} />,
+        }}
+      />
+
+      <Tabs.Screen
+        name="leaderboard"
+        options={{
+          title: isAdmin ? 'Команда' : 'Рейтинг',
+          tabBarLabel: ({ color, focused }) => (
+            <Text style={{ color, fontSize: 11, fontWeight: focused ? '900' : '700' }}>
+              {isAdmin ? 'Команда' : 'Рейтинг'}
+            </Text>
+          ),
+          tabBarIcon: ({ color, focused }) => <AppTabIcon name="rank" color={color} focused={focused} size={22} />,
+        }}
+      />
+
+      <Tabs.Screen
+        name="catalog"
+        options={{
+          title: 'Вузы',
+          tabBarLabel: ({ color, focused }) => (
+            <Text style={{ color, fontSize: 11, fontWeight: focused ? '900' : '700' }}>Вузы</Text>
+          ),
+          tabBarIcon: ({ color, focused }) => <AppTabIcon name="catalog" color={color} focused={focused} size={22} />,
+        }}
+      />
+
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Профиль',
+          tabBarLabel: ({ color, focused }) => (
+            <Text style={{ color, fontSize: 11, fontWeight: focused ? '900' : '700' }}>Профиль</Text>
+          ),
+          tabBarIcon: ({ color, focused }) => <AppTabIcon name="profile" color={color} focused={focused} size={22} />,
+        }}
+      />
+
+      <Tabs.Screen name="documents" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="client/[id]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="deal/[id]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="add-deal" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="create-document" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="add-client" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="payment/create" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="university/[id]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="knowledge-base" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="admin-staff" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="admin-reports" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="admin-payments" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="tasks" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
 }

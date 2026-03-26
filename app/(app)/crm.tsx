@@ -1,130 +1,336 @@
+import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import AppScreen from '../../components/AppScreen';
-import EmptyState from '../../components/EmptyState';
-import PremiumCard from '../../components/PremiumCard';
-import SectionHeader from '../../components/SectionHeader';
-import { STORAGE_KEYS } from '../../src/config/app';
-import { getClients } from '../../src/api/mobile';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+
+import ScreenWrapper from '../../components/ScreenWrapper';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { fetchAllPages } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
 
-const PAGE_SIZE = 20;
+type TabKey = 'clients' | 'deals' | 'payments';
 
-export default function CrmScreen() {
+function isMineOrShared(item: any, userId: number, isAdmin: boolean) {
+  if (isAdmin) return true;
+  if (!item) return false;
+
+  if ('manager' in item && item.manager === userId) return true;
+  if (item.client_data?.manager === userId) return true;
+  if (item.manager_data?.id === userId) return true;
+
+  if (Array.isArray(item.shared_with) && item.shared_with.includes(userId)) return true;
+  if (Array.isArray(item.shared_with_data) && item.shared_with_data.some((u: any) => u.id === userId)) return true;
+
+  return false;
+}
+
+export default function CRMScreen() {
+  const router = useRouter();
   const { theme } = useTheme();
+  const { user } = useCurrentUser();
+
+  const isAdmin = !!user && (user.is_superuser || user.is_staff || user.role === 'admin');
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [items, setItems] = useState<any[]>([]);
+
+  const [activeTab, setActiveTab] = useState<TabKey>('clients');
   const [search, setSearch] = useState('');
+
+  const [clients, setClients] = useState<any[]>([]);
+  const [deals, setDeals] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
+
   const [page, setPage] = useState(1);
-  const [isOffline, setIsOffline] = useState(false);
+  const pageSize = 20;
 
   const load = useCallback(async () => {
+    if (!user) return;
+
     try {
-      const res = await getClients({ limit: 200, offset: 0 });
-      setItems(res.items);
-      await AsyncStorage.setItem(STORAGE_KEYS.cachedClients, JSON.stringify(res.items));
-      setIsOffline(false);
-    } catch {
-      const cached = await AsyncStorage.getItem(STORAGE_KEYS.cachedClients);
-      setItems(cached ? JSON.parse(cached) : []);
-      setIsOffline(true);
+      const [clientData, dealData, paymentData] = await Promise.all([
+        fetchAllPages('clients/'),
+        fetchAllPages('analytics/deals/'),
+        fetchAllPages('analytics/payments/'),
+      ]);
+
+      setClients(clientData.filter((x) => isMineOrShared(x, user.id, isAdmin)));
+      setDeals(dealData.filter((x) => isMineOrShared(x, user.id, isAdmin)));
+      setPayments(paymentData.filter((x) => isMineOrShared(x, user.id, isAdmin)));
+    } catch (e) {
+      console.log('CRM load error', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [user, isAdmin]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return items;
-    return items.filter((item) =>
-      [item.full_name, item.phone, item.email, item.city]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(query)
-    );
-  }, [items, search]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const pageItems = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-
   useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
+    setPage(1);
+  }, [search, activeTab]);
+
+  const currentData = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    if (activeTab === 'clients') {
+      return clients.filter(
+        (c) =>
+          !q ||
+          String(c.full_name || '').toLowerCase().includes(q) ||
+          String(c.phone || '').toLowerCase().includes(q) ||
+          String(c.email || '').toLowerCase().includes(q) ||
+          String(c.city || '').toLowerCase().includes(q)
+      );
+    }
+
+    if (activeTab === 'deals') {
+      return deals.filter(
+        (d) =>
+          !q ||
+          String(d.client_data?.full_name || d.client_name || '').toLowerCase().includes(q) ||
+          String(d.service_title || d.custom_service_name || '').toLowerCase().includes(q) ||
+          String(d.id).includes(q)
+      );
+    }
+
+    return payments.filter(
+      (p) =>
+        !q ||
+        String(p.id).includes(q) ||
+        String(p.deal).includes(q) ||
+        String(p.method || '').toLowerCase().includes(q)
+    );
+  }, [activeTab, clients, deals, payments, search]);
+
+  const totalPages = Math.max(1, Math.ceil(currentData.length / pageSize));
+  const paginated = currentData.slice((page - 1) * pageSize, page * pageSize);
 
   if (loading) {
     return (
-      <AppScreen scroll={false} contentContainerStyle={{ justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={theme.blue} />
-      </AppScreen>
+      <ScreenWrapper>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={theme.blue} />
+        </View>
+      </ScreenWrapper>
     );
   }
 
   return (
-    <AppScreen scroll={false}>
-      <View style={{ gap: 16 }}>
-        <SectionHeader
-          title="CRM"
-          subtitle={isOffline ? 'Офлайн-режим: показан локальный кэш' : 'Клиентская база Students Life'}
-          actionLabel="Добавить"
-          onPress={() => router.push('/(app)/add-client')}
-        />
+    <ScreenWrapper>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+            tintColor={theme.blue}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.head}>
+          <View>
+            <Text style={[styles.title, { color: theme.text }]}>CRM</Text>
+            <Text style={[styles.sub, { color: theme.textSecondary }]}>
+              {isAdmin ? 'Вся база компании' : 'Только мои и shared клиенты'}
+            </Text>
+          </View>
 
-        <PremiumCard>
+          <View style={styles.actionRow}>
+            <Pressable onPress={() => router.push('/documents' as any)} style={[styles.circleBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.circleBtnText, { color: theme.blue }]}>DOC</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push('/add-client' as any)} style={[styles.primaryBtn, { backgroundColor: theme.blue }]}>
+              <Text style={styles.primaryBtnText}>+ Клиент</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <TextInput
             value={search}
             onChangeText={setSearch}
-            placeholder="Поиск по имени, телефону, email, городу"
+            placeholder={
+              activeTab === 'clients'
+                ? 'Поиск клиента'
+                : activeTab === 'deals'
+                ? 'Поиск сделки'
+                : 'Поиск платежа'
+            }
             placeholderTextColor={theme.textMuted}
-            style={{ color: theme.text, fontSize: 15, fontWeight: '600' }}
+            style={[styles.searchInput, { color: theme.text }]}
           />
-        </PremiumCard>
+        </View>
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
-          contentContainerStyle={{ gap: 12 }}
-        >
-          {pageItems.length ? pageItems.map((client) => (
-            <TouchableOpacity key={client.id} onPress={() => router.push(`/(app)/client/${client.id}` as any)}>
-              <PremiumCard>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: theme.text, fontSize: 17, fontWeight: '900' }}>{client.full_name}</Text>
-                    <Text style={{ color: theme.textSecondary, marginTop: 6 }}>{client.phone || 'Телефон не указан'}</Text>
-                    <Text style={{ color: theme.textMuted, marginTop: 4 }}>{client.city || 'Город не указан'}</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={{ color: theme.blue, fontWeight: '800' }}>{client.status || 'new'}</Text>
-                    <Text style={{ color: theme.textMuted, marginTop: 8 }}>#{client.id}</Text>
-                  </View>
-                </View>
-              </PremiumCard>
-            </TouchableOpacity>
-          )) : <EmptyState title="Клиентов не найдено" subtitle="Попробуй другой запрос или сначала синхронизируй базу." />}
-        </ScrollView>
+        <View style={[styles.tabs, { backgroundColor: theme.backgroundSoft }]}>
+          {(['clients', 'deals', 'payments'] as TabKey[]).map((tab) => {
+            const active = activeTab === tab;
+            return (
+              <Pressable
+                key={tab}
+                onPress={() => setActiveTab(tab)}
+                style={[
+                  styles.tab,
+                  {
+                    backgroundColor: active ? theme.surface : 'transparent',
+                    borderColor: active ? theme.border : 'transparent',
+                  },
+                ]}
+              >
+                <Text style={{ color: active ? theme.text : theme.textSecondary, fontWeight: active ? '900' : '700' }}>
+                  {tab === 'clients' ? 'Клиенты' : tab === 'deals' ? 'Сделки' : 'Платежи'}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
-        <PremiumCard>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <TouchableOpacity disabled={safePage <= 1} onPress={() => setPage((p) => Math.max(1, p - 1))}>
-              <Text style={{ color: safePage <= 1 ? theme.textMuted : theme.blue, fontWeight: '800' }}>Назад</Text>
-            </TouchableOpacity>
-            <Text style={{ color: theme.text, fontWeight: '800' }}>Страница {safePage} / {totalPages}</Text>
-            <TouchableOpacity disabled={safePage >= totalPages} onPress={() => setPage((p) => Math.min(totalPages, p + 1))}>
-              <Text style={{ color: safePage >= totalPages ? theme.textMuted : theme.blue, fontWeight: '800' }}>Вперёд</Text>
-            </TouchableOpacity>
-          </View>
-        </PremiumCard>
-      </View>
-    </AppScreen>
+        <Text style={[styles.countText, { color: theme.textSecondary }]}>
+          Найдено: {currentData.length}
+        </Text>
+
+        <View style={[styles.list, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {paginated.length === 0 ? (
+            <Text style={[styles.empty, { color: theme.textSecondary }]}>Ничего не найдено.</Text>
+          ) : (
+            paginated.map((item) => {
+              if (activeTab === 'clients') {
+                return (
+                  <Pressable
+                    key={`c-${item.id}`}
+                    onPress={() => router.push(`/client/${item.id}` as any)}
+                    style={[styles.row, { borderBottomColor: theme.divider }]}
+                  >
+                    <View>
+                      <Text style={[styles.rowTitle, { color: theme.text }]}>{item.full_name}</Text>
+                      <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
+                        {item.phone || 'Без телефона'} · {item.city || 'Без города'}
+                      </Text>
+                    </View>
+                    <Text style={[styles.rowValue, { color: theme.blue }]}>{item.status || 'new'}</Text>
+                  </Pressable>
+                );
+              }
+
+              if (activeTab === 'deals') {
+                return (
+                  <Pressable
+                    key={`d-${item.id}`}
+                    onPress={() => router.push(`/deal/${item.id}` as any)}
+                    style={[styles.row, { borderBottomColor: theme.divider }]}
+                  >
+                    <View>
+                      <Text style={[styles.rowTitle, { color: theme.text }]}>
+                        {item.client_data?.full_name || item.client_name || `Сделка #${item.id}`}
+                      </Text>
+                      <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
+                        {item.service_title || item.custom_service_name || item.deal_type}
+                      </Text>
+                    </View>
+                    <Text style={[styles.rowValue, { color: theme.blue }]}>
+                      ${Math.round(parseFloat(String(item.total_to_pay_usd || 0))).toLocaleString('ru-RU')}
+                    </Text>
+                  </Pressable>
+                );
+              }
+
+              return (
+                <Pressable
+                  key={`p-${item.id}`}
+                  onPress={() => router.push('/admin-payments' as any)}
+                  style={[styles.row, { borderBottomColor: theme.divider }]}
+                >
+                  <View>
+                    <Text style={[styles.rowTitle, { color: theme.text }]}>Платёж #{item.id}</Text>
+                    <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
+                      Сделка #{item.deal} · {item.method || 'payment'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.rowValue, { color: item.is_confirmed ? theme.success : theme.red }]}>
+                    ${Math.round(parseFloat(String(item.amount_usd || 0))).toLocaleString('ru-RU')}
+                  </Text>
+                </Pressable>
+              );
+            })
+          )}
+        </View>
+
+        <View style={styles.pagination}>
+          <Pressable
+            disabled={page <= 1}
+            onPress={() => setPage((p) => Math.max(1, p - 1))}
+            style={[styles.pageBtn, { backgroundColor: theme.surface, borderColor: theme.border, opacity: page <= 1 ? 0.4 : 1 }]}
+          >
+            <Text style={{ color: theme.text, fontWeight: '800' }}>Назад</Text>
+          </Pressable>
+
+          <Text style={[styles.pageText, { color: theme.text }]}>
+            {page} / {totalPages}
+          </Text>
+
+          <Pressable
+            disabled={page >= totalPages}
+            onPress={() => setPage((p) => Math.min(totalPages, p + 1))}
+            style={[styles.pageBtn, { backgroundColor: theme.surface, borderColor: theme.border, opacity: page >= totalPages ? 0.4 : 1 }]}
+          >
+            <Text style={{ color: theme.text, fontWeight: '800' }}>Вперёд</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </ScreenWrapper>
   );
 }
+
+const styles = StyleSheet.create({
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { padding: 20, paddingBottom: 120 },
+  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  title: { fontSize: 28, fontWeight: '900' },
+  sub: { marginTop: 6, fontSize: 13, fontWeight: '600' },
+  actionRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  circleBtn: {
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  circleBtnText: { fontWeight: '900', fontSize: 12 },
+  primaryBtn: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 },
+  primaryBtnText: { color: '#fff', fontWeight: '900' },
+  searchBox: { marginTop: 18, borderWidth: 1, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14 },
+  searchInput: { fontSize: 15, fontWeight: '600' },
+  tabs: { marginTop: 14, borderRadius: 18, padding: 4, flexDirection: 'row', gap: 4 },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 14, borderWidth: 1 },
+  countText: { marginTop: 14, marginBottom: 10, fontSize: 13, fontWeight: '700' },
+  list: { borderWidth: 1, borderRadius: 22, overflow: 'hidden' },
+  row: {
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  rowTitle: { fontSize: 15, fontWeight: '800' },
+  rowMeta: { marginTop: 4, fontSize: 12, fontWeight: '600' },
+  rowValue: { fontSize: 13, fontWeight: '900' },
+  empty: { padding: 18, fontSize: 14 },
+  pagination: { marginTop: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pageBtn: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 },
+  pageText: { fontSize: 14, fontWeight: '900' },
+});

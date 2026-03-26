@@ -1,9 +1,30 @@
 import { useCallback, useEffect, useState } from 'react';
-import { STORAGE_KEYS } from '../src/config/app';
-import { AppUser, getCurrentUser } from '../src/api/mobile';
-import { getJSON } from '../src/utils/storage';
+import apiClient from '../src/api/apiClient';
+import { getToken, saveToken } from '../src/utils/storage';
 
-export type CurrentUser = AppUser;
+export interface CurrentUser {
+  id: number;
+  email: string;
+  first_name: string;
+  last_name: string;
+  middle_name?: string;
+  full_name?: string;
+  role?: 'admin' | 'manager';
+  is_superuser: boolean;
+  is_staff: boolean;
+  avatar: string | null;
+  work_status: string;
+  is_effective: boolean;
+  office: { id: number; city: string; address: string } | null;
+  managersalary: {
+    monthly_plan: number;
+    current_month_revenue: number;
+    current_balance: number;
+    fixed_salary: number;
+    motivation_target: number;
+    motivation_reward: number;
+  } | null;
+}
 
 export function useCurrentUser() {
   const [user, setUser] = useState<CurrentUser | null>(null);
@@ -11,13 +32,16 @@ export function useCurrentUser() {
 
   const reload = useCallback(async () => {
     try {
-      const cached = await getJSON<CurrentUser | null>(STORAGE_KEYS.cachedProfile, null);
-      if (cached) setUser(cached);
+      const cached = await getToken('cache_my_profile');
+      if (cached) {
+        setUser(JSON.parse(cached));
+      }
 
-      const fresh = await getCurrentUser();
-      setUser(fresh);
+      const response = await apiClient.get('users/users/me/');
+      setUser(response.data);
+      await saveToken('cache_my_profile', JSON.stringify(response.data));
     } catch {
-      // stay on cache
+      // оффлайн — остаёмся на кэше
     } finally {
       setLoading(false);
     }
