@@ -1,151 +1,179 @@
-// src/context/ThemeContext.tsx
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { getToken, saveToken } from '../utils/storage';
+import { STORAGE_KEYS } from '../config/app';
 
-// ─── Палитра ─────────────────────────────────────────────────────────────────
-
-export const LIGHT: ThemePalette = {
-    mode: 'light',
-
-    // Фоны
-    bg:         '#F8FAFC',
-    bgCard:     '#FFFFFF',
-    bgGlass:    'rgba(255,255,255,0.65)',
-    bgGlass2:   'rgba(255,255,255,0.45)',
-    bgInput:    'rgba(255,255,255,0.85)',
-    bgChip:     '#F2F2F7',
-    bgSection:  '#F1F5F9',
-
-    // Текст
-    text:       '#0F172A',
-    textSub:    '#64748B',
-    textMuted:  '#94A3B8',
-    textInvert: '#FFFFFF',
-
-    // Бренд
-    primary:    '#007AFF',
-    primaryDeep:'#0D416D',
-    accent:     '#10b981',
-    danger:     '#ef4444',
-    warning:    '#f59e0b',
-    purple:     '#8b5cf6',
-
-    // Границы и тени
-    border:     '#E2E8F0',
-    borderGlass:'rgba(255,255,255,0.9)',
-    shadow:     '#000',
-
-    // Градиент фона
-    gradientBg: ['#F8FAFC', '#F1F5F9', '#E2E8F0'] as string[],
-};
-
-export const DARK: ThemePalette = {
-    mode: 'dark',
-
-    bg:         '#0F172A',
-    bgCard:     '#1E293B',
-    bgGlass:    'rgba(30,41,59,0.80)',
-    bgGlass2:   'rgba(30,41,59,0.55)',
-    bgInput:    'rgba(30,41,59,0.90)',
-    bgChip:     '#334155',
-    bgSection:  '#1E293B',
-
-    text:       '#F1F5F9',
-    textSub:    '#94A3B8',
-    textMuted:  '#64748B',
-    textInvert: '#0F172A',
-
-    primary:    '#3B82F6',
-    primaryDeep:'#60A5FA',
-    accent:     '#34D399',
-    danger:     '#F87171',
-    warning:    '#FBBF24',
-    purple:     '#A78BFA',
-
-    border:     '#334155',
-    borderGlass:'rgba(255,255,255,0.08)',
-    shadow:     '#000',
-
-    gradientBg: ['#0F172A', '#1E293B', '#0F172A'] as string[],
-};
-
-// ─── Типы ─────────────────────────────────────────────────────────────────────
-
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type ThemeMode = 'light' | 'dark';
 
 export interface ThemePalette {
-    mode:        'light' | 'dark';
-    bg:          string;
-    bgCard:      string;
-    bgGlass:     string;
-    bgGlass2:    string;
-    bgInput:     string;
-    bgChip:      string;
-    bgSection:   string;
-    text:        string;
-    textSub:     string;
-    textMuted:   string;
-    textInvert:  string;
-    primary:     string;
-    primaryDeep: string;
-    accent:      string;
-    danger:      string;
-    warning:     string;
-    purple:      string;
-    border:      string;
-    borderGlass: string;
-    shadow:      string;
-    gradientBg:  string[];
+  mode: ThemeMode;
+
+  background: string;
+  backgroundSoft: string;
+  surface: string;
+  glass: string;
+  glassStrong: string;
+  border: string;
+  text: string;
+  textSecondary: string;
+  textMuted: string;
+  white: string;
+  red: string;
+  redSoft: string;
+  blue: string;
+  blueSoft: string;
+  green: string;
+  yellow: string;
+  danger: string;
+  shadow: string;
+  overlay: string;
+  tabBar: string;
+  gradientMain: [string, string, string];
+  gradientRed: [string, string];
+  gradientBlue: [string, string];
+
+  // legacy aliases for existing screens
+  bg: string;
+  bgCard: string;
+  bgGlass: string;
+  bgGlass2: string;
+  bgInput: string;
+  bgChip: string;
+  bgSection: string;
+  textSub: string;
+  textInvert: string;
+  primary: string;
+  primaryDeep: string;
+  accent: string;
+  warning: string;
+  purple: string;
+  borderGlass: string;
+  gradientBg: string[];
 }
 
-interface ThemeCtx {
-    theme:      ThemePalette;
-    themeMode:  ThemeMode;
-    isDark:     boolean;
-    setTheme:   (mode: ThemeMode) => void;
-}
+const lightTheme: ThemePalette = {
+  mode: 'light',
+  background: '#F8FAFC',
+  backgroundSoft: '#FFFFFF',
+  surface: 'rgba(255,255,255,0.84)',
+  glass: 'rgba(255,255,255,0.72)',
+  glassStrong: 'rgba(255,255,255,0.90)',
+  border: 'rgba(15,23,42,0.08)',
+  text: '#0F172A',
+  textSecondary: '#475569',
+  textMuted: '#94A3B8',
+  white: '#FFFFFF',
+  red: '#C81E1E',
+  redSoft: '#FFF1F2',
+  blue: '#164E9A',
+  blueSoft: '#EFF6FF',
+  green: '#059669',
+  yellow: '#D97706',
+  danger: '#DC2626',
+  shadow: 'rgba(15,23,42,0.16)',
+  overlay: 'rgba(15,23,42,0.16)',
+  tabBar: 'rgba(255,255,255,0.86)',
+  gradientMain: ['#FFFFFF', '#F8FAFC', '#EFF6FF'],
+  gradientRed: ['#FFF5F5', '#FEE2E2'],
+  gradientBlue: ['#F8FBFF', '#DBEAFE'],
 
-// ─── Context ─────────────────────────────────────────────────────────────────
+  bg: '#F8FAFC',
+  bgCard: '#FFFFFF',
+  bgGlass: 'rgba(255,255,255,0.72)',
+  bgGlass2: 'rgba(255,255,255,0.54)',
+  bgInput: 'rgba(255,255,255,0.90)',
+  bgChip: '#F1F5F9',
+  bgSection: '#F8FAFC',
+  textSub: '#475569',
+  textInvert: '#FFFFFF',
+  primary: '#164E9A',
+  primaryDeep: '#0F3D78',
+  accent: '#059669',
+  warning: '#D97706',
+  purple: '#7C3AED',
+  borderGlass: 'rgba(255,255,255,0.9)',
+  gradientBg: ['#FFFFFF', '#F8FAFC', '#EFF6FF'],
+};
 
-const ThemeContext = createContext<ThemeCtx>({
-    theme:     LIGHT,
-    themeMode: 'system',
-    isDark:    false,
-    setTheme:  () => {},
+const darkTheme: ThemePalette = {
+  mode: 'dark',
+  background: '#07111F',
+  backgroundSoft: '#0B1526',
+  surface: 'rgba(11,21,38,0.86)',
+  glass: 'rgba(15,23,42,0.74)',
+  glassStrong: 'rgba(15,23,42,0.90)',
+  border: 'rgba(255,255,255,0.10)',
+  text: '#F8FAFC',
+  textSecondary: '#CBD5E1',
+  textMuted: '#94A3B8',
+  white: '#FFFFFF',
+  red: '#F87171',
+  redSoft: '#2A1113',
+  blue: '#60A5FA',
+  blueSoft: '#0B2240',
+  green: '#34D399',
+  yellow: '#FBBF24',
+  danger: '#F87171',
+  shadow: 'rgba(0,0,0,0.40)',
+  overlay: 'rgba(0,0,0,0.42)',
+  tabBar: 'rgba(11,21,38,0.88)',
+  gradientMain: ['#07111F', '#0B1526', '#102242'],
+  gradientRed: ['#2A1113', '#4C1D1D'],
+  gradientBlue: ['#0B1526', '#0F2545'],
+
+  bg: '#07111F',
+  bgCard: '#0B1526',
+  bgGlass: 'rgba(15,23,42,0.74)',
+  bgGlass2: 'rgba(15,23,42,0.60)',
+  bgInput: 'rgba(15,23,42,0.90)',
+  bgChip: '#1E293B',
+  bgSection: '#0B1526',
+  textSub: '#CBD5E1',
+  textInvert: '#07111F',
+  primary: '#60A5FA',
+  primaryDeep: '#3B82F6',
+  accent: '#34D399',
+  warning: '#FBBF24',
+  purple: '#A78BFA',
+  borderGlass: 'rgba(255,255,255,0.10)',
+  gradientBg: ['#07111F', '#0B1526', '#102242'],
+};
+
+type ThemeContextShape = {
+  theme: ThemePalette;
+  isDark: boolean;
+  themeMode: ThemeMode;
+  setTheme: (mode: ThemeMode) => Promise<void>;
+};
+
+const ThemeContext = createContext<ThemeContextShape>({
+  theme: lightTheme,
+  isDark: false,
+  themeMode: 'light',
+  setTheme: async () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-    const systemScheme           = useColorScheme();
-    const [themeMode, setMode]   = useState<ThemeMode>('system');
+  const [themeMode, setThemeMode] = useState<ThemeMode>('light');
 
-    // Загружаем сохранённый выбор
-    useEffect(() => {
-        getToken('app_theme').then(saved => {
-            if (saved === 'light' || saved === 'dark' || saved === 'system') {
-                setMode(saved);
-            }
-        });
-    }, []);
+  useEffect(() => {
+    getToken(STORAGE_KEYS.theme).then((saved) => {
+      if (saved === 'dark' || saved === 'light') setThemeMode(saved);
+    });
+  }, []);
 
-    const setTheme = useCallback(async (mode: ThemeMode) => {
-        setMode(mode);
-        await saveToken('app_theme', mode);
-    }, []);
+  const setTheme = useCallback(async (mode: ThemeMode) => {
+    setThemeMode(mode);
+    await saveToken(STORAGE_KEYS.theme, mode);
+  }, []);
 
-    const isDark =
-        themeMode === 'dark' ||
-        (themeMode === 'system' && systemScheme === 'dark');
+  const value = useMemo(() => {
+    const isDark = themeMode === 'dark';
+    return { theme: isDark ? darkTheme : lightTheme, isDark, themeMode, setTheme };
+  }, [themeMode, setTheme]);
 
-    const theme = isDark ? DARK : LIGHT;
-
-    return (
-        <ThemeContext.Provider value={{ theme, themeMode, isDark, setTheme }}>
-            {children}
-        </ThemeContext.Provider>
-    );
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {
-    return useContext(ThemeContext);
+  return useContext(ThemeContext);
 }

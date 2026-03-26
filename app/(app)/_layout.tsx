@@ -1,134 +1,87 @@
-// app/(app)/_layout.tsx
-import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { Platform, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Shadow } from '../../constants/theme';
+import { useTheme } from '../../src/context/ThemeContext';
+import { CrmIcon, HomeIcon, LibraryIcon, TrophyIcon, UserIcon } from '../../components/icons';
 
-// ✅ Высота навбара с учётом safe area
-const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 65 : 60;
-const TAB_BAR_BOTTOM = Platform.OS === 'ios' ? 20 : 12;
+function TabIcon({ route, color }: { route: string; color: string }) {
+  switch (route) {
+    case 'index':
+      return <HomeIcon color={color} size={22} />;
+    case 'crm':
+      return <CrmIcon color={color} size={22} />;
+    case 'leaderboard':
+      return <TrophyIcon color={color} size={22} />;
+    case 'catalog':
+      return <LibraryIcon color={color} size={22} />;
+    default:
+      return <UserIcon color={color} size={22} />;
+  }
+}
 
 export default function AppLayout() {
-    return (
-        <Tabs
-            screenOptions={{
-                headerTransparent: true,
-                headerBackground: () => (
-                    <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />
-                ),
-                headerTitleStyle: {
-                    color: '#0F172A',
-                    fontWeight: '900',
-                    fontSize: 18,
-                },
-                headerTitleAlign: 'center',
+  const { theme, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
-                // ✅ ИСПРАВЛЕНИЕ: Корректный парящий таббар без обрезки
-                tabBarStyle: {
-                    position: 'absolute',
-                    bottom: TAB_BAR_BOTTOM,
-                    left: 16,
-                    right: 16,
-                    elevation: 8,
-                    shadowColor: '#0D416D',
-                    shadowOffset: { width: 0, height: 8 },
-                    shadowOpacity: 0.12,
-                    shadowRadius: 16,
-                    backgroundColor: 'transparent',
-                    borderTopWidth: 0,
-                    height: TAB_BAR_HEIGHT,
-                    borderRadius: TAB_BAR_HEIGHT / 2,
-                    overflow: 'hidden',
-                },
-                tabBarBackground: () => (
-                    <BlurView
-                        intensity={70}
-                        tint="light"
-                        style={[StyleSheet.absoluteFillObject, { borderRadius: TAB_BAR_HEIGHT / 2, overflow: 'hidden' }]}
-                    />
-                ),
+  const bottom = Math.max(insets.bottom, Platform.OS === 'ios' ? 18 : 14);
+  const height = 70 + Math.max(insets.bottom - 4, 0);
 
-                tabBarActiveTintColor: '#0D416D',
-                tabBarInactiveTintColor: '#94A3B8',
-                tabBarShowLabel: true,
-                tabBarItemStyle: {
-                    paddingTop: 6,
-                    paddingBottom: Platform.OS === 'ios' ? 6 : 8,
-                },
-                tabBarLabelStyle: {
-                    fontSize: 10,
-                    fontWeight: '800',
-                    marginTop: 1,
-                },
-                tabBarHideOnKeyboard: true,
-            }}
-        >
-            {/* ОСНОВНЫЕ ВКЛАДКИ */}
-            <Tabs.Screen
-                name="index"
-                options={{
-                    title: 'Главная',
-                    tabBarIcon: ({ color, size, focused }) => (
-                        <Ionicons name={focused ? 'apps' : 'apps-outline'} size={size} color={color} />
-                    ),
-                }}
-            />
-            <Tabs.Screen
-                name="crm"
-                options={{
-                    title: 'CRM',
-                    tabBarIcon: ({ color, size, focused }) => (
-                        <Ionicons name={focused ? 'people' : 'people-outline'} size={size} color={color} />
-                    ),
-                }}
-            />
-            <Tabs.Screen
-                name="leaderboard"
-                options={{
-                    title: 'Рейтинг',
-                    tabBarIcon: ({ color, size, focused }) => (
-                        <Ionicons name={focused ? 'trophy' : 'trophy-outline'} size={size} color={color} />
-                    ),
-                }}
-            />
-            <Tabs.Screen
-                name="catalog"
-                options={{
-                    title: 'Каталог',
-                    tabBarIcon: ({ color, size, focused }) => (
-                        <Ionicons name={focused ? 'library' : 'library-outline'} size={size} color={color} />
-                    ),
-                }}
-            />
-            <Tabs.Screen
-                name="profile"
-                options={{
-                    title: 'Профиль',
-                    tabBarIcon: ({ color, size, focused }) => (
-                        <Ionicons
-                            name={focused ? 'person-circle' : 'person-circle-outline'}
-                            size={size}
-                            color={color}
-                        />
-                    ),
-                }}
-            />
+  return (
+    <Tabs
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarActiveTintColor: theme.text,
+        tabBarInactiveTintColor: theme.textMuted,
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '800', marginTop: 4 },
+        tabBarStyle: {
+          position: 'absolute',
+          left: 16,
+          right: 16,
+          bottom,
+          height,
+          paddingTop: 10,
+          paddingBottom: Math.max(insets.bottom, 10),
+          borderTopWidth: 0,
+          backgroundColor: 'transparent',
+          borderRadius: 999,
+          overflow: 'hidden',
+          ...Shadow.floating,
+        },
+        tabBarBackground: () => (
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 40 : 65}
+            tint={isDark ? 'dark' : 'light'}
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: theme.tabBar, borderRadius: 999, borderWidth: 1, borderColor: theme.border },
+            ]}
+          />
+        ),
+        tabBarIcon: ({ color }) => <TabIcon route={route.name} color={color} />,
+      })}
+    >
+      <Tabs.Screen name="index" options={{ title: 'Главная' }} />
+      <Tabs.Screen name="crm" options={{ title: 'CRM' }} />
+      <Tabs.Screen name="leaderboard" options={{ title: 'Рейтинг' }} />
+      <Tabs.Screen name="catalog" options={{ title: 'Вузы' }} />
+      <Tabs.Screen name="profile" options={{ title: 'Профиль' }} />
 
-            {/* СКРЫТЫЕ СТРАНИЦЫ */}
-            <Tabs.Screen name="documents" options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="client/[id]" options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="deal/[id]" options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="add-deal" options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="create-document" options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="add-client" options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="payment/create" options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="university/[id]" options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="knowledge-base"   options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="admin-staff"      options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="admin-reports"    options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="admin-payments"   options={{ href: null, headerShown: false }} />
-            <Tabs.Screen name="tasks"            options={{ href: null, headerShown: false }} />
-        </Tabs>
-    );
+      <Tabs.Screen name="tasks" options={{ href: null }} />
+      <Tabs.Screen name="documents" options={{ href: null }} />
+      <Tabs.Screen name="knowledge-base" options={{ href: null }} />
+      <Tabs.Screen name="add-client" options={{ href: null }} />
+      <Tabs.Screen name="add-deal" options={{ href: null }} />
+      <Tabs.Screen name="create-document" options={{ href: null }} />
+      <Tabs.Screen name="payment/create" options={{ href: null }} />
+      <Tabs.Screen name="client/[id]" options={{ href: null }} />
+      <Tabs.Screen name="deal/[id]" options={{ href: null }} />
+      <Tabs.Screen name="university/[id]" options={{ href: null }} />
+      <Tabs.Screen name="admin-staff" options={{ href: null }} />
+      <Tabs.Screen name="admin-reports" options={{ href: null }} />
+      <Tabs.Screen name="admin-payments" options={{ href: null }} />
+    </Tabs>
+  );
 }

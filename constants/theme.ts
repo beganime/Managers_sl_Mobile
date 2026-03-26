@@ -1,53 +1,62 @@
-// constants/theme.ts
-
 export const Colors = {
   light: {
-    primary: '#007AFF', // Классический iOS синий
-    background: '#F2F2F7', // Мягкий серый фон как в системных настройках iOS
+    primary: '#164E9A',
+    background: '#F8FAFC',
     card: '#FFFFFF',
-    text: '#1C1C1E',
-    textSecondary: '#8E8E93',
-    border: '#E5E5EA',
-    success: '#34C759',
-    danger: '#FF3B30',
-    warning: '#FF9500',
+    text: '#0F172A',
+    textSecondary: '#475569',
+    border: '#E2E8F0',
+    success: '#059669',
+    danger: '#DC2626',
+    warning: '#D97706',
   },
   dark: {
-    primary: '#0A84FF',
-    background: '#000000',
-    card: '#1C1C1E',
-    text: '#FFFFFF',
-    textSecondary: '#EBEBF5',
-    border: '#38383A',
-    success: '#32D74B',
-    danger: '#FF453A',
-    warning: '#FF9F0A',
-  }
+    primary: '#60A5FA',
+    background: '#07111F',
+    card: '#0B1526',
+    text: '#F8FAFC',
+    textSecondary: '#CBD5E1',
+    border: '#1E293B',
+    success: '#34D399',
+    danger: '#F87171',
+    warning: '#FBBF24',
+  },
+};
+
+export const Radius = {
+  sm: 14,
+  md: 20,
+  lg: 28,
+  xl: 36,
+  pill: 999,
+};
+
+export const Shadow = {
+  card: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  floating: {
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.12,
+    shadowRadius: 26,
+    elevation: 12,
+  },
 };
 
 export const Layout = {
   radius: {
-    small: 8,
-    medium: 16,
-    large: 24, // Увеличенные радиусы для "воздушности"
-    pill: 9999,
+    small: Radius.sm,
+    medium: Radius.md,
+    large: Radius.lg,
+    pill: Radius.pill,
   },
   shadows: {
-    // Мягкая тень для карточек
-    light: {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.05,
-      shadowRadius: 12,
-      elevation: 2,
-    },
-    // Более глубокая тень для парящих элементов (как TabBar)
-    medium: {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.1,
-      shadowRadius: 24,
-      elevation: 5,
-    }
-  }
+    light: Shadow.card,
+    medium: Shadow.floating,
+  },
 };
