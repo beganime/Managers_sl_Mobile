@@ -1,171 +1,258 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import AppScreen from '../../components/AppScreen';
-import EmptyState from '../../components/EmptyState';
-import PremiumCard from '../../components/PremiumCard';
-import SectionHeader from '../../components/SectionHeader';
-import { STORAGE_KEYS } from '../../src/config/app';
-import { createTask, deleteTask, getTasks, updateTask } from '../../src/api/mobile';
-import { useCurrentUser } from '../../hooks/useCurrentUser';
-import { useTheme } from '../../src/context/ThemeContext';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
-type OfflineTask = {
-  id: string | number;
+import ScreenWrapper from '../../components/ScreenWrapper';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
+import apiClient, { fetchAllPages } from '../../src/api/apiClient';
+import { useTheme } from '../../src/context/ThemeContext';
+import { getToken, saveToken } from '../../src/utils/storage';
+
+type TaskStatus = 'todo' | 'process' | 'review' | 'done';
+type TaskPriority = 'low' | 'medium' | 'high';
+type FilterKey = 'all' | 'mine' | 'done' | 'offline';
+
+type TaskItem = {
+  id: number | string;
   title: string;
   description?: string;
-  status: 'todo' | 'process' | 'review' | 'done';
-  priority: 'low' | 'medium' | 'high';
-  assigned_to?: number;
-  _offlineAction?: 'CREATE' | 'UPDATE' | 'DELETE';
+  status: TaskStatus;
+  priority: TaskPriority;
+  assigned_to?: number | { id: number; first_name?: string; last_name?: string } | null;
+  created_at?: string;
+  updated_at?: string;
   isOffline?: boolean;
+  _offlineAction?: 'CREATE' | 'UPDATE' | 'DELETE';
 };
+
+const OFFLINE_KEY = 'offline_tasks';
+const CACHE_KEY = 'cache_tasks';
+
+const STATUS_LABELS: Record<TaskStatus, string> = {
+  todo: 'To do',
+  process: 'В работе',
+  review: 'Проверка',
+  done: 'Готово',
+};
+
+const PRIORITY_LABELS: Record<TaskPriority, string> = {
+  low: 'Низкий',
+  medium: 'Средний',
+  high: 'Высокий',
+};
+
+function getAssignedId(task: TaskItem) {
+  if (typeof task.assigned_to === 'object') return task.assigned_to?.id;
+  return task.assigned_to ?? null;
+}
+
+function mergeTasks(serverTasks: TaskItem[], offlineTasks: TaskItem[]) {
+  const merged = [...serverTasks];
+
+  offlineTasks.forEach((item) => {
+    const index = merged.findIndex((x) => String(x.id) === String(item.id));
+
+    if (item._offlineAction === 'DELETE') {
+      if (index > -1) merged.splice(index, 1);
+      return;
+    }
+
+    if (index > -1) {
+      merged[index] = { ...merged[index], ...item, isOffline: true };
+    } else {
+      merged.push({ ...item, isOffline: true });
+    }
+  });
+
+  return merged;
+}
 
 export default function TasksScreen() {
   const { theme } = useTheme();
   const { user } = useCurrentUser();
-  const [tasks, setTasks] = useState<OfflineTask[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [modal, setModal] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [isOffline, setIsOffline] = useState(false);
 
-  const [form, setForm] = useState<OfflineTask>({
+  const isAdmin = !!user && (user.is_superuser || user.is_staff || user.role === 'admin');
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [offlineQueue, setOfflineQueue] = useState<TaskItem[]>([]);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<FilterKey>('mine');
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState<TaskItem>({
     id: '',
     title: '',
     description: '',
-    priority: 'medium',
     status: 'todo',
+    priority: 'medium',
   });
 
-  const readOffline = useCallback(async () => {
-    const raw = await AsyncStorage.getItem(STORAGE_KEYS.offlineTasks);
-    return raw ? JSON.parse(raw) as OfflineTask[] : [];
+  const readOfflineQueue = useCallback(async () => {
+    try {
+      const raw = await getToken(OFFLINE_KEY);
+      return raw ? (JSON.parse(raw) as TaskItem[]) : [];
+    } catch {
+      return [];
+    }
   }, []);
 
-  const saveOffline = useCallback(async (items: OfflineTask[]) => {
-    await AsyncStorage.setItem(STORAGE_KEYS.offlineTasks, JSON.stringify(items));
+  const saveOfflineQueue = useCallback(async (items: TaskItem[]) => {
+    setOfflineQueue(items);
+    await saveToken(OFFLINE_KEY, JSON.stringify(items));
   }, []);
 
   const load = useCallback(async () => {
     try {
-      const [serverTasks, offlineTasks] = await Promise.all([getTasks(), readOffline()]);
-      let merged: OfflineTask[] = [...serverTasks];
-      offlineTasks.forEach((item) => {
-        if (item._offlineAction === 'DELETE') {
-          merged = merged.filter((t: any) => t.id !== item.id);
-        } else if (item._offlineAction === 'UPDATE') {
-          const idx = merged.findIndex((t: any) => t.id === item.id);
-          if (idx > -1) merged[idx] = { ...merged[idx], ...item };
-          else merged.push(item);
-        } else {
-          merged.push(item);
-        }
-      });
-      setTasks(merged);
-      await AsyncStorage.setItem(STORAGE_KEYS.cachedTasks, JSON.stringify(merged));
-      setIsOffline(false);
-    } catch {
-      const raw = await AsyncStorage.getItem(STORAGE_KEYS.cachedTasks);
-      setTasks(raw ? JSON.parse(raw) : []);
-      setIsOffline(true);
+      const queue = await readOfflineQueue();
+
+      try {
+        const server = await fetchAllPages('tasks/');
+        const merged = mergeTasks(server as TaskItem[], queue);
+        setTasks(merged);
+        setOfflineQueue(queue);
+        await saveToken(CACHE_KEY, JSON.stringify(merged));
+      } catch {
+        const cached = await getToken(CACHE_KEY);
+        setTasks(cached ? JSON.parse(cached) : []);
+        setOfflineQueue(queue);
+      }
     } finally {
+      setLoading(false);
       setRefreshing(false);
     }
-  }, [readOffline]);
+  }, [readOfflineQueue]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const openNew = () => {
-    setForm({
-      id: '',
-      title: '',
-      description: '',
-      priority: 'medium',
-      status: 'todo',
-    });
-    setModal(true);
-  };
+  const syncOffline = useCallback(async () => {
+    const queue = await readOfflineQueue();
 
-  const syncOffline = async () => {
-    const queue = await readOffline();
     if (!queue.length) {
-      Alert.alert('Синхронизация', 'Очередь пустая, все задачи уже отправлены.');
+      Alert.alert('Синхронизация', 'Локальная очередь пустая.');
       return;
     }
 
     setSaving(true);
-    const remaining: OfflineTask[] = [];
+    const remaining: TaskItem[] = [];
 
     for (const item of queue) {
       try {
         if (item._offlineAction === 'CREATE') {
-          await createTask({
+          await apiClient.post('tasks/', {
             title: item.title,
             description: item.description,
-            priority: item.priority,
             status: item.status,
+            priority: item.priority,
             assigned_to: user?.id,
           });
         } else if (item._offlineAction === 'UPDATE' && typeof item.id === 'number') {
-          await updateTask(item.id, {
+          await apiClient.patch(`tasks/${item.id}/`, {
             title: item.title,
             description: item.description,
-            priority: item.priority,
             status: item.status,
+            priority: item.priority,
           });
         } else if (item._offlineAction === 'DELETE' && typeof item.id === 'number') {
-          await deleteTask(item.id);
+          await apiClient.delete(`tasks/${item.id}/`);
         }
       } catch {
         remaining.push(item);
       }
     }
 
-    await saveOffline(remaining);
+    await saveOfflineQueue(remaining);
     setSaving(false);
-    load();
-    Alert.alert('Синхронизация', remaining.length ? 'Часть задач осталась в локальной очереди.' : 'Все локальные задачи отправлены.');
+    await load();
+
+    Alert.alert(
+      'Синхронизация',
+      remaining.length ? 'Часть задач осталась в локальной очереди.' : 'Все локальные задачи отправлены.'
+    );
+  }, [load, readOfflineQueue, saveOfflineQueue, user?.id]);
+
+  const openCreate = () => {
+    setForm({
+      id: '',
+      title: '',
+      description: '',
+      status: 'todo',
+      priority: 'medium',
+    });
+    setModalOpen(true);
+  };
+
+  const openEdit = (task: TaskItem) => {
+    setForm({
+      id: task.id,
+      title: task.title || '',
+      description: task.description || '',
+      status: task.status || 'todo',
+      priority: task.priority || 'medium',
+      assigned_to: getAssignedId(task) || undefined,
+    });
+    setModalOpen(true);
   };
 
   const submit = async () => {
     if (!form.title.trim()) {
-      Alert.alert('Проверь данные', 'Название задачи обязательно.');
+      Alert.alert('Ошибка', 'Название задачи обязательно.');
       return;
     }
 
     setSaving(true);
+
     try {
       if (typeof form.id === 'number') {
-        await updateTask(form.id, {
-          title: form.title,
-          description: form.description,
-          priority: form.priority,
+        await apiClient.patch(`tasks/${form.id}/`, {
+          title: form.title.trim(),
+          description: form.description?.trim() || '',
           status: form.status,
+          priority: form.priority,
         });
       } else {
-        await createTask({
-          title: form.title,
-          description: form.description,
-          priority: form.priority,
+        await apiClient.post('tasks/', {
+          title: form.title.trim(),
+          description: form.description?.trim() || '',
           status: form.status,
+          priority: form.priority,
           assigned_to: user?.id,
         });
       }
-      setModal(false);
-      await load();
+
       setSaving(false);
+      setModalOpen(false);
+      await load();
       return;
     } catch {}
 
-    const queue = await readOffline();
+    const queue = await readOfflineQueue();
+
     if (typeof form.id === 'number') {
-      const updated: OfflineTask = { ...form, _offlineAction: 'UPDATE', isOffline: true };
-      const idx = queue.findIndex((item) => item.id === form.id);
-      if (idx > -1) queue[idx] = updated;
-      else queue.push(updated);
+      const draft: TaskItem = {
+        ...form,
+        assigned_to: user?.id,
+        _offlineAction: 'UPDATE',
+        isOffline: true,
+      };
+      const index = queue.findIndex((x) => String(x.id) === String(form.id));
+      if (index > -1) queue[index] = draft;
+      else queue.push(draft);
     } else {
       queue.push({
         ...form,
@@ -175,143 +262,379 @@ export default function TasksScreen() {
         isOffline: true,
       });
     }
-    await saveOffline(queue);
-    setModal(false);
+
+    await saveOfflineQueue(queue);
     setSaving(false);
+    setModalOpen(false);
     await load();
   };
 
-  const onDelete = async (task: OfflineTask) => {
-    if (typeof task.id !== 'number') {
-      const queue = (await readOffline()).filter((item) => item.id !== task.id);
-      await saveOffline(queue);
-      load();
-      return;
-    }
+  const removeTask = async (task: TaskItem) => {
+    Alert.alert('Удаление', `Удалить задачу "${task.title}"?`, [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Удалить',
+        style: 'destructive',
+        onPress: async () => {
+          if (typeof task.id !== 'number') {
+            const queue = (await readOfflineQueue()).filter((x) => String(x.id) !== String(task.id));
+            await saveOfflineQueue(queue);
+            await load();
+            return;
+          }
 
-    try {
-      await deleteTask(task.id);
-      load();
-      return;
-    } catch {}
+          try {
+            await apiClient.delete(`tasks/${task.id}/`);
+            await load();
+            return;
+          } catch {}
 
-    const queue = await readOffline();
-    queue.push({ ...task, _offlineAction: 'DELETE', isOffline: true });
-    await saveOffline(queue);
-    load();
+          const queue = await readOfflineQueue();
+          const exists = queue.find((x) => String(x.id) === String(task.id) && x._offlineAction === 'DELETE');
+          if (!exists) {
+            queue.push({ ...task, _offlineAction: 'DELETE', isOffline: true });
+            await saveOfflineQueue(queue);
+          }
+          await load();
+        },
+      },
+    ]);
   };
 
-  const grouped = useMemo(() => {
-    const active = tasks.filter((t) => t.status !== 'done');
-    const done = tasks.filter((t) => t.status === 'done');
-    return { active, done };
-  }, [tasks]);
+  const filteredTasks = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    return tasks.filter((task) => {
+      const mine = getAssignedId(task) === user?.id;
+      const done = task.status === 'done';
+      const offline = !!task.isOffline || !!task._offlineAction;
+
+      if (filter === 'mine' && !mine && !isAdmin) return false;
+      if (filter === 'done' && !done) return false;
+      if (filter === 'offline' && !offline) return false;
+
+      if (!q) return true;
+
+      return (
+        String(task.title || '').toLowerCase().includes(q) ||
+        String(task.description || '').toLowerCase().includes(q)
+      );
+    });
+  }, [filter, isAdmin, search, tasks, user?.id]);
+
+  if (loading) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={theme.blue} />
+        </View>
+      </ScreenWrapper>
+    );
+  }
 
   return (
-    <AppScreen scroll={false}>
-      <View style={{ gap: 16 }}>
-        <SectionHeader title="Задачи" subtitle={isOffline ? 'Офлайн-режим и локальная очередь включены' : 'План на сегодня и ближайшие дела'} actionLabel="Новая" onPress={openNew} />
+    <ScreenWrapper>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+            tintColor={theme.blue}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.head}>
+          <View>
+            <Text style={[styles.title, { color: theme.text }]}>Задачи</Text>
+            <Text style={[styles.sub, { color: theme.textSecondary }]}>
+              Оффлайн очередь: {offlineQueue.length}
+            </Text>
+          </View>
 
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <TouchableOpacity onPress={syncOffline} style={{ flex: 1 }}>
-            <PremiumCard style={{ backgroundColor: theme.blueSoft }}>
-              <Text style={{ color: theme.text, fontWeight: '900' }}>{saving ? 'Синхронизация…' : 'Синхронизировать'}</Text>
-            </PremiumCard>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setRefreshing(true); load(); }} style={{ flex: 1 }}>
-            <PremiumCard style={{ backgroundColor: theme.redSoft }}>
-              <Text style={{ color: theme.text, fontWeight: '900' }}>Обновить</Text>
-            </PremiumCard>
-          </TouchableOpacity>
+          <View style={styles.headActions}>
+            <Pressable onPress={syncOffline} style={[styles.ghostBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.ghostBtnText, { color: theme.blue }]}>
+                {saving ? '...' : 'Sync'}
+              </Text>
+            </Pressable>
+
+            <Pressable onPress={openCreate} style={[styles.primaryBtn, { backgroundColor: theme.blue }]}>
+              <Text style={styles.primaryBtnText}>+ Задача</Text>
+            </Pressable>
+          </View>
         </View>
 
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ gap: 12 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
-        >
-          <SectionHeader title="В работе" />
-          {grouped.active.length ? grouped.active.map((task) => (
-            <TouchableOpacity
-              key={String(task.id)}
-              onPress={() => { setForm(task); setModal(true); }}
-              onLongPress={() => onDelete(task)}
-            >
-              <PremiumCard>
-                <Text style={{ color: theme.text, fontSize: 16, fontWeight: '900' }}>{task.title}</Text>
-                {task.description ? <Text style={{ color: theme.textSecondary, marginTop: 6 }}>{task.description}</Text> : null}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
-                  <Text style={{ color: theme.blue, fontWeight: '800' }}>{task.priority}</Text>
-                  <Text style={{ color: task.isOffline ? theme.yellow : theme.textMuted, fontWeight: '700' }}>{task.isOffline ? 'Локально' : task.status}</Text>
-                </View>
-              </PremiumCard>
-            </TouchableOpacity>
-          )) : <EmptyState title="Активных задач нет" subtitle="Можно спокойно создать новую или дождаться синхронизации." />}
+        <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Поиск по задачам"
+            placeholderTextColor={theme.textMuted}
+            style={[styles.searchInput, { color: theme.text }]}
+          />
+        </View>
 
-          {!!grouped.done.length && <SectionHeader title="Завершено" />}
-          {grouped.done.slice(0, 8).map((task) => (
-            <PremiumCard key={`done-${task.id}`} style={{ opacity: 0.8 }}>
-              <Text style={{ color: theme.textSecondary, fontSize: 15, fontWeight: '800' }}>{task.title}</Text>
-            </PremiumCard>
-          ))}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+          <View style={styles.chipsRow}>
+            {[
+              { key: 'all', label: 'Все' },
+              { key: 'mine', label: 'Мои' },
+              { key: 'done', label: 'Готово' },
+              { key: 'offline', label: 'Локальные' },
+            ].map((item) => {
+              const active = filter === item.key;
+              return (
+                <Pressable
+                  key={item.key}
+                  onPress={() => setFilter(item.key as FilterKey)}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? theme.blue : theme.surface,
+                      borderColor: active ? theme.blue : theme.border,
+                    },
+                  ]}
+                >
+                  <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '800' }}>
+                    {item.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </ScrollView>
 
-        <Modal visible={modal} transparent animationType="slide" onRequestClose={() => setModal(false)}>
-          <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: theme.overlay }}>
-            <PremiumCard style={{ margin: 16, paddingBottom: 24 }}>
-              <Text style={{ color: theme.text, fontSize: 20, fontWeight: '900' }}>
-                {form.id ? 'Редактировать задачу' : 'Новая задача'}
-              </Text>
+        <View style={[styles.list, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {filteredTasks.length === 0 ? (
+            <Text style={[styles.empty, { color: theme.textSecondary }]}>Задач пока нет.</Text>
+          ) : (
+            filteredTasks.map((task) => {
+              const mine = getAssignedId(task) === user?.id;
+              const canEdit = isAdmin || mine || typeof task.id !== 'number';
 
-              <View style={{ gap: 12, marginTop: 18 }}>
-                <PremiumCard style={{ padding: 14 }}>
-                  <TextInput
-                    value={form.title}
-                    onChangeText={(value) => setForm((prev) => ({ ...prev, title: value }))}
-                    placeholder="Название задачи"
-                    placeholderTextColor={theme.textMuted}
-                    style={{ color: theme.text, fontWeight: '700' }}
-                  />
-                </PremiumCard>
+              return (
+                <Pressable
+                  key={String(task.id)}
+                  onPress={() => canEdit && openEdit(task)}
+                  onLongPress={() => canEdit && removeTask(task)}
+                  style={[styles.row, { borderBottomColor: theme.divider }]}
+                >
+                  <View style={{ flex: 1, paddingRight: 12 }}>
+                    <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={1}>
+                      {task.title}
+                    </Text>
 
-                <PremiumCard style={{ padding: 14 }}>
-                  <TextInput
-                    value={form.description}
-                    onChangeText={(value) => setForm((prev) => ({ ...prev, description: value }))}
-                    placeholder="Описание"
-                    placeholderTextColor={theme.textMuted}
-                    multiline
-                    style={{ color: theme.text, minHeight: 90, textAlignVertical: 'top' }}
-                  />
-                </PremiumCard>
+                    {!!task.description && (
+                      <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={2}>
+                        {task.description}
+                      </Text>
+                    )}
 
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  {(['low', 'medium', 'high'] as const).map((priority) => (
-                    <TouchableOpacity key={priority} style={{ flex: 1 }} onPress={() => setForm((prev) => ({ ...prev, priority }))}>
-                      <PremiumCard style={{ padding: 14, backgroundColor: form.priority === priority ? theme.blueSoft : theme.surface }}>
-                        <Text style={{ color: theme.text, textAlign: 'center', fontWeight: '800' }}>{priority}</Text>
-                      </PremiumCard>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                    <View style={styles.metaRow}>
+                      <View
+                        style={[
+                          styles.statusPill,
+                          {
+                            backgroundColor:
+                              task.status === 'done'
+                                ? '#EAF8EF'
+                                : task.status === 'process'
+                                ? '#EEF4FF'
+                                : task.status === 'review'
+                                ? '#FFF4E8'
+                                : '#F4F6FA',
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusText,
+                            {
+                              color:
+                                task.status === 'done'
+                                  ? theme.success
+                                  : task.status === 'process'
+                                  ? theme.blue
+                                  : task.status === 'review'
+                                  ? theme.warning
+                                  : theme.textSecondary,
+                            },
+                          ]}
+                        >
+                          {STATUS_LABELS[task.status]}
+                        </Text>
+                      </View>
 
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <TouchableOpacity onPress={() => setModal(false)} style={{ flex: 1 }}>
-                    <PremiumCard style={{ backgroundColor: theme.redSoft }}>
-                      <Text style={{ color: theme.text, textAlign: 'center', fontWeight: '900' }}>Отмена</Text>
-                    </PremiumCard>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={submit} style={{ flex: 1 }}>
-                    <PremiumCard style={{ backgroundColor: theme.blueSoft }}>
-                      <Text style={{ color: theme.text, textAlign: 'center', fontWeight: '900' }}>{saving ? 'Сохраняю…' : 'Сохранить'}</Text>
-                    </PremiumCard>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </PremiumCard>
+                      <View style={[styles.priorityPill, { borderColor: theme.border }]}>
+                        <Text style={[styles.priorityText, { color: theme.textSecondary }]}>
+                          {PRIORITY_LABELS[task.priority]}
+                        </Text>
+                      </View>
+
+                      {(task.isOffline || task._offlineAction) && (
+                        <View style={[styles.offlinePill, { backgroundColor: theme.redSoft }]}>
+                          <Text style={[styles.offlineText, { color: theme.red }]}>Offline</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  {canEdit ? <Text style={[styles.editHint, { color: theme.blue }]}>Открыть</Text> : null}
+                </Pressable>
+              );
+            })
+          )}
+        </View>
+      </ScrollView>
+
+      <Modal visible={modalOpen} transparent animationType="fade" onRequestClose={() => setModalOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              {typeof form.id === 'number' ? 'Редактировать задачу' : 'Новая задача'}
+            </Text>
+
+            <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+              <TextInput
+                value={form.title}
+                onChangeText={(value) => setForm((prev) => ({ ...prev, title: value }))}
+                placeholder="Название задачи"
+                placeholderTextColor={theme.textMuted}
+                style={[styles.input, { color: theme.text }]}
+              />
+            </View>
+
+            <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border, minHeight: 100 }]}>
+              <TextInput
+                value={form.description}
+                onChangeText={(value) => setForm((prev) => ({ ...prev, description: value }))}
+                placeholder="Описание"
+                placeholderTextColor={theme.textMuted}
+                multiline
+                style={[styles.input, { color: theme.text, minHeight: 76, textAlignVertical: 'top' }]}
+              />
+            </View>
+
+            <Text style={[styles.modalSection, { color: theme.text }]}>Статус</Text>
+            <View style={styles.chipsWrap}>
+              {(['todo', 'process', 'review', 'done'] as TaskStatus[]).map((status) => {
+                const active = form.status === status;
+                return (
+                  <Pressable
+                    key={status}
+                    onPress={() => setForm((prev) => ({ ...prev, status }))}
+                    style={[
+                      styles.formChip,
+                      {
+                        backgroundColor: active ? theme.blue : theme.surface,
+                        borderColor: active ? theme.blue : theme.border,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '800' }}>
+                      {STATUS_LABELS[status]}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={[styles.modalSection, { color: theme.text }]}>Приоритет</Text>
+            <View style={styles.chipsWrap}>
+              {(['low', 'medium', 'high'] as TaskPriority[]).map((priority) => {
+                const active = form.priority === priority;
+                return (
+                  <Pressable
+                    key={priority}
+                    onPress={() => setForm((prev) => ({ ...prev, priority }))}
+                    style={[
+                      styles.formChip,
+                      {
+                        backgroundColor: active ? theme.red : theme.surface,
+                        borderColor: active ? theme.red : theme.border,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '800' }}>
+                      {PRIORITY_LABELS[priority]}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={styles.modalActions}>
+              <Pressable onPress={() => setModalOpen(false)} style={[styles.modalBtn, { backgroundColor: theme.backgroundSoft }]}>
+                <Text style={[styles.modalBtnText, { color: theme.text }]}>Отмена</Text>
+              </Pressable>
+
+              <Pressable onPress={submit} style={[styles.modalBtn, { backgroundColor: theme.blue }]}>
+                <Text style={[styles.modalBtnText, { color: '#fff' }]}>
+                  {saving ? 'Сохраняю...' : 'Сохранить'}
+                </Text>
+              </Pressable>
+            </View>
           </View>
-        </Modal>
-      </View>
-    </AppScreen>
+        </View>
+      </Modal>
+    </ScreenWrapper>
   );
 }
+
+const styles = StyleSheet.create({
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { padding: 20, paddingBottom: 120 },
+  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  title: { fontSize: 28, fontWeight: '900' },
+  sub: { marginTop: 6, fontSize: 13, fontWeight: '700' },
+  ghostBtn: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12 },
+  ghostBtnText: { fontWeight: '900' },
+  primaryBtn: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 },
+  primaryBtnText: { color: '#fff', fontWeight: '900' },
+  searchBox: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, marginTop: 18 },
+  searchInput: { fontSize: 15, fontWeight: '600' },
+  chipsRow: { flexDirection: 'row', gap: 8, paddingRight: 16 },
+  chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10 },
+  list: { marginTop: 16, borderWidth: 1, borderRadius: 22, overflow: 'hidden' },
+  row: {
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  rowTitle: { fontSize: 15, fontWeight: '900' },
+  rowMeta: { marginTop: 6, fontSize: 12, fontWeight: '600', lineHeight: 17 },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  statusText: { fontSize: 12, fontWeight: '900' },
+  priorityPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
+  priorityText: { fontSize: 12, fontWeight: '800' },
+  offlinePill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  offlineText: { fontSize: 12, fontWeight: '900' },
+  editHint: { fontSize: 13, fontWeight: '900' },
+  empty: { padding: 18, fontSize: 14 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(8,18,28,0.35)',
+    justifyContent: 'center',
+    padding: 18,
+  },
+  modalCard: { borderWidth: 1, borderRadius: 24, padding: 18 },
+  modalTitle: { fontSize: 20, fontWeight: '900', marginBottom: 14 },
+  inputWrap: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12 },
+  input: { fontSize: 15, fontWeight: '600' },
+  modalSection: { fontSize: 15, fontWeight: '900', marginTop: 4, marginBottom: 10 },
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  formChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10 },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  modalBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 16, paddingVertical: 14 },
+  modalBtnText: { fontWeight: '900', fontSize: 15 },
+});

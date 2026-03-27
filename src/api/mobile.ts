@@ -1,6 +1,6 @@
 import { APP_CONFIG, STORAGE_KEYS } from '../config/app';
-import apiClient, { extractResults, fetchAllPages } from './apiClient';
 import { clearSession, saveJSON, saveToken } from '../utils/storage';
+import apiClient, { extractList, fetchAllPages } from './apiClient';
 
 export type AppUser = {
   id: number;
@@ -26,8 +26,8 @@ export type AppUser = {
 
 export async function login(email: string, password: string) {
   const candidates = [
-    { url: 'auth/login/', parser: (data: any) => data },
-    { url: 'token/', parser: (data: any) => data },
+    { url: 'auth/login/' },
+    { url: 'token/' },
   ];
 
   let lastError: any = null;
@@ -35,11 +35,11 @@ export async function login(email: string, password: string) {
   for (const candidate of candidates) {
     try {
       const response = await apiClient.post(candidate.url, { email, password });
-      const data = candidate.parser(response.data);
+      const data = response.data;
 
-      if (data.access) await saveToken(STORAGE_KEYS.accessToken, data.access);
-      if (data.refresh) await saveToken(STORAGE_KEYS.refreshToken, data.refresh);
-      if (data.user) await saveJSON(STORAGE_KEYS.cachedProfile, data.user);
+      if (data?.access) await saveToken(STORAGE_KEYS.accessToken, data.access);
+      if (data?.refresh) await saveToken(STORAGE_KEYS.refreshToken, data.refresh);
+      if (data?.user) await saveJSON(STORAGE_KEYS.cachedProfile, data.user);
 
       return data;
     } catch (error) {
@@ -81,7 +81,7 @@ export async function getDashboard() {
     const response = await apiClient.get('app/dashboard/');
     await saveJSON(STORAGE_KEYS.cachedDashboard, response.data);
     return response.data;
-  } catch (error) {
+  } catch {
     const [clients, deals, tasks] = await Promise.all([
       fetchAllPages('clients/').catch(() => []),
       fetchAllPages('analytics/deals/').catch(() => []),
@@ -95,8 +95,13 @@ export async function getDashboard() {
         active_deals: deals.length,
         open_tasks: tasks.length,
       },
-      recent: { clients: clients.slice(0, 5), deals: deals.slice(0, 5), tasks: tasks.slice(0, 5) },
+      recent: {
+        clients: clients.slice(0, 5),
+        deals: deals.slice(0, 5),
+        tasks: tasks.slice(0, 5),
+      },
     };
+
     await saveJSON(STORAGE_KEYS.cachedDashboard, fallback);
     return fallback;
   }
@@ -104,19 +109,19 @@ export async function getDashboard() {
 
 export async function getClients(params?: { search?: string; limit?: number; offset?: number }) {
   const response = await apiClient.get('clients/', { params });
-  const items = extractResults(response.data);
+  const items = extractList(response.data);
   return { items, raw: response.data };
 }
 
 export async function getUniversities(params?: { search?: string; limit?: number; offset?: number }) {
   const response = await apiClient.get('catalog/universities/', { params });
-  const items = extractResults(response.data);
+  const items = extractList(response.data);
   return { items, raw: response.data };
 }
 
 export async function getTasks() {
   const response = await apiClient.get('tasks/');
-  return extractResults(response.data);
+  return extractList(response.data);
 }
 
 export async function createTask(payload: any) {
@@ -135,12 +140,14 @@ export async function deleteTask(id: number) {
 
 export async function getCurrentShift() {
   const candidates = ['timetracking/shifts/current/', 'timetracking/shifts/current'];
+
   for (const candidate of candidates) {
     try {
       const response = await apiClient.get(candidate);
       return response.data;
     } catch {}
   }
+
   return null;
 }
 

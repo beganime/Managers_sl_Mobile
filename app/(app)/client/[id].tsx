@@ -1,155 +1,466 @@
 // app/(app)/client/[id].tsx
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
+} from 'react-native';
+
 import ScreenWrapper from '../../../components/ScreenWrapper';
 import apiClient from '../../../src/api/apiClient';
+import { useTheme } from '../../../src/context/ThemeContext';
 import { getToken } from '../../../src/utils/storage';
 
+function safeValue(value: any) {
+  if (value === null || value === undefined || value === '') return '—';
+  return String(value);
+}
+
+function statusLabel(status?: string) {
+  const map: Record<string, string> = {
+    new: 'Новый',
+    consultation: 'Консультация',
+    documents: 'Сбор документов',
+    visa: 'Виза',
+    success: 'Успешно',
+    rejected: 'Отказ',
+    archive: 'Архив',
+  };
+  return map[status || ''] || status || '—';
+}
+
+function InfoRow({
+  theme,
+  icon,
+  label,
+  value,
+  divider = true,
+}: {
+  theme: any;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  divider?: boolean;
+}) {
+  return (
+    <View
+      style={[
+        styles.infoRow,
+        divider && { borderBottomWidth: 1, borderBottomColor: theme.divider },
+      ]}
+    >
+      <View
+        style={[
+          styles.iconWrap,
+          { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+        ]}
+      >
+        <Ionicons name={icon} size={18} color={theme.blue} />
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>{label}</Text>
+        <Text style={[styles.infoValue, { color: theme.text }]}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function ClientDetailScreen() {
-    const { id } = useLocalSearchParams();
-    const router = useRouter();
-    const [client, setClient] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
+  const { id } = useLocalSearchParams();
+  const router = useRouter();
+  const { theme } = useTheme();
 
-    useEffect(() => {
-        const fetchClient = async () => {
-            try {
-                // Если ID начинается с temp_, ищем в локальной БД телефона
-                if (id && id.toString().startsWith('temp_')) {
-                    const offlineClients = JSON.parse(await getToken('offline_clients') || '[]');
-                    const found = offlineClients.find((c: any) => c.id === id);
-                    if (found) setClient(found);
-                    setLoading(false);
-                    return;
-                }
-                // Убрали начальный слэш для правильной работы Axios
-                const response = await apiClient.get(`clients/${id}/`);
-                setClient(response.data);
-            } catch (error) {
-                console.error("Ошибка загрузки клиента", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchClient();
-    }, [id]);
+  const [client, setClient] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-    if (loading) return <ScreenWrapper><View style={styles.center}><ActivityIndicator size="large" color="#0D416D" /></View></ScreenWrapper>;
-    if (!client) return <ScreenWrapper><Text style={styles.errorText}>Клиент не найден</Text></ScreenWrapper>;
+  const initials = useMemo(() => {
+    const name = String(client?.full_name || '').trim();
+    if (!name) return '?';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase())
+      .join('');
+  }, [client]);
 
+  const loadClient = async () => {
+    try {
+      if (id && String(id).startsWith('temp_')) {
+        const offlineClients = JSON.parse((await getToken('offline_clients')) || '[]');
+        const found = offlineClients.find((c: any) => String(c.id) === String(id));
+        if (found) {
+          setClient(found);
+          return;
+        }
+      }
+
+      const response = await apiClient.get(`clients/${id}/`);
+      setClient(response.data);
+    } catch (error) {
+      console.error('Ошибка загрузки клиента', error);
+      Alert.alert('Ошибка', 'Не удалось загрузить карточку клиента.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadClient();
+  }, [id]);
+
+  if (loading) {
     return (
-        <ScreenWrapper>
-            <View style={StyleSheet.absoluteFillObject}>
-                <LinearGradient colors={['#F1F5F9', '#E2E8F0']} style={StyleSheet.absoluteFillObject} />
-            </View>
-
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.replace('/crm')} style={styles.backBtn}>
-                    <Ionicons name="arrow-back" size={24} color="#0F172A" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Карточка клиента</Text>
-                <View style={{width: 40}} />
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-                {client.isOffline && (
-                    <View style={{backgroundColor: 'rgba(245, 158, 11, 0.15)', padding: 12, borderRadius: 16, marginBottom: 15, borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.4)'}}>
-                        <Text style={{color: '#d97706', textAlign: 'center', fontWeight: '800'}}>☁️ Офлайн клиент (Ожидает синхронизации)</Text>
-                    </View>
-                )}
-
-                <BlurView intensity={40} tint="light" style={styles.mainCard}>
-                    <View style={styles.avatarPlaceholder}>
-                        <Text style={styles.avatarText}>{client.full_name?.charAt(0).toUpperCase()}</Text>
-                    </View>
-                    <Text style={styles.clientName}>{client.is_priority ? '⭐ ' : ''}{client.full_name}</Text>
-                    <View style={styles.badge}><Text style={styles.badgeText}>{client.get_status_display || client.status || 'Новый'}</Text></View>
-                </BlurView>
-
-                <Text style={styles.sectionTitle}>Основная информация</Text>
-                <BlurView intensity={50} tint="light" style={styles.infoCard}>
-                    <View style={styles.infoRow}>
-                        <Ionicons name="call" size={18} color="#0D416D" style={styles.infoIcon} />
-                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Телефон</Text><Text style={styles.infoValue}>{client.phone || '—'}</Text></View>
-                    </View>
-                    <View style={styles.divider} />
-                    <View style={styles.infoRow}>
-                        <Ionicons name="mail" size={18} color="#0D416D" style={styles.infoIcon} />
-                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Email</Text><Text style={styles.infoValue}>{client.email || '—'}</Text></View>
-                    </View>
-                    <View style={styles.divider} />
-                    <View style={styles.infoRow}>
-                        <Ionicons name="calendar" size={18} color="#0D416D" style={styles.infoIcon} />
-                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Дата рождения</Text><Text style={styles.infoValue}>{client.dob || '—'}</Text></View>
-                    </View>
-                    <View style={styles.divider} />
-                    <View style={styles.infoRow}>
-                        <Ionicons name="location" size={18} color="#0D416D" style={styles.infoIcon} />
-                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Город / Гражданство</Text><Text style={styles.infoValue}>{client.city || '—'} / {client.citizenship || '—'}</Text></View>
-                    </View>
-                </BlurView>
-
-                <Text style={styles.sectionTitle}>Документы</Text>
-                <BlurView intensity={50} tint="light" style={styles.infoCard}>
-                    <View style={styles.infoRow}>
-                        <Ionicons name="card" size={18} color="#0D416D" style={styles.infoIcon} />
-                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Загранпаспорт</Text><Text style={styles.infoValue}>{client.passport_inter_num || '—'}</Text></View>
-                    </View>
-                    <View style={styles.divider} />
-                    <View style={styles.infoRow}>
-                        <Ionicons name="id-card" size={18} color="#0D416D" style={styles.infoIcon} />
-                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Внутренний паспорт</Text><Text style={styles.infoValue}>{client.passport_local_num || '—'}</Text></View>
-                    </View>
-                    <View style={styles.divider} />
-                    <View style={styles.infoRow}>
-                        <Ionicons name="business" size={18} color="#0D416D" style={styles.infoIcon} />
-                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Кем выдан / Дата</Text><Text style={styles.infoValue}>{client.passport_issued_by || '—'} {client.passport_issued_date ? `(${client.passport_issued_date})` : ''}</Text></View>
-                    </View>
-                    <View style={styles.divider} />
-                    <View style={styles.infoRow}>
-                        <Ionicons name="home" size={18} color="#0D416D" style={styles.infoIcon} />
-                        <View style={{ flex: 1 }}><Text style={styles.infoLabel}>Прописка</Text><Text style={styles.infoValue}>{client.address_registration || '—'}</Text></View>
-                    </View>
-                </BlurView>
-
-                <TouchableOpacity style={styles.actionBtn} onPress={() => router.push({ pathname: '/add-deal', params: { clientId: client.id } })}>
-                    <Ionicons name="briefcase" size={20} color="#fff" />
-                    <Text style={styles.actionBtnText}>Создать сделку</Text>
-                </TouchableOpacity>
-
-                <View style={{height: 100}} />
-            </ScrollView>
-        </ScreenWrapper>
+      <ScreenWrapper>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={theme.blue} />
+        </View>
+      </ScreenWrapper>
     );
+  }
+
+  if (!client) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.center}>
+          <Text style={[styles.errorText, { color: theme.red }]}>Клиент не найден</Text>
+        </View>
+      </ScreenWrapper>
+    );
+  }
+
+  return (
+    <ScreenWrapper>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.replace('/(app)/crm' as any)}
+          style={[
+            styles.backBtn,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <Ionicons name="arrow-back" size={22} color={theme.text} />
+        </Pressable>
+
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Карточка клиента</Text>
+
+        <View style={{ width: 44 }} />
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadClient();
+            }}
+            tintColor={theme.blue}
+          />
+        }
+      >
+        <View
+          style={[
+            styles.mainCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <View style={[styles.avatarPlaceholder, { backgroundColor: theme.blue }]}>
+            <Text style={styles.avatarText}>{initials}</Text>
+          </View>
+
+          <Text style={[styles.clientName, { color: theme.text }]}>
+            {client.is_priority ? '⭐ ' : ''}
+            {safeValue(client.full_name)}
+          </Text>
+
+          <View
+            style={[
+              styles.badge,
+              {
+                backgroundColor: client.isOffline ? theme.redSoft : theme.blueSoft,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.badgeText,
+                { color: client.isOffline ? theme.red : theme.blue },
+              ]}
+            >
+              {client.isOffline ? 'OFFLINE CLIENT' : statusLabel(client.status)}
+            </Text>
+          </View>
+
+          {client.isOffline ? (
+            <Text style={[styles.offlineHint, { color: theme.textSecondary }]}>
+              Этот клиент сохранён локально и ждёт синхронизации.
+            </Text>
+          ) : null}
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          Основная информация
+        </Text>
+        <View
+          style={[
+            styles.infoCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <InfoRow theme={theme} icon="call" label="Телефон" value={safeValue(client.phone)} />
+          <InfoRow theme={theme} icon="mail" label="Email" value={safeValue(client.email)} />
+          <InfoRow theme={theme} icon="calendar" label="Дата рождения" value={safeValue(client.dob)} />
+          <InfoRow
+            theme={theme}
+            icon="location"
+            label="Город / Гражданство"
+            value={`${safeValue(client.city)} / ${safeValue(client.citizenship)}`}
+            divider={false}
+          />
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          Паспорт и договор
+        </Text>
+        <View
+          style={[
+            styles.infoCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <InfoRow
+            theme={theme}
+            icon="card"
+            label="Загранпаспорт"
+            value={safeValue(client.passport_inter_num)}
+          />
+          <InfoRow
+            theme={theme}
+            icon="document-text"
+            label="Внутренний паспорт"
+            value={safeValue(client.passport_local_num)}
+          />
+          <InfoRow
+            theme={theme}
+            icon="shield-checkmark"
+            label="Кем выдан / Дата"
+            value={`${safeValue(client.passport_issued_by)} ${
+              client.passport_issued_date ? `(${client.passport_issued_date})` : ''
+            }`}
+          />
+          <InfoRow
+            theme={theme}
+            icon="home"
+            label="Прописка"
+            value={safeValue(client.address_registration)}
+            divider={false}
+          />
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          Партнёрский блок
+        </Text>
+        <View
+          style={[
+            styles.infoCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <InfoRow
+            theme={theme}
+            icon="people"
+            label="От партнёра"
+            value={client.is_partner_client ? 'Да' : 'Нет'}
+          />
+          <InfoRow
+            theme={theme}
+            icon="business"
+            label="Партнёр"
+            value={safeValue(client.partner_name)}
+          />
+          <InfoRow
+            theme={theme}
+            icon="pricetag"
+            label="Есть скидка"
+            value={client.has_discount ? 'Да' : 'Нет'}
+          />
+          <InfoRow
+            theme={theme}
+            icon="cash"
+            label="Размер скидки"
+            value={safeValue(client.discount_amount)}
+            divider={false}
+          />
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          Работа менеджера
+        </Text>
+        <View
+          style={[
+            styles.infoCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <InfoRow
+            theme={theme}
+            icon="checkmark-done"
+            label="Текущие задачи"
+            value={safeValue(client.current_tasks)}
+          />
+          <InfoRow
+            theme={theme}
+            icon="chatbubbles"
+            label="Комментарии"
+            value={safeValue(client.comments)}
+            divider={false}
+          />
+        </View>
+
+        <View style={styles.actionsWrap}>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: '/(app)/add-deal',
+                params: {
+                  clientId: String(client.id),
+                  clientName: String(client.full_name || ''),
+                },
+              } as any)
+            }
+            style={[styles.actionBtn, { backgroundColor: theme.blue }]}
+          >
+            <Ionicons name="briefcase" size={18} color="#fff" />
+            <Text style={styles.actionBtnText}>Создать сделку</Text>
+          </Pressable>
+        </View>
+
+        <View style={{ height: 50 }} />
+      </ScrollView>
+    </ScreenWrapper>
+  );
 }
 
 const styles = StyleSheet.create({
-    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 15 },
-    backBtn: { width: 44, height: 44, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.5)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)' },
-    headerTitle: { color: '#0F172A', fontSize: 18, fontWeight: '900' },
-    errorText: { color: '#ef4444', fontSize: 16, textAlign: 'center', marginTop: 40, fontWeight: '700' },
-    scrollContent: { paddingHorizontal: 20 },
-    
-    mainCard: { alignItems: 'center', padding: 30, borderRadius: 32, marginBottom: 25, borderWidth: 1, borderColor: 'rgba(255,255,255,0.7)', backgroundColor: 'rgba(255,255,255,0.4)' },
-    avatarPlaceholder: { width: 80, height: 80, borderRadius: 24, backgroundColor: '#0D416D', justifyContent: 'center', alignItems: 'center', marginBottom: 15, shadowColor: '#0D416D', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-    avatarText: { color: '#FFF', fontSize: 36, fontWeight: '900' },
-    clientName: { color: '#0F172A', fontSize: 22, fontWeight: '900', textAlign: 'center', marginBottom: 10 },
-    badge: { backgroundColor: 'rgba(13, 65, 109, 0.1)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 12 },
-    badgeText: { color: '#0D416D', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
-    
-    sectionTitle: { color: '#334155', fontSize: 13, fontWeight: '900', marginBottom: 10, marginLeft: 5, textTransform: 'uppercase', letterSpacing: 1.5 },
-    infoCard: { borderRadius: 24, marginBottom: 25, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.7)', backgroundColor: 'rgba(255,255,255,0.4)' },
-    infoRow: { flexDirection: 'row', alignItems: 'center', padding: 18 },
-    infoIcon: { marginRight: 15, backgroundColor: 'rgba(255,255,255,0.6)', padding: 12, borderRadius: 14, overflow: 'hidden' },
-    infoLabel: { color: '#64748B', fontSize: 11, marginBottom: 4, fontWeight: '800', textTransform: 'uppercase' },
-    infoValue: { color: '#1E293B', fontSize: 15, fontWeight: '700' },
-    divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.5)', marginLeft: 70 },
-    
-    actionBtn: { flexDirection: 'row', backgroundColor: '#0D416D', padding: 20, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginTop: 10, gap: 10, shadowColor: '#0D416D', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 10, elevation: 5 },
-    actionBtnText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 }
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  headerTitle: { fontSize: 18, fontWeight: '900' },
+  errorText: { fontSize: 16, textAlign: 'center', fontWeight: '700' },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 120 },
+  mainCard: {
+    alignItems: 'center',
+    padding: 24,
+    borderRadius: 28,
+    marginBottom: 20,
+    borderWidth: 1,
+  },
+  avatarPlaceholder: {
+    width: 82,
+    height: 82,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  avatarText: { color: '#FFF', fontSize: 32, fontWeight: '900' },
+  clientName: {
+    fontSize: 22,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  badge: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  offlineHint: {
+    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 10,
+    marginLeft: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  infoCard: {
+    borderRadius: 24,
+    marginBottom: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 16,
+  },
+  iconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  infoLabel: {
+    fontSize: 11,
+    marginBottom: 4,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  infoValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 21,
+  },
+  actionsWrap: {
+    gap: 12,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    padding: 18,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+  },
+  actionBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' },
 });

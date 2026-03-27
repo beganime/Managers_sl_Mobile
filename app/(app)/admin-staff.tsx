@@ -1,303 +1,410 @@
-// app/(app)/admin-staff.tsx
-import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator, Alert, Modal, RefreshControl,
-    ScrollView, StyleSheet, Text, TextInput,
-    TouchableOpacity, View,
+    ActivityIndicator,
+    Alert,
+    Modal,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from 'react-native';
+
 import ScreenWrapper from '../../components/ScreenWrapper';
-import apiClient from '../../src/api/apiClient';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
+import apiClient, { fetchAllPages } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
 
+type StaffRole = 'manager' | 'admin';
+
+type StaffItem = {
+  id?: number;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: StaffRole;
+  is_staff?: boolean;
+  is_superuser?: boolean;
+  work_status?: string;
+  office?: { city?: string; address?: string } | null;
+  managersalary?: {
+    monthly_plan?: number;
+    current_month_revenue?: number;
+    current_balance?: number;
+    fixed_salary?: number;
+  } | null;
+};
+
 export default function AdminStaffScreen() {
-    const { theme } = useTheme();
-    const router    = useRouter();
-    const s         = makeStyles(theme);
+  const { theme } = useTheme();
+  const { user } = useCurrentUser();
 
-    const [users,      setUsers]      = useState<any[]>([]);
-    const [loading,    setLoading]    = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const [editUser,   setEditUser]   = useState<any | null>(null);
-    const [saving,     setSaving]     = useState(false);
+  const isAdmin = !!user && (user.is_superuser || user.is_staff || user.role === 'admin');
 
-    const [form, setForm] = useState({
-        monthly_plan:       '',
-        fixed_salary:       '',
-        commission_percent: '',
-        motivation_target:  '',
-        motivation_reward:  '',
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [staff, setStaff] = useState<StaffItem[]>([]);
+  const [search, setSearch] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const [form, setForm] = useState<StaffItem & { password?: string }>({
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: 'manager',
+    password: '',
+  });
+
+  const load = useCallback(async () => {
+    try {
+      const data = await fetchAllPages('users/users/');
+      setStaff(data as StaffItem[]);
+    } catch (error: any) {
+      Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось загрузить сотрудников.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAdmin) load();
+    else setLoading(false);
+  }, [isAdmin, load]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return staff.filter((item) => {
+      if (!q) return true;
+      return (
+        String(item.email || '').toLowerCase().includes(q) ||
+        String(item.first_name || '').toLowerCase().includes(q) ||
+        String(item.last_name || '').toLowerCase().includes(q) ||
+        String(item.office?.city || '').toLowerCase().includes(q)
+      );
     });
+  }, [search, staff]);
 
-    const load = async () => {
-        try {
-            const res = await apiClient.get('users/users/');
-            setUsers(res.data.results ?? res.data);
-        } catch { console.log('Офлайн: сотрудники'); }
-        finally { setLoading(false); setRefreshing(false); }
+  const openCreate = () => {
+    setForm({
+      email: '',
+      first_name: '',
+      last_name: '',
+      role: 'manager',
+      password: '',
+    });
+    setModalOpen(true);
+  };
+
+  const openEdit = (item: StaffItem) => {
+    setForm({
+      id: item.id,
+      email: item.email || '',
+      first_name: item.first_name || '',
+      last_name: item.last_name || '',
+      role: (item.role as StaffRole) || (item.is_superuser ? 'admin' : 'manager'),
+      password: '',
+      is_staff: item.is_staff,
+      is_superuser: item.is_superuser,
+    });
+    setModalOpen(true);
+  };
+
+  const submit = async () => {
+    if (!form.email.trim() || !form.first_name.trim()) {
+      Alert.alert('Ошибка', 'Заполни email и имя.');
+      return;
+    }
+
+    setSaving(true);
+
+    const payload: any = {
+      email: form.email.trim(),
+      first_name: form.first_name.trim(),
+      last_name: form.last_name.trim(),
+      role: form.role,
+      is_staff: form.role === 'admin',
+      is_superuser: form.role === 'admin',
     };
 
-    useEffect(() => { load(); }, []);
+    if (form.password?.trim()) {
+      payload.password = form.password.trim();
+    }
 
-    const openEdit = (u: any) => {
-        setEditUser(u);
-        const sal = u.managersalary ?? {};
-        setForm({
-            monthly_plan:       String(sal.monthly_plan       ?? '5000'),
-            fixed_salary:       String(sal.fixed_salary       ?? '0'),
-            commission_percent: String(sal.commission_percent ?? '5'),
-            motivation_target:  String(sal.motivation_target  ?? '10000'),
-            motivation_reward:  String(sal.motivation_reward  ?? '100'),
-        });
-    };
+    try {
+      if (form.id) {
+        await apiClient.patch(`users/users/${form.id}/`, payload);
+      } else {
+        await apiClient.post('users/users/', payload);
+      }
 
-    const handleSave = async () => {
-        if (!editUser) return;
-        setSaving(true);
-        try {
-            await apiClient.patch(`users/users/${editUser.id}/salary/`, {
-                monthly_plan:       parseFloat(form.monthly_plan),
-                fixed_salary:       parseFloat(form.fixed_salary),
-                commission_percent: parseFloat(form.commission_percent),
-                motivation_target:  parseFloat(form.motivation_target),
-                motivation_reward:  parseFloat(form.motivation_reward),
-            });
-            Alert.alert('Сохранено ✓', `Финансы ${editUser.first_name} обновлены`);
-            setEditUser(null);
-            load();
-        } catch (e: any) {
-            Alert.alert('Ошибка', e.response?.data?.detail ?? 'Не удалось сохранить');
-        } finally { setSaving(false); }
-    };
+      setSaving(false);
+      setModalOpen(false);
+      await load();
+    } catch (error: any) {
+      setSaving(false);
+      Alert.alert(
+        'Ошибка',
+        error?.response?.data?.detail ||
+          error?.response?.data?.email?.[0] ||
+          error?.response?.data?.password?.[0] ||
+          'Не удалось сохранить сотрудника.'
+      );
+    }
+  };
 
-    const handleResetBalance = (u: any) => {
-        Alert.alert(
-            'Выплата зарплаты',
-            `Обнулить бонусный баланс ${u.first_name}? ($${parseFloat(u.managersalary?.current_balance ?? 0).toFixed(2)})`,
-            [
-                { text: 'Отмена', style: 'cancel' },
-                {
-                    text: 'Выплатить',
-                    onPress: async () => {
-                        try {
-                            await apiClient.post(`users/users/${u.id}/pay_salary/`);
-                            Alert.alert('Готово', 'Баланс обнулён');
-                            load();
-                        } catch { Alert.alert('Ошибка', 'Не удалось выполнить'); }
-                    },
-                },
-            ]
-        );
-    };
+  const removeStaff = (item: StaffItem) => {
+    Alert.alert('Удаление', `Удалить сотрудника ${item.first_name} ${item.last_name}?`, [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Удалить',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiClient.delete(`users/users/${item.id}/`);
+            await load();
+          } catch (error: any) {
+            Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось удалить сотрудника.');
+          }
+        },
+      },
+    ]);
+  };
 
-    if (loading) return (
-        <ScreenWrapper>
-            <View style={s.center}><ActivityIndicator size="large" color={theme.primaryDeep} /></View>
-        </ScreenWrapper>
-    );
-
+  if (!isAdmin) {
     return (
-        <ScreenWrapper>
-            <View style={s.header}>
-                <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color={theme.text} />
-                </TouchableOpacity>
-                <Text style={[s.headerTitle, { color: theme.text }]}>Сотрудники</Text>
-                <View style={{ width: 44 }} />
+      <ScreenWrapper>
+        <View style={styles.center}>
+          <Text style={[styles.denied, { color: theme.text }]}>Доступ только для администратора.</Text>
+        </View>
+      </ScreenWrapper>
+    );
+  }
+
+  if (loading) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={theme.blue} />
+        </View>
+      </ScreenWrapper>
+    );
+  }
+
+  return (
+    <ScreenWrapper>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+            tintColor={theme.blue}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.head}>
+          <View>
+            <Text style={[styles.title, { color: theme.text }]}>Сотрудники</Text>
+            <Text style={[styles.sub, { color: theme.textSecondary }]}>CRUD сотрудников с мобилки</Text>
+          </View>
+
+          <Pressable onPress={openCreate} style={[styles.primaryBtn, { backgroundColor: theme.blue }]}>
+            <Text style={styles.primaryBtnText}>+ Сотрудник</Text>
+          </Pressable>
+        </View>
+
+        <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Поиск по имени, email, офису"
+            placeholderTextColor={theme.textMuted}
+            style={[styles.searchInput, { color: theme.text }]}
+          />
+        </View>
+
+        <View style={[styles.list, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {filtered.length === 0 ? (
+            <Text style={[styles.empty, { color: theme.textSecondary }]}>Сотрудники не найдены.</Text>
+          ) : (
+            filtered.map((item) => {
+              const role = (item.role as StaffRole) || (item.is_superuser ? 'admin' : 'manager');
+              return (
+                <Pressable
+                  key={String(item.id)}
+                  onPress={() => openEdit(item)}
+                  onLongPress={() => removeStaff(item)}
+                  style={[styles.row, { borderBottomColor: theme.divider }]}
+                >
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                    <Text style={[styles.rowTitle, { color: theme.text }]}>
+                      {[item.first_name, item.last_name].filter(Boolean).join(' ') || item.email}
+                    </Text>
+                    <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                      {item.email} · {item.office?.city || 'Без офиса'}
+                    </Text>
+                    <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
+                      Оклад: ${Number(item.managersalary?.fixed_salary || 0).toFixed(0)} · План: $
+                      {Number(item.managersalary?.monthly_plan || 0).toFixed(0)}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.rolePill,
+                      { backgroundColor: role === 'admin' ? theme.redSoft : theme.blueSoft },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.roleText,
+                        { color: role === 'admin' ? theme.red : theme.blue },
+                      ]}
+                    >
+                      {role === 'admin' ? 'ADMIN' : 'MANAGER'}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })
+          )}
+        </View>
+      </ScrollView>
+
+      <Modal visible={modalOpen} transparent animationType="fade" onRequestClose={() => setModalOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              {form.id ? 'Редактировать сотрудника' : 'Новый сотрудник'}
+            </Text>
+
+            <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+              <TextInput
+                value={form.email}
+                onChangeText={(value) => setForm((prev) => ({ ...prev, email: value }))}
+                placeholder="Email"
+                placeholderTextColor={theme.textMuted}
+                autoCapitalize="none"
+                style={[styles.input, { color: theme.text }]}
+              />
             </View>
 
-            <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={s.container}
-                refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={theme.primary} />
-                }
-            >
-                {users.map(u => {
-                    const sal      = u.managersalary ?? {};
-                    const balance  = parseFloat(sal.current_balance  ?? 0);
-                    const revenue  = parseFloat(sal.current_month_revenue ?? 0);
-                    const plan     = parseFloat(sal.monthly_plan     ?? 1);
-                    const progress = plan > 0 ? Math.min((revenue / plan) * 100, 100) : 0;
+            <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+              <TextInput
+                value={form.first_name}
+                onChangeText={(value) => setForm((prev) => ({ ...prev, first_name: value }))}
+                placeholder="Имя"
+                placeholderTextColor={theme.textMuted}
+                style={[styles.input, { color: theme.text }]}
+              />
+            </View>
 
-                    return (
-                        <BlurView key={u.id} intensity={50} tint={theme.mode === 'dark' ? 'dark' : 'light'}
-                            style={[s.userCard, { borderColor: theme.borderGlass }]}
-                        >
-                            {/* Шапка карточки */}
-                            <View style={s.userHeader}>
-                                <View style={[s.avatar, { backgroundColor: theme.primaryDeep + '20' }]}>
-                                    <Text style={[s.avatarText, { color: theme.primaryDeep }]}>
-                                        {u.first_name?.charAt(0) ?? '?'}
-                                    </Text>
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={[s.userName, { color: theme.text }]}>
-                                        {u.first_name} {u.last_name}
-                                        {u.is_superuser && <Text style={{ color: theme.danger }}> ★</Text>}
-                                    </Text>
-                                    <Text style={[s.userEmail, { color: theme.textSub }]}>{u.email}</Text>
-                                    <Text style={[s.userOffice, { color: theme.textMuted }]}>
-                                        <Ionicons name="location-outline" size={11} /> {u.office?.city ?? '—'}
-                                    </Text>
-                                </View>
-                                <View style={[
-                                    s.statusDot,
-                                    { backgroundColor: u.work_status === 'working' ? theme.accent : u.work_status === 'vacation' ? theme.warning : theme.danger },
-                                ]} />
-                            </View>
+            <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+              <TextInput
+                value={form.last_name}
+                onChangeText={(value) => setForm((prev) => ({ ...prev, last_name: value }))}
+                placeholder="Фамилия"
+                placeholderTextColor={theme.textMuted}
+                style={[styles.input, { color: theme.text }]}
+              />
+            </View>
 
-                            {/* KPI */}
-                            <View style={[s.kpiRow, { borderTopColor: theme.border }]}>
-                                <View style={s.kpiBox}>
-                                    <Text style={[s.kpiLabel, { color: theme.textMuted }]}>Выручка</Text>
-                                    <Text style={[s.kpiVal, { color: theme.text }]}>
-                                        ${revenue.toLocaleString()}
-                                    </Text>
-                                </View>
-                                <View style={s.kpiBox}>
-                                    <Text style={[s.kpiLabel, { color: theme.textMuted }]}>Бонус</Text>
-                                    <Text style={[s.kpiVal, { color: theme.accent }]}>
-                                        ${balance.toFixed(2)}
-                                    </Text>
-                                </View>
-                                <View style={s.kpiBox}>
-                                    <Text style={[s.kpiLabel, { color: theme.textMuted }]}>Оклад</Text>
-                                    <Text style={[s.kpiVal, { color: theme.text }]}>
-                                        ${parseFloat(sal.fixed_salary ?? 0).toLocaleString()}
-                                    </Text>
-                                </View>
-                            </View>
+            <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+              <TextInput
+                value={form.password}
+                onChangeText={(value) => setForm((prev) => ({ ...prev, password: value }))}
+                placeholder={form.id ? 'Новый пароль (необязательно)' : 'Пароль'}
+                placeholderTextColor={theme.textMuted}
+                secureTextEntry
+                style={[styles.input, { color: theme.text }]}
+              />
+            </View>
 
-                            {/* Прогресс-бар плана */}
-                            <View style={s.progressWrap}>
-                                <View style={[s.progressTrack, { backgroundColor: theme.border }]}>
-                                    <View style={[s.progressFill, {
-                                        width: `${progress}%`,
-                                        backgroundColor: progress >= 100 ? theme.accent : theme.primary,
-                                    }]} />
-                                </View>
-                                <Text style={[s.progressText, { color: theme.textSub }]}>
-                                    {Math.round(progress)}% от плана ${plan.toLocaleString()}
-                                </Text>
-                            </View>
+            <Text style={[styles.modalSection, { color: theme.text }]}>Роль</Text>
+            <View style={styles.roleRow}>
+              {(['manager', 'admin'] as StaffRole[]).map((role) => {
+                const active = form.role === role;
+                return (
+                  <Pressable
+                    key={role}
+                    onPress={() => setForm((prev) => ({ ...prev, role }))}
+                    style={[
+                      styles.roleChip,
+                      {
+                        backgroundColor: active ? theme.blue : theme.surface,
+                        borderColor: active ? theme.blue : theme.border,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
+                      {role === 'admin' ? 'Админ' : 'Менеджер'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
 
-                            {/* Кнопки */}
-                            <View style={s.btnRow}>
-                                <TouchableOpacity style={[s.editBtn, { backgroundColor: theme.primary + '15', borderColor: theme.primary + '40' }]}
-                                    onPress={() => openEdit(u)}
-                                >
-                                    <Ionicons name="settings-outline" size={15} color={theme.primary} />
-                                    <Text style={[s.editBtnText, { color: theme.primary }]}>Финансы</Text>
-                                </TouchableOpacity>
-                                {balance > 0 && (
-                                    <TouchableOpacity style={[s.payBtn, { backgroundColor: theme.accent + '15', borderColor: theme.accent + '40' }]}
-                                        onPress={() => handleResetBalance(u)}
-                                    >
-                                        <Ionicons name="cash-outline" size={15} color={theme.accent} />
-                                        <Text style={[s.editBtnText, { color: theme.accent }]}>Выплатить</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                        </BlurView>
-                    );
-                })}
-                <View style={{ height: 20 }} />
-            </ScrollView>
+            <View style={styles.modalActions}>
+              <Pressable onPress={() => setModalOpen(false)} style={[styles.modalBtn, { backgroundColor: theme.backgroundSoft }]}>
+                <Text style={[styles.modalBtnText, { color: theme.text }]}>Отмена</Text>
+              </Pressable>
 
-            {/* Модалка редактирования финансов */}
-            <Modal visible={!!editUser} animationType="slide" transparent onRequestClose={() => setEditUser(null)}>
-                <View style={s.modalOverlay}>
-                    <BlurView intensity={90} tint={theme.mode === 'dark' ? 'dark' : 'light'}
-                        style={[s.modalContent, { backgroundColor: theme.bgGlass }]}
-                    >
-                        <View style={s.modalHeader}>
-                            <Text style={[s.modalTitle, { color: theme.text }]}>
-                                Финансы: {editUser?.first_name}
-                            </Text>
-                            <TouchableOpacity onPress={() => setEditUser(null)}>
-                                <Ionicons name="close-circle" size={28} color={theme.textSub} />
-                            </TouchableOpacity>
-                        </View>
-
-                        <ScrollView showsVerticalScrollIndicator={false}>
-                            {[
-                                { key: 'monthly_plan',       label: 'План на месяц ($)' },
-                                { key: 'fixed_salary',       label: 'Фиксированный оклад ($)' },
-                                { key: 'commission_percent', label: 'Процент комиссии (%)' },
-                                { key: 'motivation_target',  label: 'Цель мотивации ($)' },
-                                { key: 'motivation_reward',  label: 'Сумма бонуса ($)' },
-                            ].map(f => (
-                                <View key={f.key} style={s.inputGroup}>
-                                    <Text style={[s.inputLabel, { color: theme.textSub }]}>{f.label}</Text>
-                                    <TextInput
-                                        style={[s.input, { backgroundColor: theme.bgInput, color: theme.text, borderColor: theme.border }]}
-                                        value={(form as any)[f.key]}
-                                        onChangeText={v => setForm(prev => ({ ...prev, [f.key]: v }))}
-                                        keyboardType="numeric"
-                                        placeholderTextColor={theme.textMuted}
-                                    />
-                                </View>
-                            ))}
-
-                            <TouchableOpacity style={[s.saveBtn, { backgroundColor: theme.primaryDeep }]}
-                                onPress={handleSave} disabled={saving}
-                            >
-                                {saving
-                                    ? <ActivityIndicator color="#fff" />
-                                    : <Text style={s.saveBtnText}>Сохранить</Text>
-                                }
-                            </TouchableOpacity>
-                        </ScrollView>
-                    </BlurView>
-                </View>
-            </Modal>
-        </ScreenWrapper>
-    );
+              <Pressable onPress={submit} style={[styles.modalBtn, { backgroundColor: theme.blue }]}>
+                <Text style={[styles.modalBtnText, { color: '#fff' }]}>
+                  {saving ? 'Сохраняю...' : 'Сохранить'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </ScreenWrapper>
+  );
 }
 
-function makeStyles(t: any) {
-    return StyleSheet.create({
-        center:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
-        container: { padding: 20 },
-        header:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
-        backBtn:   { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
-        headerTitle: { fontSize: 20, fontWeight: '900' },
-
-        userCard:   { borderRadius: 24, marginBottom: 14, borderWidth: 1, overflow: 'hidden', padding: 18 },
-        userHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
-        avatar:     { width: 48, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-        avatarText: { fontSize: 20, fontWeight: '900' },
-        userName:   { fontSize: 15, fontWeight: '900', marginBottom: 2 },
-        userEmail:  { fontSize: 12, fontWeight: '500', marginBottom: 2 },
-        userOffice: { fontSize: 11, fontWeight: '500' },
-        statusDot:  { width: 10, height: 10, borderRadius: 5 },
-
-        kpiRow: { flexDirection: 'row', borderTopWidth: 1, paddingTop: 12, marginBottom: 12 },
-        kpiBox: { flex: 1, alignItems: 'center' },
-        kpiLabel: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginBottom: 3 },
-        kpiVal:   { fontSize: 16, fontWeight: '900' },
-
-        progressWrap: { marginBottom: 14 },
-        progressTrack: { height: 6, borderRadius: 3, overflow: 'hidden', marginBottom: 4 },
-        progressFill:  { height: '100%', borderRadius: 3 },
-        progressText:  { fontSize: 11, fontWeight: '600' },
-
-        btnRow:   { flexDirection: 'row', gap: 10 },
-        editBtn:  { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 12, borderWidth: 1, gap: 5 },
-        payBtn:   { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 12, borderWidth: 1, gap: 5 },
-        editBtnText: { fontSize: 13, fontWeight: '800' },
-
-        modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
-        modalContent: { borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 26, maxHeight: '88%', overflow: 'hidden' },
-        modalHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-        modalTitle:   { fontSize: 20, fontWeight: '900' },
-        inputGroup:   { marginBottom: 16 },
-        inputLabel:   { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', marginBottom: 6 },
-        input:        { borderRadius: 14, paddingHorizontal: 16, height: 50, fontSize: 15, fontWeight: '700', borderWidth: 1 },
-        saveBtn:      { paddingVertical: 16, borderRadius: 16, alignItems: 'center', marginTop: 8, marginBottom: 20 },
-        saveBtnText:  { color: '#fff', fontWeight: '900', fontSize: 15 },
-    });
-}
+const styles = StyleSheet.create({
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  denied: { fontSize: 18, fontWeight: '900', textAlign: 'center' },
+  container: { padding: 20, paddingBottom: 120 },
+  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  title: { fontSize: 28, fontWeight: '900' },
+  sub: { marginTop: 6, fontSize: 13, fontWeight: '700' },
+  primaryBtn: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 },
+  primaryBtnText: { color: '#fff', fontWeight: '900' },
+  searchBox: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, marginTop: 18 },
+  searchInput: { fontSize: 15, fontWeight: '600' },
+  list: { marginTop: 16, borderWidth: 1, borderRadius: 22, overflow: 'hidden' },
+  row: {
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  rowTitle: { fontSize: 15, fontWeight: '900' },
+  rowMeta: { marginTop: 4, fontSize: 12, fontWeight: '600' },
+  rolePill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  roleText: { fontSize: 12, fontWeight: '900' },
+  empty: { padding: 18, fontSize: 14 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(8,18,28,0.35)', justifyContent: 'center', padding: 18 },
+  modalCard: { borderWidth: 1, borderRadius: 24, padding: 18 },
+  modalTitle: { fontSize: 20, fontWeight: '900', marginBottom: 14 },
+  inputWrap: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12 },
+  input: { fontSize: 15, fontWeight: '600' },
+  modalSection: { fontSize: 15, fontWeight: '900', marginTop: 4, marginBottom: 10 },
+  roleRow: { flexDirection: 'row', gap: 10 },
+  roleChip: { flex: 1, borderWidth: 1, borderRadius: 16, alignItems: 'center', paddingVertical: 12 },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  modalBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 16, paddingVertical: 14 },
+  modalBtnText: { fontWeight: '900', fontSize: 15 },
+});

@@ -1,153 +1,561 @@
-// app/(app)/university/[id].tsx
+// app/(app)/deal/[id].tsx
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
-import * as Clipboard from 'expo-clipboard';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
+} from 'react-native';
+
 import ScreenWrapper from '../../../components/ScreenWrapper';
+import apiClient from '../../../src/api/apiClient';
+import { useTheme } from '../../../src/context/ThemeContext';
 import { getToken } from '../../../src/utils/storage';
 
-// --- ОЧИСТКА HTML ТЕГОВ ---
-const stripHtml = (html: string) => {
-    if (!html) return '';
-    return html
-        .replace(/<[^>]*>?/gm, '') // удаляет все теги <p>, <li>, <b> и т.д.
-        .replace(/&nbsp;/g, ' ')   // заменяет пробелы
-        .replace(/&amp;/g, '&')
-        .trim();
-};
+function money(v: any) {
+  const n = Number(v || 0);
+  return `$${n.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}`;
+}
 
-export default function UniversityDetailScreen() {
-    const { id } = useLocalSearchParams();
-    const router = useRouter();
-    const [uni, setUni] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
+function safeValue(value: any) {
+  if (value === null || value === undefined || value === '') return '—';
+  return String(value);
+}
 
-    useEffect(() => {
-        const fetchUni = async () => {
-            try {
-                const cached = await getToken('cache_universities');
-                if (cached) {
-                    const unis = JSON.parse(cached);
-                    const found = unis.find((u: any) => u.id.toString() === id?.toString());
-                    if (found) setUni(found);
-                }
-            } catch (error) {
-                console.error("Ошибка загрузки ВУЗа", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchUni();
-    }, [id]);
+function paymentStatusLabel(status?: string) {
+  const map: Record<string, string> = {
+    unpaid: 'Не оплачено',
+    partial: 'Частично',
+    paid: 'Оплачено',
+  };
+  return map[status || ''] || status || '—';
+}
 
-    const handleCopy = async (text: string, title: string) => {
-        if (!text) return;
-        const cleanText = stripHtml(text);
-        await Clipboard.setStringAsync(cleanText);
-        Alert.alert("Скопировано", `${title} скопировано в буфер обмена`);
-    };
+function dealTypeLabel(type?: string) {
+  const map: Record<string, string> = {
+    university: 'Поступление',
+    service: 'Услуга',
+  };
+  return map[type || ''] || type || '—';
+}
 
-    // Блок информации премиум дизайна
-    const InfoBlock = ({ title, content, icon }: { title: string, content: string, icon: any }) => {
-        if (!content) return null;
-        const cleanContent = stripHtml(content);
-        return (
-            <TouchableOpacity activeOpacity={0.7} onPress={() => handleCopy(cleanContent, title)}>
-                <BlurView intensity={50} tint="light" style={styles.infoBlock}>
-                    <View style={styles.infoHeader}>
-                        <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                            <Ionicons name={icon} size={18} color="#0D416D" style={{marginRight: 10}} />
-                            <Text style={styles.infoTitle}>{title}</Text>
-                        </View>
-                        <Ionicons name="copy-outline" size={16} color="#94A3B8" />
-                    </View>
-                    <Text style={styles.infoContent}>{cleanContent}</Text>
-                </BlurView>
-            </TouchableOpacity>
-        );
-    };
+function InfoRow({
+  theme,
+  icon,
+  label,
+  value,
+  divider = true,
+}: {
+  theme: any;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  divider?: boolean;
+}) {
+  return (
+    <View
+      style={[
+        styles.infoRow,
+        divider && { borderBottomWidth: 1, borderBottomColor: theme.divider },
+      ]}
+    >
+      <View
+        style={[
+          styles.iconWrap,
+          { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+        ]}
+      >
+        <Ionicons name={icon} size={18} color={theme.blue} />
+      </View>
 
-    if (loading) return <ScreenWrapper><View style={styles.center}><ActivityIndicator size="large" color="#0D416D" /></View></ScreenWrapper>;
-    if (!uni) return <ScreenWrapper><Text style={styles.errorText}>ВУЗ не найден</Text></ScreenWrapper>;
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>{label}</Text>
+        <Text style={[styles.infoValue, { color: theme.text }]}>{value}</Text>
+      </View>
+    </View>
+  );
+}
 
-    return (
-        <ScreenWrapper>
-            <View style={StyleSheet.absoluteFillObject}>
-                <LinearGradient colors={['#F1F5F9', '#E2E8F0']} style={StyleSheet.absoluteFillObject} />
-            </View>
+export default function DealDetailScreen() {
+  const { id } = useLocalSearchParams();
+  const router = useRouter();
+  const { theme } = useTheme();
 
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.replace('/catalog')} style={styles.backBtn}>
-                    <Ionicons name="arrow-back" size={24} color="#0F172A" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle} numberOfLines={1}>Справочник</Text>
-                <View style={{width: 40}} />
-            </View>
+  const [deal, setDeal] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-                
-                <BlurView intensity={50} tint="light" style={styles.heroCard}>
-                    <View style={styles.iconCircle}>
-                        <Ionicons name="business" size={36} color="#0D416D" />
-                    </View>
-                    <Text style={styles.heroName}>{uni.name}</Text>
-                    <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 8}}>
-                        <Ionicons name="location-outline" size={16} color="#475569" />
-                        <Text style={styles.heroLocation}>{uni.city}, {uni.country}</Text>
-                    </View>
-                </BlurView>
-
-                <Text style={styles.sectionTitle}>Детальная информация</Text>
-                <Text style={styles.hintText}>Нажмите на блок, чтобы скопировать чистый текст</Text>
-                
-                <InfoBlock title="Общее описание" content={uni.description} icon="information-circle" />
-                <InfoBlock title="Необходимые документы" content={uni.required_docs} icon="document-text" />
-                <InfoBlock title="Расходы на жизнь" content={uni.expenses_info} icon="wallet" />
-                <InfoBlock title="Приглашение и виза" content={uni.invitation_info} icon="airplane" />
-                
-                <View style={{flexDirection: 'row', gap: 12, marginBottom: 15}}>
-                    <View style={[styles.infoBlock, {flex: 1, padding: 18, marginBottom: 0, backgroundColor: 'rgba(255,255,255,0.6)'}]}>
-                        <Text style={styles.infoLabel}>Период приема</Text>
-                        <Text style={styles.infoValueSmall}>{uni.intake_period || 'Не указан'}</Text>
-                    </View>
-                    <View style={[styles.infoBlock, {flex: 1, padding: 18, marginBottom: 0, backgroundColor: 'rgba(255,255,255,0.6)'}]}>
-                        <Text style={styles.infoLabel}>Возраст</Text>
-                        <Text style={styles.infoValueSmall}>{uni.age_limit || 'Нет ограничений'}</Text>
-                    </View>
-                </View>
-                
-                <InfoBlock title="Контакты университета" content={uni.contacts} icon="call" />
-
-                <View style={{height: 100}} />
-            </ScrollView>
-        </ScreenWrapper>
+  const outstanding = useMemo(() => {
+    if (!deal) return 0;
+    return Math.max(
+      0,
+      Number(deal.total_to_pay_usd || 0) - Number(deal.paid_amount_usd || 0)
     );
+  }, [deal]);
+
+  const loadDeal = async () => {
+    try {
+      if (id && String(id).startsWith('temp_')) {
+        const offlineDeals = JSON.parse((await getToken('offline_deals')) || '[]');
+        const found = offlineDeals.find((d: any) => String(d.id) === String(id));
+        if (found) {
+          setDeal(found);
+          return;
+        }
+      }
+
+      const response = await apiClient.get(`analytics/deals/${id}/`);
+      setDeal(response.data);
+    } catch (error) {
+      console.error('Ошибка загрузки сделки', error);
+      Alert.alert('Ошибка', 'Не удалось загрузить карточку сделки.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDeal();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={theme.blue} />
+        </View>
+      </ScreenWrapper>
+    );
+  }
+
+  if (!deal) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.center}>
+          <Text style={[styles.errorText, { color: theme.red }]}>Сделка не найдена</Text>
+        </View>
+      </ScreenWrapper>
+    );
+  }
+
+  return (
+    <ScreenWrapper>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.replace('/(app)/crm' as any)}
+          style={[
+            styles.backBtn,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <Ionicons name="arrow-back" size={22} color={theme.text} />
+        </Pressable>
+
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Карточка сделки</Text>
+
+        <View style={{ width: 44 }} />
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadDeal();
+            }}
+            tintColor={theme.blue}
+          />
+        }
+      >
+        <View
+          style={[
+            styles.mainCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <View style={[styles.heroIcon, { backgroundColor: theme.blueSoft }]}>
+            <Ionicons
+              name={deal.deal_type === 'university' ? 'school' : 'briefcase'}
+              size={28}
+              color={theme.blue}
+            />
+          </View>
+
+          <Text style={[styles.dealTitle, { color: theme.text }]}>
+            Сделка #{safeValue(deal.id)}
+          </Text>
+
+          <Text style={[styles.dealSubtitle, { color: theme.textSecondary }]}>
+            {deal.client_data?.full_name || 'Клиент'} · {dealTypeLabel(deal.deal_type)}
+          </Text>
+
+          <View style={styles.heroBadges}>
+            <View style={[styles.badge, { backgroundColor: theme.blueSoft }]}>
+              <Text style={[styles.badgeText, { color: theme.blue }]}>
+                {paymentStatusLabel(deal.payment_status)}
+              </Text>
+            </View>
+
+            {deal.isOffline ? (
+              <View style={[styles.badge, { backgroundColor: theme.redSoft }]}>
+                <Text style={[styles.badgeText, { color: theme.red }]}>OFFLINE</Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          Основное
+        </Text>
+        <View
+          style={[
+            styles.infoCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <InfoRow
+            theme={theme}
+            icon="person"
+            label="Клиент"
+            value={safeValue(deal.client_data?.full_name)}
+          />
+          <InfoRow
+            theme={theme}
+            icon="call"
+            label="Телефон клиента"
+            value={safeValue(deal.client_data?.phone)}
+          />
+          <InfoRow
+            theme={theme}
+            icon="business"
+            label="Менеджер"
+            value={safeValue(
+              deal.manager_data?.full_name ||
+                [deal.manager_data?.first_name, deal.manager_data?.last_name]
+                  .filter(Boolean)
+                  .join(' ')
+            )}
+          />
+          <InfoRow
+            theme={theme}
+            icon="layers"
+            label="Тип сделки"
+            value={dealTypeLabel(deal.deal_type)}
+            divider={false}
+          />
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          Услуга / программа
+        </Text>
+        <View
+          style={[
+            styles.infoCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          {deal.deal_type === 'university' ? (
+            <>
+              <InfoRow
+                theme={theme}
+                icon="school"
+                label="Университет"
+                value={safeValue(deal.university_name)}
+              />
+              <InfoRow
+                theme={theme}
+                icon="book"
+                label="Программа"
+                value={safeValue(deal.program_name)}
+                divider={false}
+              />
+            </>
+          ) : (
+            <>
+              <InfoRow
+                theme={theme}
+                icon="briefcase"
+                label="Название услуги"
+                value={safeValue(deal.service_title || deal.custom_service_name)}
+              />
+              <InfoRow
+                theme={theme}
+                icon="document-text"
+                label="Описание услуги"
+                value={safeValue(deal.custom_service_desc)}
+                divider={false}
+              />
+            </>
+          )}
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          Финансы
+        </Text>
+        <View
+          style={[
+            styles.infoCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <InfoRow
+            theme={theme}
+            icon="cash"
+            label="Цена для клиента"
+            value={money(deal.price_client)}
+          />
+          <InfoRow
+            theme={theme}
+            icon="trending-up"
+            label="Ожидаемая выручка"
+            value={money(deal.expected_revenue_usd)}
+          />
+          <InfoRow
+            theme={theme}
+            icon="wallet"
+            label="Всего к оплате"
+            value={money(deal.total_to_pay_usd)}
+          />
+          <InfoRow
+            theme={theme}
+            icon="card"
+            label="Оплачено"
+            value={money(deal.paid_amount_usd)}
+          />
+          <InfoRow
+            theme={theme}
+            icon="hourglass"
+            label="Остаток"
+            value={money(outstanding)}
+            divider={false}
+          />
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          Платежи
+        </Text>
+        <View
+          style={[
+            styles.infoCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          {!deal.payments || !deal.payments.length ? (
+            <View style={styles.emptyState}>
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                Платежей пока нет.
+              </Text>
+            </View>
+          ) : (
+            deal.payments.map((p: any, index: number) => (
+              <View
+                key={String(p.id)}
+                style={[
+                  styles.paymentRow,
+                  index !== deal.payments.length - 1 && {
+                    borderBottomWidth: 1,
+                    borderBottomColor: theme.divider,
+                  },
+                ]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.paymentTitle, { color: theme.text }]}>
+                    {money(p.amount_usd || p.amount)}
+                  </Text>
+                  <Text style={[styles.paymentMeta, { color: theme.textSecondary }]}>
+                    {p.method || '—'} · {p.payment_date || p.updated_at || '—'}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.payBadge,
+                    {
+                      backgroundColor: p.is_confirmed ? '#EAF8EF' : '#FFF4E8',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.payBadgeText,
+                      { color: p.is_confirmed ? theme.success : theme.warning },
+                    ]}
+                  >
+                    {p.is_confirmed ? 'CONFIRMED' : 'PENDING'}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        <View style={styles.actionsWrap}>
+          {!String(deal.id).startsWith('temp_') && (
+            <>
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: '/(app)/payment/create',
+                    params: { dealId: String(deal.id) },
+                  } as any)
+                }
+                style={[styles.actionBtn, { backgroundColor: theme.success }]}
+              >
+                <Ionicons name="card" size={18} color="#fff" />
+                <Text style={styles.actionBtnText}>Добавить платёж</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: '/(app)/create-document',
+                    params: {
+                      dealId: String(deal.id),
+                      clientName: String(deal.client_data?.full_name || ''),
+                    },
+                  } as any)
+                }
+                style={[styles.secondaryBtn, { backgroundColor: theme.blue }]}
+              >
+                <Ionicons name="document-text" size={18} color="#fff" />
+                <Text style={styles.actionBtnText}>Создать документ</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+
+        <View style={{ height: 50 }} />
+      </ScrollView>
+    </ScreenWrapper>
+  );
 }
 
 const styles = StyleSheet.create({
-    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 15 },
-    backBtn: { width: 44, height: 44, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.6)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)' },
-    headerTitle: { color: '#0F172A', fontSize: 20, fontWeight: '900', flex: 1, textAlign: 'center' },
-    errorText: { color: '#ef4444', fontSize: 16, textAlign: 'center', marginTop: 40, fontWeight: '700' },
-    scrollContent: { paddingHorizontal: 20 },
-    
-    heroCard: { padding: 30, borderRadius: 32, marginBottom: 25, borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.6)' },
-    iconCircle: { width: 76, height: 76, borderRadius: 38, backgroundColor: 'rgba(13, 65, 109, 0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 15, borderWidth: 1, borderColor: 'rgba(13, 65, 109, 0.2)' },
-    heroName: { color: '#0F172A', fontSize: 22, fontWeight: '900', textAlign: 'center', lineHeight: 28 },
-    heroLocation: { color: '#475569', fontSize: 15, fontWeight: '600', marginLeft: 4 },
-
-    sectionTitle: { color: '#334155', fontSize: 13, fontWeight: '900', marginBottom: 4, marginLeft: 5, letterSpacing: 1.5, textTransform: 'uppercase' },
-    hintText: { color: '#94A3B8', fontSize: 12, marginBottom: 20, marginLeft: 5, fontWeight: '600' },
-    
-    // Стили Инфо блоков
-    infoBlock: { padding: 20, borderRadius: 24, marginBottom: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)', backgroundColor: 'rgba(255,255,255,0.5)', overflow: 'hidden' },
-    infoHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-    infoTitle: { color: '#0F172A', fontSize: 16, fontWeight: '900' },
-    infoContent: { color: '#475569', fontSize: 15, lineHeight: 22, fontWeight: '500' },
-    infoLabel: { color: '#94A3B8', fontSize: 11, textTransform: 'uppercase', marginBottom: 6, fontWeight: '800', letterSpacing: 0.5 },
-    infoValueSmall: { color: '#1E293B', fontSize: 15, fontWeight: '800' }
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  headerTitle: { fontSize: 18, fontWeight: '900' },
+  errorText: { fontSize: 16, textAlign: 'center', fontWeight: '700' },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 120 },
+  mainCard: {
+    alignItems: 'center',
+    padding: 24,
+    borderRadius: 28,
+    marginBottom: 20,
+    borderWidth: 1,
+  },
+  heroIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  dealTitle: { fontSize: 22, fontWeight: '900' },
+  dealSubtitle: {
+    marginTop: 6,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  heroBadges: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  badge: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999 },
+  badgeText: { fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 10,
+    marginLeft: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  infoCard: {
+    borderRadius: 24,
+    marginBottom: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 16,
+  },
+  iconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  infoLabel: {
+    fontSize: 11,
+    marginBottom: 4,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  infoValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 21,
+  },
+  emptyState: {
+    padding: 16,
+  },
+  emptyText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  paymentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  paymentTitle: { fontSize: 15, fontWeight: '800' },
+  paymentMeta: { marginTop: 4, fontSize: 12, fontWeight: '600' },
+  payBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  payBadgeText: { fontSize: 11, fontWeight: '900' },
+  actionsWrap: { gap: 12 },
+  actionBtn: {
+    flexDirection: 'row',
+    padding: 18,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+  },
+  secondaryBtn: {
+    flexDirection: 'row',
+    padding: 18,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+  },
+  actionBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' },
 });

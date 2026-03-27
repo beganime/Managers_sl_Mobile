@@ -1,145 +1,543 @@
 // app/(app)/add-client.tsx
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Pressable,
     ScrollView,
     StyleSheet,
+    Switch,
     Text,
     TextInput,
-    TouchableOpacity,
-    View
+    View,
 } from 'react-native';
+
 import ScreenWrapper from '../../components/ScreenWrapper';
 import apiClient from '../../src/api/apiClient';
+import { useTheme } from '../../src/context/ThemeContext';
+
+function cleanNullable(value: string) {
+  const v = value.trim();
+  return v ? v : null;
+}
+
+function flattenServerError(data: any): string {
+  if (!data) return 'Не удалось создать клиента.';
+
+  if (typeof data === 'string') return data;
+
+  if (Array.isArray(data)) {
+    return data.map((x) => String(x)).join('\n');
+  }
+
+  if (typeof data === 'object') {
+    return Object.entries(data)
+      .map(([key, value]) => {
+        if (Array.isArray(value)) return `${key}: ${value.join(', ')}`;
+        if (typeof value === 'object') return `${key}: ${JSON.stringify(value)}`;
+        return `${key}: ${String(value)}`;
+      })
+      .join('\n');
+  }
+
+  return 'Не удалось создать клиента.';
+}
 
 export default function AddClientScreen() {
-    const router = useRouter();
-    const [submitLoading, setSubmitLoading] = useState(false);
-    const [formClient, setFormClient] = useState({ 
-        full_name: '', phone: '', email: '', dob: '', city: '', citizenship: 'Туркменистан',
-        passport_local_num: '', passport_inter_num: '', passport_issued_by: '', 
-        passport_issued_date: '', address_registration: ''
-    });
+  const router = useRouter();
+  const { theme } = useTheme();
 
-    const submitForm = async () => {
-        // Проверка обязательных полей (включая город, так как на бэкенде он обязателен)
-        if (!formClient.full_name || !formClient.phone || !formClient.city) {
-            Alert.alert('Ошибка', 'Заполните обязательные поля: ФИО, Телефон и Город');
-            return;
-        }
+  const [submitLoading, setSubmitLoading] = useState(false);
 
-        setSubmitLoading(true);
-        try {
-            const payload: any = { ...formClient };
-            
-            // Очищаем пустые поля, чтобы Django не выдавал 400 Bad Request
-            if (!payload.dob) payload.dob = null;
-            if (!payload.passport_issued_date) payload.passport_issued_date = null;
-            if (!payload.email) payload.email = null;
+  const [form, setForm] = useState({
+    full_name: '',
+    phone: '',
+    email: '',
+    city: '',
+    dob: '',
+    status: 'new',
+    citizenship: 'Туркменистан',
+    is_priority: false,
 
-            await apiClient.post('clients/', payload);
-            
-            Alert.alert('Успех', 'Клиент успешно добавлен', [
-                { text: 'OK', onPress: () => router.back() }
-            ]);
-        } catch (error: any) {
-            console.log("Validation Error:", error.response?.data);
-            const serverError = error.response?.data;
-            let errorMsg = 'Проверьте введенные данные';
-            
-            // Парсим красивый вывод ошибки от Django
-            if (serverError && typeof serverError === 'object') {
-                errorMsg = Object.entries(serverError)
-                    .map(([key, msgs]) => `${key}: ${msgs}`)
-                    .join('\n');
-            }
+    passport_local_num: '',
+    passport_inter_num: '',
+    passport_issued_by: '',
+    passport_issued_date: '',
+    address_registration: '',
 
-            Alert.alert('Ошибка (400)', errorMsg);
-        } finally {
-            setSubmitLoading(false);
-        }
-    };
+    is_partner_client: false,
+    partner_name: '',
+    has_discount: false,
+    discount_amount: '',
 
-    return (
-        <ScreenWrapper>
-            <View style={StyleSheet.absoluteFillObject}>
-                <LinearGradient colors={['#F1F5F9', '#E2E8F0']} style={StyleSheet.absoluteFillObject} />
-            </View>
+    current_tasks: '',
+    comments: '',
 
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-                    <Ionicons name="arrow-back" size={24} color="#0F172A" />
-                </TouchableOpacity>
-                <Text style={styles.title}>Новый клиент</Text>
-                <View style={{ width: 40 }} />
-            </View>
+    // временно, пока relative на бэке read-only
+    relative_full_name: '',
+    relative_relation_type: '',
+    relative_phone: '',
+    relative_work_place: '',
 
-            <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-                <BlurView intensity={40} tint="light" style={styles.glassCard}>
-                    <Text style={styles.label}>ФИО Абитуриента *</Text>
-                    <TextInput style={styles.input} value={formClient.full_name} onChangeText={v => setFormClient({...formClient, full_name:v})} placeholder="Иванов Иван Иванович" placeholderTextColor="#94A3B8" />
-                    
-                    <View style={styles.row}>
-                        <View style={{flex:1, marginRight:10}}>
-                            <Text style={styles.label}>Телефон *</Text>
-                            <TextInput style={styles.input} keyboardType="phone-pad" value={formClient.phone} onChangeText={v => setFormClient({...formClient, phone:v})} placeholder="+993..." placeholderTextColor="#94A3B8" />
-                        </View>
-                        <View style={{flex:1}}>
-                            <Text style={styles.label}>Email</Text>
-                            <TextInput style={styles.input} keyboardType="email-address" value={formClient.email} onChangeText={v => setFormClient({...formClient, email:v})} placeholder="mail@example.com" placeholderTextColor="#94A3B8" autoCapitalize="none" />
-                        </View>
-                    </View>
-                    
-                    <View style={styles.row}>
-                        <View style={{flex:1, marginRight:10}}>
-                            <Text style={styles.label}>Город *</Text>
-                            <TextInput style={styles.input} value={formClient.city} onChangeText={v => setFormClient({...formClient, city:v})} placeholder="Ашхабад" placeholderTextColor="#94A3B8" />
-                        </View>
-                        <View style={{flex:1}}>
-                            <Text style={styles.label}>Дата рожд.</Text>
-                            <TextInput style={styles.input} value={formClient.dob} onChangeText={v => setFormClient({...formClient, dob:v})} placeholder="YYYY-MM-DD" placeholderTextColor="#94A3B8" />
-                        </View>
-                    </View>
+    // временно для оформления документов
+    doc_notes: '',
+    contract_notes: '',
+  });
 
-                    <Text style={styles.label}>Гражданство</Text>
-                    <TextInput style={styles.input} value={formClient.citizenship} onChangeText={v => setFormClient({...formClient, citizenship:v})} placeholder="Туркменистан" placeholderTextColor="#94A3B8" />
-                    
-                    <Text style={styles.label}>Паспортные данные</Text>
-                    <View style={styles.row}>
-                        <TextInput style={[styles.input, {flex:1, marginRight:10}]} value={formClient.passport_local_num} onChangeText={v => setFormClient({...formClient, passport_local_num:v})} placeholder="Внутренний" placeholderTextColor="#94A3B8" />
-                        <TextInput style={[styles.input, {flex:1}]} value={formClient.passport_inter_num} onChangeText={v => setFormClient({...formClient, passport_inter_num:v})} placeholder="Загранпаспорт" placeholderTextColor="#94A3B8" />
-                    </View>
-                    <View style={styles.row}>
-                        <TextInput style={[styles.input, {flex:1, marginRight:10}]} value={formClient.passport_issued_by} onChangeText={v => setFormClient({...formClient, passport_issued_by:v})} placeholder="Кем выдан" placeholderTextColor="#94A3B8" />
-                        <TextInput style={[styles.input, {flex:1}]} value={formClient.passport_issued_date} onChangeText={v => setFormClient({...formClient, passport_issued_date:v})} placeholder="Дата (YYYY-MM-DD)" placeholderTextColor="#94A3B8" />
-                    </View>
-                    
-                    <Text style={styles.label}>Адрес регистрации</Text>
-                    <TextInput style={[styles.input, {height:80}]} multiline value={formClient.address_registration} onChangeText={v => setFormClient({...formClient, address_registration:v})} placeholder="Полный адрес прописки..." placeholderTextColor="#94A3B8" />
-                    
-                    <TouchableOpacity style={styles.submitBtn} onPress={submitForm} disabled={submitLoading}>
-                        {submitLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.submitBtnText}>Сохранить</Text>}
-                    </TouchableOpacity>
-                </BlurView>
-            </ScrollView>
-        </ScreenWrapper>
-    );
+  const canSubmit = useMemo(
+    () =>
+      !!form.full_name.trim() &&
+      !!form.phone.trim() &&
+      !!form.city.trim() &&
+      !submitLoading,
+    [form.full_name, form.phone, form.city, submitLoading]
+  );
+
+  const setField = (key: string, value: any) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const Input = ({
+    label,
+    field,
+    placeholder,
+    multiline = false,
+    keyboardType = 'default' as
+      | 'default'
+      | 'email-address'
+      | 'numeric'
+      | 'phone-pad',
+  }) => (
+    <View style={styles.fieldBlock}>
+      <Text style={[styles.label, { color: theme.textSecondary }]}>{label}</Text>
+      <View
+        style={[
+          styles.inputWrap,
+          {
+            backgroundColor: theme.backgroundSoft,
+            borderColor: theme.border,
+            minHeight: multiline ? 96 : 58,
+          },
+        ]}
+      >
+        <TextInput
+          value={(form as any)[field]}
+          onChangeText={(value) => setField(field, value)}
+          placeholder={placeholder}
+          placeholderTextColor={theme.textMuted}
+          multiline={multiline}
+          keyboardType={keyboardType}
+          style={[
+            styles.input,
+            {
+              color: theme.text,
+              minHeight: multiline ? 74 : 24,
+              textAlignVertical: multiline ? 'top' : 'center',
+            },
+          ]}
+        />
+      </View>
+    </View>
+  );
+
+  const submit = async () => {
+    if (!form.full_name.trim() || !form.phone.trim() || !form.city.trim()) {
+      Alert.alert('Ошибка', 'Обязательные поля: ФИО, телефон, город.');
+      return;
+    }
+
+    setSubmitLoading(true);
+
+    try {
+      const extraComments = [
+        form.comments.trim(),
+        form.relative_full_name ||
+        form.relative_relation_type ||
+        form.relative_phone ||
+        form.relative_work_place
+          ? [
+              '=== RELATIVE ===',
+              `ФИО: ${form.relative_full_name || '-'}`,
+              `Кем приходится: ${form.relative_relation_type || '-'}`,
+              `Телефон: ${form.relative_phone || '-'}`,
+              `Место работы: ${form.relative_work_place || '-'}`,
+            ].join('\n')
+          : '',
+        form.contract_notes.trim()
+          ? ['=== CONTRACT NOTES ===', form.contract_notes.trim()].join('\n')
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
+      const mergedTasks = [
+        form.current_tasks.trim(),
+        form.doc_notes.trim()
+          ? ['=== DOC PREP ===', form.doc_notes.trim()].join('\n')
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
+      const payload: any = {
+        full_name: form.full_name.trim(),
+        phone: form.phone.trim(),
+        email: cleanNullable(form.email),
+        city: form.city.trim(),
+        dob: cleanNullable(form.dob),
+        status: form.status,
+        citizenship: form.citizenship.trim() || 'Туркменистан',
+        is_priority: form.is_priority,
+
+        passport_local_num: form.passport_local_num.trim(),
+        passport_inter_num: form.passport_inter_num.trim(),
+        passport_issued_by: form.passport_issued_by.trim(),
+        passport_issued_date: cleanNullable(form.passport_issued_date),
+        address_registration: form.address_registration.trim(),
+
+        is_partner_client: form.is_partner_client,
+        partner_name: form.partner_name.trim(),
+        has_discount: form.has_discount,
+        discount_amount: Number(form.discount_amount || 0),
+
+        current_tasks: mergedTasks,
+        comments: extraComments,
+      };
+
+      await apiClient.post('clients/', payload);
+
+      Alert.alert('Готово', 'Клиент успешно создан.', [
+        {
+          text: 'OK',
+          onPress: () => router.replace('/(app)/crm' as any),
+        },
+      ]);
+    } catch (error: any) {
+      Alert.alert(
+        'Ошибка сервера',
+        flattenServerError(error?.response?.data)
+      );
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  return (
+    <ScreenWrapper>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <Pressable
+            onPress={() => router.back()}
+            style={[
+              styles.backBtn,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+            ]}
+          >
+            <Ionicons name="arrow-back" size={22} color={theme.text} />
+          </Pressable>
+
+          <Text style={[styles.title, { color: theme.text }]}>Новый клиент</Text>
+
+          <View style={{ width: 46 }} />
+        </View>
+
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Основное</Text>
+
+          <Input label="ФИО *" field="full_name" placeholder="ФИО клиента" />
+          <Input
+            label="Телефон *"
+            field="phone"
+            placeholder="+993..."
+            keyboardType="phone-pad"
+          />
+          <Input
+            label="Email"
+            field="email"
+            placeholder="mail@example.com"
+            keyboardType="email-address"
+          />
+          <Input label="Город *" field="city" placeholder="Ашхабад" />
+          <Input label="Дата рождения" field="dob" placeholder="YYYY-MM-DD" />
+          <Input
+            label="Гражданство"
+            field="citizenship"
+            placeholder="Туркменистан"
+          />
+
+          <View style={styles.switchRow}>
+            <Text style={[styles.switchText, { color: theme.text }]}>
+              Приоритетный клиент
+            </Text>
+            <Switch
+              value={form.is_priority}
+              onValueChange={(v) => setField('is_priority', v)}
+            />
+          </View>
+        </View>
+
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            Паспорт и договор
+          </Text>
+
+          <Input
+            label="Внутренний паспорт"
+            field="passport_local_num"
+            placeholder="Серия / номер"
+          />
+          <Input
+            label="Загранпаспорт"
+            field="passport_inter_num"
+            placeholder="Номер загранпаспорта"
+          />
+          <Input
+            label="Кем выдан"
+            field="passport_issued_by"
+            placeholder="МВД Туркменистана"
+          />
+          <Input
+            label="Дата выдачи"
+            field="passport_issued_date"
+            placeholder="YYYY-MM-DD"
+          />
+          <Input
+            label="Адрес регистрации"
+            field="address_registration"
+            placeholder="Полный адрес"
+            multiline
+          />
+          <Input
+            label="Заметки по договору"
+            field="contract_notes"
+            placeholder="Особые условия, доверенность, кто подписывает..."
+            multiline
+          />
+        </View>
+
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            Партнёрский блок
+          </Text>
+
+          <View style={styles.switchRow}>
+            <Text style={[styles.switchText, { color: theme.text }]}>
+              Клиент от партнёра
+            </Text>
+            <Switch
+              value={form.is_partner_client}
+              onValueChange={(v) => setField('is_partner_client', v)}
+            />
+          </View>
+
+          <Input
+            label="Название партнёра"
+            field="partner_name"
+            placeholder="Название партнёра"
+          />
+
+          <View style={styles.switchRow}>
+            <Text style={[styles.switchText, { color: theme.text }]}>
+              Есть скидка
+            </Text>
+            <Switch
+              value={form.has_discount}
+              onValueChange={(v) => setField('has_discount', v)}
+            />
+          </View>
+
+          <Input
+            label="Сумма / процент скидки"
+            field="discount_amount"
+            placeholder="0"
+            keyboardType="numeric"
+          />
+        </View>
+
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            Родственник
+          </Text>
+
+          <Input
+            label="ФИО родственника"
+            field="relative_full_name"
+            placeholder="ФИО"
+          />
+          <Input
+            label="Кем приходится"
+            field="relative_relation_type"
+            placeholder="Отец / мать / брат"
+          />
+          <Input
+            label="Телефон родственника"
+            field="relative_phone"
+            placeholder="+993..."
+            keyboardType="phone-pad"
+          />
+          <Input
+            label="Место работы"
+            field="relative_work_place"
+            placeholder="Работа родственника"
+          />
+
+          <Text style={[styles.helper, { color: theme.textSecondary }]}>
+            Пока backend не принимает nested relative через POST /clients/.
+            Эти данные временно сохраняются в комментариях клиента.
+          </Text>
+        </View>
+
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            Работа менеджера
+          </Text>
+
+          <Input
+            label="Текущие задачи"
+            field="current_tasks"
+            placeholder="Что сейчас делаем по клиенту"
+            multiline
+          />
+          <Input
+            label="Комментарий"
+            field="comments"
+            placeholder="Важные комментарии"
+            multiline
+          />
+          <Input
+            label="Поля для оформления документа"
+            field="doc_notes"
+            placeholder="Что собрано / что не собрано / что проверить"
+            multiline
+          />
+        </View>
+
+        <Pressable
+          onPress={submit}
+          disabled={!canSubmit}
+          style={[
+            styles.submitBtn,
+            { backgroundColor: canSubmit ? theme.blue : theme.border },
+          ]}
+        >
+          {submitLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.submitText}>Сохранить клиента</Text>
+          )}
+        </Pressable>
+      </ScrollView>
+    </ScreenWrapper>
+  );
 }
 
 const styles = StyleSheet.create({
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, paddingTop: 10 },
-    backBtn: { padding: 10, backgroundColor: 'rgba(255,255,255,0.4)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)' },
-    title: { fontSize: 20, fontWeight: '900', color: '#0F172A' },
-    container: { padding: 20, paddingBottom: 100 },
-    glassCard: { padding: 24, borderRadius: 32, backgroundColor: 'rgba(255, 255, 255, 0.4)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.7)', overflow: 'hidden' },
-    label: { fontSize: 11, fontWeight: '900', color: '#475569', marginBottom: 8, marginLeft: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
-    input: { backgroundColor: 'rgba(255, 255, 255, 0.6)', borderRadius: 16, padding: 16, fontSize: 15, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.9)', marginBottom: 20, color: '#1E293B', fontWeight: '700' },
-    row: { flexDirection: 'row' },
-    submitBtn: { backgroundColor: '#0D416D', padding: 20, borderRadius: 20, alignItems: 'center', marginTop: 10, shadowColor: '#0D416D', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 10, elevation: 5 },
-    submitBtnText: { color: '#FFF', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 }
+  container: {
+    padding: 20,
+    paddingBottom: 120,
+    gap: 14,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  backBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  card: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    marginBottom: 14,
+  },
+  fieldBlock: {
+    marginBottom: 14,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  inputWrap: {
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  input: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  switchText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  helper: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  submitBtn: {
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+  },
+  submitText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '900',
+  },
 });
