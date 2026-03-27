@@ -1,39 +1,52 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
 import AnimatedSplash from '../components/AnimatedSplash';
-import { ThemeProvider } from '../src/context/ThemeContext';
 import { STORAGE_KEYS } from '../src/config/app';
+import { ThemeProvider } from '../src/context/ThemeContext';
 import { getToken } from '../src/utils/storage';
 
 function RootNavigator() {
   const [isReady, setIsReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
+
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
     let mounted = true;
 
-    const syncAuth = async () => {
-      const token = await getToken(STORAGE_KEYS.accessToken);
-      if (!mounted) return;
-      setIsAuthenticated(Boolean(token));
-      setIsReady(true);
-    };
+    (async () => {
+      try {
+        const token = await getToken(STORAGE_KEYS.accessToken);
+        if (!mounted) return;
+        setIsAuthenticated(Boolean(token));
+      } catch (e) {
+        if (!mounted) return;
+        setIsAuthenticated(false);
+      } finally {
+        if (mounted) setIsReady(true);
+      }
+    })();
 
-    syncAuth();
-    return () => { mounted = false; };
-  }, [segments]);
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isReady || showSplash) return;
-    const inApp = segments[0] === '(app)';
-    const inLogin = segments[0] === 'login';
+
+    const firstSegment = segments[0];
+    const inApp = firstSegment === '(app)';
+    const inLogin = firstSegment === 'login';
 
     if (!isAuthenticated && !inLogin) {
       router.replace('/login');
-    } else if (isAuthenticated && !inApp) {
+      return;
+    }
+
+    if (isAuthenticated && !inApp) {
       router.replace('/(app)');
     }
   }, [isAuthenticated, isReady, showSplash, segments, router]);
