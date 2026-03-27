@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -39,6 +39,18 @@ function initialsOf(user: any) {
     .join('');
 }
 
+function flattenError(data: any): string {
+  if (!data) return 'Не удалось обновить профиль.';
+  if (typeof data === 'string') return data;
+  if (Array.isArray(data)) return data.map(String).join('\n');
+  if (typeof data === 'object') {
+    return Object.entries(data)
+      .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
+      .join('\n');
+  }
+  return 'Не удалось обновить профиль.';
+}
+
 export default function ProfileScreen() {
   const { theme, themeMode, setTheme } = useTheme();
   const { user, reload } = useCurrentUser();
@@ -52,16 +64,16 @@ export default function ProfileScreen() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [firstName, setFirstName] = useState(user?.first_name || '');
-  const [lastName, setLastName] = useState(user?.last_name || '');
-  const [middleName, setMiddleName] = useState(user?.middle_name || '');
-  const [dob, setDob] = useState(user?.dob || '');
-  const [socialContacts, setSocialContacts] = useState(user?.social_contacts || '');
-  const [jobDescription, setJobDescription] = useState(user?.job_description || '');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [middleName, setMiddleName] = useState('');
+  const [dob, setDob] = useState('');
+  const [socialContacts, setSocialContacts] = useState('');
+  const [jobDescription, setJobDescription] = useState('');
 
   const [avatarAsset, setAvatarAsset] = useState<any>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     setFirstName(user?.first_name || '');
     setLastName(user?.last_name || '');
     setMiddleName(user?.middle_name || '');
@@ -105,7 +117,7 @@ export default function ProfileScreen() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.8,
+      quality: 0.85,
     });
 
     if (result.canceled) return;
@@ -120,14 +132,20 @@ export default function ProfileScreen() {
     setSaving(true);
 
     try {
-      if (avatarAsset) {
+      const textPayload: any = {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        middle_name: middleName.trim(),
+        social_contacts: socialContacts.trim(),
+        job_description: jobDescription.trim(),
+        dob: dob.trim() ? dob.trim() : null,
+      };
+
+      await apiClient.patch('users/users/me/', textPayload);
+
+      if (avatarAsset?.uri) {
         const formData = new FormData();
-        formData.append('first_name', firstName);
-        formData.append('last_name', lastName);
-        formData.append('middle_name', middleName);
-        formData.append('dob', dob);
-        formData.append('social_contacts', socialContacts);
-        formData.append('job_description', jobDescription);
+
         formData.append(
           'avatar',
           {
@@ -138,16 +156,9 @@ export default function ProfileScreen() {
         );
 
         await apiClient.patch('users/users/me/', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-      } else {
-        await apiClient.patch('users/users/me/', {
-          first_name: firstName,
-          last_name: lastName,
-          middle_name: middleName,
-          dob: dob || null,
-          social_contacts: socialContacts,
-          job_description: jobDescription,
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
         });
       }
 
@@ -155,15 +166,7 @@ export default function ProfileScreen() {
       setAvatarAsset(null);
       Alert.alert('Готово', 'Профиль обновлён.');
     } catch (error: any) {
-      const data = error?.response?.data;
-      const message =
-        data && typeof data === 'object'
-          ? Object.entries(data)
-              .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
-              .join('\n')
-          : 'Не удалось обновить профиль.';
-
-      Alert.alert('Ошибка', message);
+      Alert.alert('Ошибка сервера', flattenError(error?.response?.data));
     } finally {
       setSaving(false);
     }
@@ -217,35 +220,65 @@ export default function ProfileScreen() {
           <View style={styles.fieldBlock}>
             <Text style={[styles.label, { color: theme.textSecondary }]}>Имя</Text>
             <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-              <TextInput value={firstName} onChangeText={setFirstName} style={[styles.input, { color: theme.text }]} placeholder="Имя" placeholderTextColor={theme.textMuted} />
+              <TextInput
+                value={firstName}
+                onChangeText={setFirstName}
+                style={[styles.input, { color: theme.text }]}
+                placeholder="Имя"
+                placeholderTextColor={theme.textMuted}
+              />
             </View>
           </View>
 
           <View style={styles.fieldBlock}>
             <Text style={[styles.label, { color: theme.textSecondary }]}>Фамилия</Text>
             <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-              <TextInput value={lastName} onChangeText={setLastName} style={[styles.input, { color: theme.text }]} placeholder="Фамилия" placeholderTextColor={theme.textMuted} />
+              <TextInput
+                value={lastName}
+                onChangeText={setLastName}
+                style={[styles.input, { color: theme.text }]}
+                placeholder="Фамилия"
+                placeholderTextColor={theme.textMuted}
+              />
             </View>
           </View>
 
           <View style={styles.fieldBlock}>
             <Text style={[styles.label, { color: theme.textSecondary }]}>Отчество</Text>
             <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-              <TextInput value={middleName} onChangeText={setMiddleName} style={[styles.input, { color: theme.text }]} placeholder="Отчество" placeholderTextColor={theme.textMuted} />
+              <TextInput
+                value={middleName}
+                onChangeText={setMiddleName}
+                style={[styles.input, { color: theme.text }]}
+                placeholder="Отчество"
+                placeholderTextColor={theme.textMuted}
+              />
             </View>
           </View>
 
           <View style={styles.fieldBlock}>
             <Text style={[styles.label, { color: theme.textSecondary }]}>Дата рождения</Text>
             <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-              <TextInput value={dob} onChangeText={setDob} style={[styles.input, { color: theme.text }]} placeholder="YYYY-MM-DD" placeholderTextColor={theme.textMuted} />
+              <TextInput
+                value={dob}
+                onChangeText={setDob}
+                style={[styles.input, { color: theme.text }]}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={theme.textMuted}
+              />
             </View>
           </View>
 
           <View style={styles.fieldBlock}>
             <Text style={[styles.label, { color: theme.textSecondary }]}>Соц. контакты</Text>
             <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-              <TextInput value={socialContacts} onChangeText={setSocialContacts} style={[styles.input, { color: theme.text }]} placeholder="Telegram / WhatsApp / Instagram" placeholderTextColor={theme.textMuted} />
+              <TextInput
+                value={socialContacts}
+                onChangeText={setSocialContacts}
+                style={[styles.input, { color: theme.text }]}
+                placeholder="Telegram / WhatsApp / Instagram"
+                placeholderTextColor={theme.textMuted}
+              />
             </View>
           </View>
 

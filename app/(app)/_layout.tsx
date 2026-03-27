@@ -1,11 +1,12 @@
 import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import AppTabIcon from '../../components/ui/AppTabIcon';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useTheme } from '../../src/context/ThemeContext';
+import { ensureWorkdayRemindersScheduled } from '../../src/notifications/workdayReminders';
 
 const TAB_HEIGHT = Platform.OS === 'ios' ? 86 : 74;
 const TAB_BOTTOM = Platform.OS === 'ios' ? 18 : 12;
@@ -16,6 +17,10 @@ export default function AppTabsLayout() {
 
   const isAdmin = !!user && (user.is_superuser || user.is_staff || user.role === 'admin');
   const dark = themeMode === 'dark';
+
+  useEffect(() => {
+    ensureWorkdayRemindersScheduled();
+  }, []);
 
   return (
     <Tabs

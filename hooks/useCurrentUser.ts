@@ -5,24 +5,37 @@ import { getToken, saveToken } from '../src/utils/storage';
 export interface CurrentUser {
   id: number;
   email: string;
+
   first_name: string;
   last_name: string;
-  middle_name?: string;
-  full_name?: string;
-  role?: 'admin' | 'manager';
+  middle_name?: string | null;
+  full_name?: string | null;
+
+  role?: 'admin' | 'manager' | string;
   is_superuser: boolean;
   is_staff: boolean;
-  avatar: string | null;
-  work_status: string;
-  is_effective: boolean;
-  office: { id: number; city: string; address: string } | null;
-  managersalary: {
-    monthly_plan: number;
-    current_month_revenue: number;
-    current_balance: number;
-    fixed_salary: number;
-    motivation_target: number;
-    motivation_reward: number;
+
+  avatar?: string | null;
+  work_status?: string | null;
+  is_effective?: boolean;
+
+  dob?: string | null;
+  social_contacts?: string | null;
+  job_description?: string | null;
+
+  office?: {
+    id: number;
+    city?: string | null;
+    address?: string | null;
+  } | null;
+
+  managersalary?: {
+    monthly_plan?: number | null;
+    current_month_revenue?: number | null;
+    current_balance?: number | null;
+    fixed_salary?: number | null;
+    motivation_target?: number | null;
+    motivation_reward?: number | null;
   } | null;
 }
 
@@ -33,8 +46,13 @@ export function useCurrentUser() {
   const reload = useCallback(async () => {
     try {
       const cached = await getToken('cache_my_profile');
+
       if (cached) {
-        setUser(JSON.parse(cached));
+        try {
+          setUser(JSON.parse(cached));
+        } catch {
+          // ignore bad cache
+        }
       }
 
       const response = await apiClient.get('users/users/me/');

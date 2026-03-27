@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -36,6 +37,18 @@ function money(v: number) {
   return `$${Math.round(v || 0).toLocaleString('ru-RU')}`;
 }
 
+function Crown({
+  place,
+  size = 24,
+}: {
+  place: 1 | 2 | 3;
+  size?: number;
+}) {
+  const color = place === 1 ? '#D4AF37' : place === 2 ? '#C0C0C0' : '#CD7F32';
+
+  return <Ionicons name="crown" size={size} color={color} />;
+}
+
 export default function LeaderboardScreen() {
   const { theme } = useTheme();
   const { user: currentUser } = useCurrentUser();
@@ -57,7 +70,7 @@ export default function LeaderboardScreen() {
 
       if (!ranked.length) {
         const users = await fetchAllPages('users/users/');
-        ranked = users.sort((a, b) => revenueOf(b) - revenueOf(a));
+        ranked = users.sort((a: any, b: any) => revenueOf(b) - revenueOf(a));
       }
 
       setLeaders(ranked);
@@ -115,55 +128,81 @@ export default function LeaderboardScreen() {
       >
         <Text style={[styles.title, { color: theme.text }]}>Рейтинг команды</Text>
         <Text style={[styles.sub, { color: theme.textSecondary }]}>
-          По выручке за текущий месяц
+          Если серверный рейтинг пуст, экран строится из текущей месячной выручки сотрудников.
         </Text>
 
         {myRow ? (
-          <View style={[styles.meCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View
+            style={[
+              styles.meCard,
+              { backgroundColor: theme.surface, borderColor: theme.border },
+            ]}
+          >
             <View>
-              <Text style={[styles.meCaption, { color: theme.textSecondary }]}>Мой результат</Text>
-              <Text style={[styles.meName, { color: theme.text }]}>{fullNameOf(myRow)}</Text>
+              <Text style={[styles.meCaption, { color: theme.textSecondary }]}>
+                Мой результат
+              </Text>
+              <Text style={[styles.meName, { color: theme.text }]}>
+                {fullNameOf(myRow)}
+              </Text>
             </View>
+
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={[styles.meRank, { color: theme.blue }]}>#{myRow._rank}</Text>
-              <Text style={[styles.meRevenue, { color: theme.success }]}>{money(myRow._revenue)}</Text>
+              <Text style={[styles.meRevenue, { color: theme.success }]}>
+                {money(myRow._revenue)}
+              </Text>
             </View>
           </View>
         ) : null}
 
-        {top3.length ? (
-          <View style={styles.topWrap}>
-            {top3.map((item, index) => {
-              const accent =
-                index === 0 ? theme.red : index === 1 ? theme.blue : theme.success;
+        <View style={styles.topGrid}>
+          {top3.map((user, index) => {
+            const place = (index + 1) as 1 | 2 | 3;
+            const accent =
+              place === 1 ? '#D4AF37' : place === 2 ? '#C0C0C0' : '#CD7F32';
 
-              return (
-                <View
-                  key={item.id || `top-${index}`}
-                  style={[styles.topCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                >
-                  <Text style={[styles.place, { color: accent }]}>#{item._rank}</Text>
-                  <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
-                    {fullNameOf(item)}
-                  </Text>
-                  <Text style={[styles.office, { color: theme.textSecondary }]} numberOfLines={1}>
-                    {officeOf(item)}
-                  </Text>
-                  <Text style={[styles.revenue, { color: theme.success }]}>
-                    {money(item._revenue)}
-                  </Text>
+            return (
+              <View
+                key={user.id || `top-${index}`}
+                style={[
+                  styles.topCard,
+                  { backgroundColor: theme.surface, borderColor: theme.border },
+                ]}
+              >
+                <View style={styles.topCardHeader}>
+                  <View style={styles.crownWrap}>
+                    <Crown place={place} size={22} />
+                    <Text style={[styles.place, { color: accent }]}>#{place}</Text>
+                  </View>
+
+                  {place === 1 ? (
+                    <View
+                      style={[
+                        styles.leaderBadge,
+                        { backgroundColor: theme.redSoft },
+                      ]}
+                    >
+                      <Text style={[styles.leaderBadgeText, { color: theme.red }]}>
+                        TOP 1
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
-              );
-            })}
-          </View>
-        ) : (
-          <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>Рейтинг пока пуст</Text>
-            <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
-              Нет данных по сотрудникам или выручке.
-            </Text>
-          </View>
-        )}
+
+                <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
+                  {fullNameOf(user)}
+                </Text>
+                <Text style={[styles.office, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {officeOf(user)}
+                </Text>
+                <Text style={[styles.revenue, { color: theme.success }]}>
+                  {money(user._revenue)}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
 
         <View style={[styles.list, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           {rest.length === 0 ? (
@@ -171,18 +210,21 @@ export default function LeaderboardScreen() {
               Пока только топ сотрудников.
             </Text>
           ) : (
-            rest.map((item) => (
-              <View key={item.id || `rest-${item._rank}`} style={[styles.row, { borderBottomColor: theme.divider }]}>
+            rest.map((user, index) => (
+              <View
+                key={user.id || `rest-${index}`}
+                style={[styles.row, { borderBottomColor: theme.divider }]}
+              >
                 <View style={{ flex: 1, paddingRight: 12 }}>
                   <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={1}>
-                    #{item._rank} · {fullNameOf(item)}
+                    #{index + 4} · {fullNameOf(user)}
                   </Text>
                   <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                    {officeOf(item)}
+                    {officeOf(user)}
                   </Text>
                 </View>
                 <Text style={[styles.rowValue, { color: theme.blue }]}>
-                  {money(item._revenue)}
+                  {money(revenueOf(user))}
                 </Text>
               </View>
             ))
@@ -213,10 +255,22 @@ const styles = StyleSheet.create({
   meRank: { fontSize: 20, fontWeight: '900' },
   meRevenue: { marginTop: 4, fontSize: 14, fontWeight: '900' },
 
-  topWrap: { marginTop: 18, gap: 12 },
+  topGrid: { marginTop: 18, gap: 12 },
   topCard: { borderWidth: 1, borderRadius: 22, padding: 18 },
+  topCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  crownWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   place: { fontSize: 18, fontWeight: '900' },
-  name: { marginTop: 8, fontSize: 18, fontWeight: '900' },
+  leaderBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  leaderBadgeText: { fontSize: 11, fontWeight: '900' },
+  name: { marginTop: 12, fontSize: 18, fontWeight: '900' },
   office: { marginTop: 6, fontSize: 13, fontWeight: '700' },
   revenue: { marginTop: 10, fontSize: 16, fontWeight: '900' },
 
@@ -232,9 +286,5 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 15, fontWeight: '800' },
   rowMeta: { marginTop: 4, fontSize: 12, fontWeight: '600' },
   rowValue: { fontSize: 13, fontWeight: '900' },
-
-  emptyCard: { marginTop: 18, borderWidth: 1, borderRadius: 22, padding: 18 },
-  emptyTitle: { fontSize: 16, fontWeight: '900' },
-  emptySub: { marginTop: 6, fontSize: 13, fontWeight: '600' },
   emptyList: { padding: 18, fontSize: 14 },
 });

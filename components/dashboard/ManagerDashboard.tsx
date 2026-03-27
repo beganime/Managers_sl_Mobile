@@ -1,4 +1,3 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -11,6 +10,7 @@ import {
     Text,
     View,
 } from 'react-native';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import { CurrentUser } from '../../hooks/useCurrentUser';
 import apiClient, { fetchAllPages } from '../../src/api/apiClient';
@@ -33,6 +33,50 @@ function isMineOrShared(client: any, userId: number) {
   if (Array.isArray(client.shared_with) && client.shared_with.includes(userId)) return true;
   if (Array.isArray(client.shared_with_data) && client.shared_with_data.some((u: any) => u.id === userId)) return true;
   return false;
+}
+
+function QuickSvgIcon({
+  name,
+  color,
+}: {
+  name: 'workday' | 'tasks' | 'clients' | 'payments';
+  color: string;
+}) {
+  const common = { stroke: color, strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, fill: 'none' };
+
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24">
+      {name === 'workday' && (
+        <>
+          <Circle cx="12" cy="12" r="8" {...common} />
+          <Path d="M12 8v4l2.8 1.8" {...common} />
+        </>
+      )}
+
+      {name === 'tasks' && (
+        <>
+          <Rect x="5" y="4" width="14" height="16" rx="2.5" {...common} />
+          <Path d="M9 9h6M9 13h6M9 17h4" {...common} />
+        </>
+      )}
+
+      {name === 'clients' && (
+        <>
+          <Circle cx="9" cy="10" r="2.5" {...common} />
+          <Circle cx="16.5" cy="11" r="2" {...common} />
+          <Path d="M5.5 17.2c.8-2 2.5-3 3.5-3 1.4 0 2.8.7 3.8 2" {...common} />
+          <Path d="M14 17c.5-1.3 1.5-2 2.5-2 .8 0 1.6.3 2.2 1" {...common} />
+        </>
+      )}
+
+      {name === 'payments' && (
+        <>
+          <Rect x="4" y="6" width="16" height="12" rx="3" {...common} />
+          <Path d="M8 12h8M8 9.2h2.5M8 14.8h3" {...common} />
+        </>
+      )}
+    </Svg>
+  );
 }
 
 export default function ManagerDashboard({ user, onRefresh }: Props) {
@@ -62,12 +106,15 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
       const serverClients = clientsResponse.status === 'fulfilled' ? clientsResponse.value : [];
 
       const mergedTasks = [...serverTasks];
+
       cachedOfflineTasks.forEach((task: any) => {
-        const index = mergedTasks.findIndex((x) => x.id === task.id);
+        const index = mergedTasks.findIndex((x: any) => String(x.id) === String(task.id));
+
         if (task._offlineAction === 'DELETE') {
           if (index > -1) mergedTasks.splice(index, 1);
           return;
         }
+
         if (index > -1) {
           mergedTasks[index] = { ...mergedTasks[index], ...task };
         } else {
@@ -76,22 +123,24 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
       });
 
       const ownTasks = mergedTasks
-        .filter((t) => {
+        .filter((t: any) => {
           const assignedId =
             typeof t.assigned_to === 'object' ? t.assigned_to?.id : t.assigned_to;
           return assignedId === user.id;
         })
-        .sort((a, b) => String(a.status).localeCompare(String(b.status)));
+        .sort((a: any, b: any) => String(a.status).localeCompare(String(b.status)));
 
       const visibleTeamTasks = mergedTasks
-        .filter((t) => {
+        .filter((t: any) => {
           const assignedId =
             typeof t.assigned_to === 'object' ? t.assigned_to?.id : t.assigned_to;
           return assignedId !== user.id;
         })
         .slice(0, 5);
 
-      const myClients = serverClients.filter((c) => isMineOrShared(c, user.id)).slice(0, 5);
+      const myClients = serverClients
+        .filter((c: any) => isMineOrShared(c, user.id))
+        .slice(0, 5);
 
       setTasks(ownTasks);
       setTeamTasks(visibleTeamTasks);
@@ -113,17 +162,14 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
     () => parseFloat(String(user.managersalary?.current_month_revenue || 0)),
     [user.managersalary]
   );
-
   const plan = useMemo(
     () => parseFloat(String(user.managersalary?.monthly_plan || 0)),
     [user.managersalary]
   );
-
   const balance = useMemo(
     () => parseFloat(String(user.managersalary?.current_balance || 0)),
     [user.managersalary]
   );
-
   const progress = plan > 0 ? Math.min(Math.round((revenue / plan) * 100), 100) : 0;
 
   if (loading) {
@@ -138,8 +184,6 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
 
   return (
     <ScreenWrapper>
-      <LinearGradient colors={theme.gradientMain as [string, string, ...string[]]} style={StyleSheet.absoluteFillObject} />
-
       <ScrollView
         contentContainerStyle={styles.container}
         refreshControl={
@@ -163,9 +207,47 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
             </Text>
           </View>
 
-          <Pressable onPress={() => setFabOpen(true)} style={[styles.fabMini, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.fabMiniText, { color: theme.blue }]}>＋</Text>
+          <Pressable
+            onPress={() => setFabOpen(true)}
+            style={[styles.fabMini, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          >
+            <Text style={[styles.fabMiniText, { color: theme.text }]}>＋</Text>
           </Pressable>
+        </View>
+
+        <View style={styles.quickGrid}>
+          <Pressable
+            onPress={() => router.push('/(app)/workday' as any)}
+            style={[styles.quickCardPrimary, { backgroundColor: theme.blue }]}
+          >
+            <View style={styles.quickIconBoxDark}>
+              <QuickSvgIcon name="workday" color="#fff" />
+            </View>
+            <Text style={styles.quickPrimaryTitle}>Быстрый вход в Workday</Text>
+            <Text style={styles.quickPrimarySub}>Отметиться о приходе, уходе и проверить смены</Text>
+          </Pressable>
+
+          <View style={styles.quickRow}>
+            <Pressable
+              onPress={() => router.push('/(app)/tasks' as any)}
+              style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            >
+              <View style={[styles.quickIconBox, { backgroundColor: theme.blueSoft }]}>
+                <QuickSvgIcon name="tasks" color={theme.blue} />
+              </View>
+              <Text style={[styles.quickTitle, { color: theme.text }]}>Задачи</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.push('/(app)/crm' as any)}
+              style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            >
+              <View style={[styles.quickIconBox, { backgroundColor: theme.blueSoft }]}>
+                <QuickSvgIcon name="clients" color={theme.blue} />
+              </View>
+              <Text style={[styles.quickTitle, { color: theme.text }]}>Клиенты</Text>
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.kpiGrid}>
@@ -185,9 +267,16 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
             <Text style={[styles.progressTitle, { color: theme.text }]}>План</Text>
             <Text style={[styles.progressValue, { color: theme.blue }]}>{progress}%</Text>
           </View>
+
           <View style={[styles.progressBarBg, { backgroundColor: theme.backgroundSoft }]}>
-            <View style={[styles.progressBarFill, { backgroundColor: theme.blue, width: `${progress}%` }]} />
+            <View
+              style={[
+                styles.progressBarFill,
+                { width: `${progress}%`, backgroundColor: theme.blue },
+              ]}
+            />
           </View>
+
           <Text style={[styles.progressSub, { color: theme.textSecondary }]}>
             {money(revenue)} из {money(plan)}
           </Text>
@@ -196,32 +285,33 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
         <Text style={[styles.section, { color: theme.text }]}>Мои задачи</Text>
         <View style={[styles.panel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           {tasks.length === 0 ? (
-            <Text style={[styles.empty, { color: theme.textSecondary }]}>Нет задач. Можно работать оффлайн и добавить их в разделе “Задачи”.</Text>
+            <Text style={[styles.empty, { color: theme.textSecondary }]}>
+              Нет задач. Можно работать оффлайн и добавить их в разделе “Задачи”.
+            </Text>
           ) : (
             tasks.slice(0, 7).map((task) => (
               <Pressable
                 key={String(task.id)}
-                onPress={() => router.push('/tasks' as any)}
+                onPress={() => router.push('/(app)/tasks' as any)}
                 style={[styles.row, { borderBottomColor: theme.divider }]}
               >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={1}>
-                    {task.title}
-                  </Text>
-                  <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]}>{task.title}</Text>
+                  <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
                     {task.description || 'Без описания'}
                   </Text>
                 </View>
+
                 <View
                   style={[
                     styles.statusPill,
                     {
                       backgroundColor:
                         task.status === 'done'
-                          ? '#E9F8EF'
+                          ? '#EAF8EF'
                           : task.status === 'process'
-                          ? '#EEF4FF'
-                          : '#FFF5E6',
+                          ? theme.blueSoft
+                          : theme.backgroundSoft,
                     },
                   ]}
                 >
@@ -234,11 +324,15 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                             ? theme.success
                             : task.status === 'process'
                             ? theme.blue
-                            : theme.warning,
+                            : theme.textSecondary,
                       },
                     ]}
                   >
-                    {task.status === 'done' ? 'Готово' : task.status === 'process' ? 'В работе' : 'To do'}
+                    {task.status === 'done'
+                      ? 'Готово'
+                      : task.status === 'process'
+                      ? 'В работе'
+                      : 'To do'}
                   </Text>
                 </View>
               </Pressable>
@@ -249,24 +343,25 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
         <Text style={[styles.section, { color: theme.text }]}>Общий список команды</Text>
         <View style={[styles.panel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           {teamTasks.length === 0 ? (
-            <Text style={[styles.empty, { color: theme.textSecondary }]}>Пока нет видимых общих задач.</Text>
+            <Text style={[styles.empty, { color: theme.textSecondary }]}>
+              Пока нет видимых общих задач.
+            </Text>
           ) : (
             teamTasks.map((task) => {
               const author =
                 typeof task.assigned_to === 'object'
                   ? `${task.assigned_to?.first_name || ''} ${task.assigned_to?.last_name || ''}`.trim()
                   : `ID ${task.assigned_to}`;
+
               return (
                 <Pressable
-                  key={`team-${task.id}`}
-                  onPress={() => router.push('/tasks' as any)}
+                  key={String(task.id)}
+                  onPress={() => router.push('/(app)/tasks' as any)}
                   style={[styles.row, { borderBottomColor: theme.divider }]}
                 >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={1}>
-                      {task.title}
-                    </Text>
-                    <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                    <Text style={[styles.rowTitle, { color: theme.text }]}>{task.title}</Text>
+                    <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
                       {task.description || 'Без заметки'} · {author || 'Автор не указан'}
                     </Text>
                   </View>
@@ -279,32 +374,39 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
         <Text style={[styles.section, { color: theme.text }]}>Мои клиенты</Text>
         <View style={[styles.panel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           {clients.length === 0 ? (
-            <Text style={[styles.empty, { color: theme.textSecondary }]}>Нет клиентов в видимой базе.</Text>
+            <Text style={[styles.empty, { color: theme.textSecondary }]}>
+              Нет клиентов в видимой базе.
+            </Text>
           ) : (
             clients.map((client) => (
               <Pressable
-                key={client.id}
-                onPress={() => router.push(`/client/${client.id}` as any)}
+                key={String(client.id)}
+                onPress={() => router.push(`/(app)/client/${client.id}` as any)}
                 style={[styles.row, { borderBottomColor: theme.divider }]}
               >
-                <View>
+                <View style={{ flex: 1, paddingRight: 10 }}>
                   <Text style={[styles.rowTitle, { color: theme.text }]}>{client.full_name}</Text>
                   <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
                     {client.phone || 'Без телефона'} · {client.city || 'Без города'}
                   </Text>
                 </View>
-                <Text style={[styles.rowValue, { color: theme.blue }]}>{client.status || 'new'}</Text>
+
+                <Text style={[styles.rowValue, { color: theme.blue }]}>
+                  {client.status || 'new'}
+                </Text>
               </Pressable>
             ))
           )}
         </View>
 
-        <View style={[styles.reportCard, { backgroundColor: hasReport ? '#EAF8EF' : theme.redSoft, borderColor: theme.border }]}>
+        <View style={[styles.reportCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Text style={[styles.reportTitle, { color: theme.text }]}>
-            {hasReport ? 'Отчёт за сегодня уже отправлен' : 'Отчёт за сегодня ещё не отправлен'}
+            {hasReport
+              ? 'Отчёт за сегодня уже отправлен'
+              : 'Отчёт за сегодня ещё не отправлен'}
           </Text>
-          <Pressable onPress={() => router.push('/profile' as any)}>
-            <Text style={[styles.reportAction, { color: hasReport ? theme.success : theme.red }]}>
+          <Pressable onPress={() => router.push('/(app)/profile' as any)}>
+            <Text style={[styles.reportAction, { color: theme.blue }]}>
               {hasReport ? 'Проверить' : 'Открыть и заполнить'}
             </Text>
           </Pressable>
@@ -314,13 +416,43 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
       <Modal visible={fabOpen} transparent animationType="fade" onRequestClose={() => setFabOpen(false)}>
         <Pressable style={styles.modalBg} onPress={() => setFabOpen(false)}>
           <View style={[styles.fabMenu, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Pressable onPress={() => { setFabOpen(false); router.push('/payment/create' as any); }} style={styles.fabAction}>
+            <Pressable
+              onPress={() => {
+                setFabOpen(false);
+                router.push('/(app)/workday' as any);
+              }}
+              style={styles.fabAction}
+            >
+              <Text style={[styles.fabActionText, { color: theme.text }]}>Учет времени</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                setFabOpen(false);
+                router.push('/(app)/payment/create' as any);
+              }}
+              style={styles.fabAction}
+            >
               <Text style={[styles.fabActionText, { color: theme.text }]}>Быстрый доход / платёж</Text>
             </Pressable>
-            <Pressable onPress={() => { setFabOpen(false); router.push('/tasks' as any); }} style={styles.fabAction}>
+
+            <Pressable
+              onPress={() => {
+                setFabOpen(false);
+                router.push('/(app)/tasks' as any);
+              }}
+              style={styles.fabAction}
+            >
               <Text style={[styles.fabActionText, { color: theme.text }]}>Быстрая заметка / задача</Text>
             </Pressable>
-            <Pressable onPress={() => { setFabOpen(false); router.push('/add-client' as any); }} style={styles.fabAction}>
+
+            <Pressable
+              onPress={() => {
+                setFabOpen(false);
+                router.push('/(app)/add-client' as any);
+              }}
+              style={styles.fabAction}
+            >
               <Text style={[styles.fabActionText, { color: theme.text }]}>Добавить клиента</Text>
             </Pressable>
           </View>
@@ -336,18 +468,68 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   caption: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
   title: { fontSize: 26, fontWeight: '900', marginTop: 4 },
+
   fabMini: {
     width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
   fabMiniText: { fontSize: 24, fontWeight: '900', marginTop: -2 },
+
+  quickGrid: { marginTop: 20, gap: 12 },
+  quickCardPrimary: {
+    borderRadius: 24,
+    padding: 18,
+  },
+  quickIconBoxDark: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickPrimaryTitle: {
+    marginTop: 14,
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  quickPrimarySub: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  quickRow: { flexDirection: 'row', gap: 12 },
+  quickCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 16,
+  },
+  quickIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickTitle: {
+    marginTop: 12,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
   kpiGrid: { flexDirection: 'row', gap: 12, marginTop: 22 },
   kpiCard: { flex: 1, borderRadius: 22, borderWidth: 1, padding: 18 },
   kpiValue: { fontSize: 22, fontWeight: '900' },
   kpiLabel: { marginTop: 8, fontSize: 13, fontWeight: '700' },
+
   progressCard: { marginTop: 14, borderRadius: 22, borderWidth: 1, padding: 18 },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   progressTitle: { fontSize: 15, fontWeight: '900' },
@@ -355,6 +537,7 @@ const styles = StyleSheet.create({
   progressBarBg: { marginTop: 12, height: 10, borderRadius: 999, overflow: 'hidden' },
   progressBarFill: { height: 10, borderRadius: 999 },
   progressSub: { marginTop: 10, fontSize: 13, fontWeight: '700' },
+
   section: { fontSize: 18, fontWeight: '900', marginTop: 24, marginBottom: 12 },
   panel: { borderWidth: 1, borderRadius: 22, overflow: 'hidden' },
   row: {
@@ -368,14 +551,28 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 15, fontWeight: '800' },
   rowMeta: { marginTop: 4, fontSize: 12, fontWeight: '600' },
   rowValue: { fontSize: 13, fontWeight: '900' },
+
   statusPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
   statusText: { fontSize: 12, fontWeight: '900' },
+
   empty: { padding: 16, fontSize: 14, lineHeight: 20 },
+
   reportCard: { marginTop: 20, borderWidth: 1, borderRadius: 22, padding: 16 },
   reportTitle: { fontSize: 15, fontWeight: '900' },
   reportAction: { marginTop: 8, fontSize: 14, fontWeight: '900' },
-  modalBg: { flex: 1, backgroundColor: 'rgba(10,20,30,0.28)', justifyContent: 'flex-end', padding: 20 },
-  fabMenu: { borderRadius: 24, borderWidth: 1, paddingVertical: 8, marginBottom: 90 },
+
+  modalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(10,20,30,0.28)',
+    justifyContent: 'flex-end',
+    padding: 20,
+  },
+  fabMenu: {
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingVertical: 8,
+    marginBottom: 90,
+  },
   fabAction: { paddingHorizontal: 16, paddingVertical: 16 },
   fabActionText: { fontSize: 15, fontWeight: '800' },
 });

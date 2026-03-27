@@ -1,56 +1,189 @@
-import React from 'react';
-import Svg, { Path } from 'react-native-svg';
+import { BlurView } from 'expo-blur';
+import { Tabs } from 'expo-router';
+import React, { useEffect } from 'react';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 
-type Name = 'home' | 'crm' | 'rank' | 'catalog' | 'profile';
+import AppTabIcon from '../../components/ui/AppTabIcon';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { useTheme } from '../../src/context/ThemeContext';
+import { ensureWorkdayRemindersScheduled } from '../../src/notifications/workdayReminders';
 
-interface Props {
-  name: Name;
-  color: string;
-  focused?: boolean;
-  size?: number;
-}
+const TAB_HEIGHT = Platform.OS === 'ios' ? 86 : 74;
+const TAB_BOTTOM = Platform.OS === 'ios' ? 18 : 12;
 
-export default function AppTabIcon({ name, color, focused = false, size = 24 }: Props) {
-  const strokeWidth = focused ? 2.2 : 1.9;
+export default function AppTabsLayout() {
+  const { user } = useCurrentUser();
+  const { theme, themeMode } = useTheme();
 
-  const icons: Record<Name, React.ReactNode> = {
-    home: (
-      <>
-        <Path d="M5 11.5L12 5l7 6.5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-        <Path d="M7.5 10.5V18h9v-7.5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-      </>
-    ),
-    crm: (
-      <>
-        <Path d="M8 11a3 3 0 100-6 3 3 0 000 6zm8 1a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-        <Path d="M3.5 18c.6-2.4 2.6-4 4.5-4s3.9 1.6 4.5 4" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-        <Path d="M13.5 18c.35-1.6 1.6-2.8 3.5-2.8 1.6 0 2.9 1 3.5 2.8" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-      </>
-    ),
-    rank: (
-      <>
-        <Path d="M6 6h12l-2 5H8L6 6z" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-        <Path d="M9 11v3.2c0 1.8 1.4 3.3 3 3.3s3-1.5 3-3.3V11" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-        <Path d="M9.5 19h5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
-      </>
-    ),
-    catalog: (
-      <>
-        <Path d="M6.5 6.5h11a1.5 1.5 0 011.5 1.5v8.8a1.2 1.2 0 01-1.2 1.2H8a2 2 0 00-2 2V8a1.5 1.5 0 011.5-1.5z" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-        <Path d="M9 10h6M9 13h5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
-      </>
-    ),
-    profile: (
-      <>
-        <Path d="M12 11a3 3 0 100-6 3 3 0 000 6z" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-        <Path d="M5.5 19c.8-3 3.3-4.8 6.5-4.8s5.7 1.8 6.5 4.8" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-      </>
-    ),
-  };
+  const isAdmin = !!user && (user.is_superuser || user.is_staff || user.role === 'admin');
+  const dark = themeMode === 'dark';
+
+  useEffect(() => {
+    ensureWorkdayRemindersScheduled();
+  }, []);
 
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      {icons[name]}
-    </Svg>
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarHideOnKeyboard: true,
+        tabBarActiveTintColor: dark ? '#FFFFFF' : theme.text,
+        tabBarInactiveTintColor: theme.textMuted,
+        tabBarLabelPosition: 'below-icon',
+        tabBarStyle: {
+          position: 'absolute',
+          left: 14,
+          right: 14,
+          bottom: TAB_BOTTOM,
+          height: TAB_HEIGHT,
+          borderRadius: 28,
+          backgroundColor: 'transparent',
+          borderTopWidth: 0,
+          elevation: 0,
+          shadowColor: theme.shadow,
+          shadowOffset: { width: 0, height: 10 },
+          shadowOpacity: dark ? 0.28 : 0.12,
+          shadowRadius: 20,
+          overflow: 'hidden',
+        },
+        tabBarBackground: () => (
+          <View style={StyleSheet.absoluteFillObject}>
+            <BlurView
+              intensity={dark ? 45 : 90}
+              tint={dark ? 'dark' : 'light'}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View
+              style={[
+                StyleSheet.absoluteFillObject,
+                styles.tabShell,
+                {
+                  backgroundColor: dark ? 'rgba(15,23,35,0.82)' : 'rgba(255,255,255,0.82)',
+                  borderColor: theme.border,
+                },
+              ]}
+            />
+            <View
+              style={[
+                styles.topHairline,
+                { backgroundColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.7)' },
+              ]}
+            />
+          </View>
+        ),
+        tabBarItemStyle: {
+          paddingTop: 7,
+          paddingBottom: Platform.OS === 'ios' ? 11 : 10,
+        },
+        tabBarIconStyle: {
+          marginBottom: 2,
+        },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Главная',
+          tabBarLabel: ({ color, focused }) => (
+            <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
+              Главная
+            </Text>
+          ),
+          tabBarIcon: ({ color, focused }) => (
+            <AppTabIcon name="home" color={color} focused={focused} size={22} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="crm"
+        options={{
+          title: 'CRM',
+          tabBarLabel: ({ color, focused }) => (
+            <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
+              CRM
+            </Text>
+          ),
+          tabBarIcon: ({ color, focused }) => (
+            <AppTabIcon name="crm" color={color} focused={focused} size={22} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="leaderboard"
+        options={{
+          title: isAdmin ? 'Команда' : 'Рейтинг',
+          tabBarLabel: ({ color, focused }) => (
+            <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
+              {isAdmin ? 'Команда' : 'Рейтинг'}
+            </Text>
+          ),
+          tabBarIcon: ({ color, focused }) => (
+            <AppTabIcon name="rank" color={color} focused={focused} size={22} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="catalog"
+        options={{
+          title: 'Вузы',
+          tabBarLabel: ({ color, focused }) => (
+            <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
+              Вузы
+            </Text>
+          ),
+          tabBarIcon: ({ color, focused }) => (
+            <AppTabIcon name="catalog" color={color} focused={focused} size={22} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Профиль',
+          tabBarLabel: ({ color, focused }) => (
+            <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
+              Профиль
+            </Text>
+          ),
+          tabBarIcon: ({ color, focused }) => (
+            <AppTabIcon name="profile" color={color} focused={focused} size={22} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen name="documents" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="client/[id]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="deal/[id]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="add-deal" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="create-document" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="add-client" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="payment/create" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="university/[id]" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="knowledge-base" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="admin-staff" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="admin-reports" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="admin-payments" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="tasks" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="workday" options={{ href: null, headerShown: false }} />
+    </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabShell: {
+    borderRadius: 28,
+    borderWidth: 1,
+  },
+  topHairline: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    top: 0,
+    height: 1,
+    borderRadius: 999,
+  },
+});

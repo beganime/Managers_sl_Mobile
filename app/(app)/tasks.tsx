@@ -28,7 +28,11 @@ type TaskItem = {
   description?: string;
   status: TaskStatus;
   priority: TaskPriority;
-  assigned_to?: number | { id: number; first_name?: string; last_name?: string } | null;
+  assigned_to?: number | { id: number; first_name?: string; last_name?: string; email?: string } | null;
+  assigned_to_data?: { id: number; first_name?: string; last_name?: string; email?: string } | null;
+  created_by?: number | { id: number; first_name?: string; last_name?: string; email?: string } | null;
+  created_by_data?: { id: number; first_name?: string; last_name?: string; email?: string } | null;
+  client?: number | null;
   created_at?: string;
   updated_at?: string;
   isOffline?: boolean;
@@ -53,7 +57,31 @@ const PRIORITY_LABELS: Record<TaskPriority, string> = {
 
 function getAssignedId(task: TaskItem) {
   if (typeof task.assigned_to === 'object') return task.assigned_to?.id;
-  return task.assigned_to ?? null;
+  return task.assigned_to ?? task.assigned_to_data?.id ?? null;
+}
+
+function userNameFromAny(
+  value: any,
+  usersMap: Record<string, any>,
+  fallback = 'Не указан'
+) {
+  if (!value && value !== 0) return fallback;
+
+  if (typeof value === 'object') {
+    const full = [value.first_name, value.last_name].filter(Boolean).join(' ').trim();
+    return full || value.email || fallback;
+  }
+
+  const mapped = usersMap[String(value)];
+  if (mapped) {
+    return (
+      [mapped.first_name, mapped.last_name].filter(Boolean).join(' ').trim() ||
+      mapped.email ||
+      fallback
+    );
+  }
+
+  return `ID ${String(value)}`;
 }
 
 function mergeTasks(serverTasks: TaskItem[], offlineTasks: TaskItem[]) {
@@ -89,6 +117,7 @@ export default function TasksScreen() {
 
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [offlineQueue, setOfflineQueue] = useState<TaskItem[]>([]);
+  const [usersMap, setUsersMap] = useState<Record<string, any>>({});
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('mine');
 
@@ -118,6 +147,18 @@ export default function TasksScreen() {
   const load = useCallback(async () => {
     try {
       const queue = await readOfflineQueue();
+
+      let usersLookup: Record<string, any> = {};
+      try {
+        const users = await fetchAllPages('users/users/');
+        usersLookup = (users || []).reduce((acc: any, item: any) => {
+          acc[String(item.id)] = item;
+          return acc;
+        }, {});
+        setUsersMap(usersLookup);
+      } catch {
+        setUsersMap({});
+      }
 
       try {
         const server = await fetchAllPages('tasks/');
@@ -160,6 +201,7 @@ export default function TasksScreen() {
             status: item.status,
             priority: item.priority,
             assigned_to: user?.id,
+            client: item.client || null,
           });
         } else if (item._offlineAction === 'UPDATE' && typeof item.id === 'number') {
           await apiClient.patch(`tasks/${item.id}/`, {
@@ -167,6 +209,7 @@ export default function TasksScreen() {
             description: item.description,
             status: item.status,
             priority: item.priority,
+            client: item.client || null,
           });
         } else if (item._offlineAction === 'DELETE' && typeof item.id === 'number') {
           await apiClient.delete(`tasks/${item.id}/`);
@@ -205,6 +248,7 @@ export default function TasksScreen() {
       status: task.status || 'todo',
       priority: task.priority || 'medium',
       assigned_to: getAssignedId(task) || undefined,
+      client: task.client || null,
     });
     setModalOpen(true);
   };
@@ -224,6 +268,7 @@ export default function TasksScreen() {
           description: form.description?.trim() || '',
           status: form.status,
           priority: form.priority,
+          client: form.client || null,
         });
       } else {
         await apiClient.post('tasks/', {
@@ -232,6 +277,7 @@ export default function TasksScreen() {
           status: form.status,
           priority: form.priority,
           assigned_to: user?.id,
+          client: form.client || null,
         });
       }
 
@@ -247,6 +293,7 @@ export default function TasksScreen() {
       const draft: TaskItem = {
         ...form,
         assigned_to: user?.id,
+        created_by: user?.id,
         _offlineAction: 'UPDATE',
         isOffline: true,
       };
@@ -258,6 +305,7 @@ export default function TasksScreen() {
         ...form,
         id: `temp_${Date.now()}`,
         assigned_to: user?.id,
+        created_by: user?.id,
         _offlineAction: 'CREATE',
         isOffline: true,
       });
@@ -315,12 +363,17 @@ export default function TasksScreen() {
 
       if (!q) return true;
 
+      const createdByName = userNameFromAny(task.created_by_data || task.created_by, usersMap, '');
+      const assignedName = userNameFromAny(task.assigned_to_data || task.assigned_to, usersMap, '');
+
       return (
         String(task.title || '').toLowerCase().includes(q) ||
-        String(task.description || '').toLowerCase().includes(q)
+        String(task.description || '').toLowerCase().includes(q) ||
+        createdByName.toLowerCase().includes(q) ||
+        assignedName.toLowerCase().includes(q)
       );
     });
-  }, [filter, isAdmin, search, tasks, user?.id]);
+  }, [filter, isAdmin, search, tasks, user?.id, usersMap]);
 
   if (loading) {
     return (
@@ -357,7 +410,13 @@ export default function TasksScreen() {
           </View>
 
           <View style={styles.headActions}>
-            <Pressable onPress={syncOffline} style={[styles.ghostBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Pressable
+              onPress={syncOffline}
+              style={[
+                styles.ghostBtn,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+              ]}
+            >
               <Text style={[styles.ghostBtnText, { color: theme.blue }]}>
                 {saving ? '...' : 'Sync'}
               </Text>
@@ -417,6 +476,18 @@ export default function TasksScreen() {
               const mine = getAssignedId(task) === user?.id;
               const canEdit = isAdmin || mine || typeof task.id !== 'number';
 
+              const authorName = userNameFromAny(
+                task.created_by_data || task.created_by,
+                usersMap,
+                typeof task.id === 'string' ? fullOfflineAuthor() : 'Автор не указан'
+              );
+
+              const assigneeName = userNameFromAny(
+                task.assigned_to_data || task.assigned_to,
+                usersMap,
+                'Исполнитель не указан'
+              );
+
               return (
                 <Pressable
                   key={String(task.id)}
@@ -430,10 +501,21 @@ export default function TasksScreen() {
                     </Text>
 
                     {!!task.description && (
-                      <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={2}>
+                      <Text
+                        style={[styles.rowMeta, { color: theme.textSecondary }]}
+                        numberOfLines={2}
+                      >
                         {task.description}
                       </Text>
                     )}
+
+                    <Text style={[styles.authorText, { color: theme.textSecondary }]}>
+                      Автор: {authorName}
+                    </Text>
+
+                    <Text style={[styles.authorText, { color: theme.textSecondary }]}>
+                      Исполнитель: {assigneeName}
+                    </Text>
 
                     <View style={styles.metaRow}>
                       <View
@@ -484,7 +566,9 @@ export default function TasksScreen() {
                     </View>
                   </View>
 
-                  {canEdit ? <Text style={[styles.editHint, { color: theme.blue }]}>Открыть</Text> : null}
+                  {canEdit ? (
+                    <Text style={[styles.editHint, { color: theme.blue }]}>Открыть</Text>
+                  ) : null}
                 </Pressable>
               );
             })
@@ -509,14 +593,22 @@ export default function TasksScreen() {
               />
             </View>
 
-            <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border, minHeight: 100 }]}>
+            <View
+              style={[
+                styles.inputWrap,
+                { backgroundColor: theme.backgroundSoft, borderColor: theme.border, minHeight: 100 },
+              ]}
+            >
               <TextInput
                 value={form.description}
                 onChangeText={(value) => setForm((prev) => ({ ...prev, description: value }))}
-                placeholder="Описание"
+                placeholder="Описание / заметка"
                 placeholderTextColor={theme.textMuted}
                 multiline
-                style={[styles.input, { color: theme.text, minHeight: 76, textAlignVertical: 'top' }]}
+                style={[
+                  styles.input,
+                  { color: theme.text, minHeight: 76, textAlignVertical: 'top' },
+                ]}
               />
             </View>
 
@@ -569,7 +661,10 @@ export default function TasksScreen() {
             </View>
 
             <View style={styles.modalActions}>
-              <Pressable onPress={() => setModalOpen(false)} style={[styles.modalBtn, { backgroundColor: theme.backgroundSoft }]}>
+              <Pressable
+                onPress={() => setModalOpen(false)}
+                style={[styles.modalBtn, { backgroundColor: theme.backgroundSoft }]}
+              >
                 <Text style={[styles.modalBtnText, { color: theme.text }]}>Отмена</Text>
               </Pressable>
 
@@ -584,6 +679,10 @@ export default function TasksScreen() {
       </Modal>
     </ScreenWrapper>
   );
+
+  function fullOfflineAuthor() {
+    return [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim() || user?.email || 'Вы';
+  }
 }
 
 const styles = StyleSheet.create({
@@ -612,6 +711,7 @@ const styles = StyleSheet.create({
   },
   rowTitle: { fontSize: 15, fontWeight: '900' },
   rowMeta: { marginTop: 6, fontSize: 12, fontWeight: '600', lineHeight: 17 },
+  authorText: { marginTop: 6, fontSize: 12, fontWeight: '700' },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   statusPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
   statusText: { fontSize: 12, fontWeight: '900' },
