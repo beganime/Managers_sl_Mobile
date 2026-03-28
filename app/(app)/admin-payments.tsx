@@ -29,6 +29,8 @@ type PaymentItem = {
   method?: string;
   is_confirmed?: boolean;
   created_at?: string;
+  payment_date?: string;
+  updated_at?: string;
   manager?: number;
   manager_data?: {
     first_name?: string;
@@ -53,6 +55,15 @@ function managerName(item: PaymentItem) {
   const last = item.manager_data?.last_name || '';
   const full = `${first} ${last}`.trim();
   return full || 'Менеджер';
+}
+
+function methodLabel(method?: string) {
+  const map: Record<string, string> = {
+    cash: 'Наличные',
+    card: 'Карта',
+    bank: 'Перевод',
+  };
+  return map[method || ''] || method || 'unknown';
 }
 
 export default function AdminPaymentsScreen() {
@@ -145,19 +156,37 @@ export default function AdminPaymentsScreen() {
   }, [load, readOffline, saveOffline]);
 
   const confirmPayment = async (item: PaymentItem) => {
-    if (typeof item.id !== 'number') return;
+    if (!isAdmin) {
+      Alert.alert('Ошибка', 'Подтверждать платежи может только администратор.');
+      return;
+    }
+
+    if (item.isOffline) {
+      Alert.alert('Ошибка', 'Оффлайн-платёж сначала нужно синхронизировать.');
+      return;
+    }
+
+    if (!item.id || typeof item.id !== 'number') {
+      Alert.alert('Ошибка', 'Некорректный ID платежа.');
+      return;
+    }
 
     setWorkingId(String(item.id));
     try {
-      try {
-        await apiClient.patch(`analytics/payments/${item.id}/`, { is_confirmed: true });
-      } catch {
-        await apiClient.post(`analytics/payments/${item.id}/confirm/`, {});
-      }
+      const response = await apiClient.post(`analytics/payments/${item.id}/confirm/`, {});
 
       await load();
+
+      Alert.alert(
+        'Готово',
+        response?.data?.detail || `Платёж #${item.id} подтверждён.`
+      );
     } catch (error: any) {
-      Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось подтвердить платёж.');
+      const msg =
+        error?.response?.data?.detail ||
+        error?.response?.data?.payment?.detail ||
+        'Не удалось подтвердить платёж.';
+      Alert.alert('Ошибка', msg);
     } finally {
       setWorkingId(null);
     }
@@ -327,7 +356,7 @@ export default function AdminPaymentsScreen() {
                         Платёж #{item.id}
                       </Text>
                       <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
-                        Сделка #{item.deal || '-'} · {item.method || 'unknown'}
+                        Сделка #{item.deal || '-'} · {methodLabel(item.method)}
                       </Text>
                       <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
                         {managerName(item)} · {item.manager_data?.office?.city || 'Без офиса'}
@@ -374,7 +403,7 @@ export default function AdminPaymentsScreen() {
                         style={[styles.actionBtn, { backgroundColor: theme.success }]}
                       >
                         <Text style={styles.actionBtnText}>
-                          {busy ? '...' : 'Подтвердить'}
+                          {busy ? 'Подтверждение...' : 'Подтвердить'}
                         </Text>
                       </Pressable>
                     </View>

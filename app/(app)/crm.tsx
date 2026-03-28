@@ -32,6 +32,37 @@ function isMineOrShared(item: any, userId: number, isAdmin: boolean) {
   return false;
 }
 
+function statusLabel(status?: string) {
+  const map: Record<string, string> = {
+    new: 'Новый',
+    consultation: 'Консультация',
+    documents: 'Документы',
+    visa: 'Виза',
+    success: 'Успешно',
+    rejected: 'Отказ',
+    archive: 'Архив',
+  };
+
+  return map[String(status || '')] || String(status || 'new');
+}
+
+function statusTextColor(status: string | undefined, theme: any) {
+  switch (status) {
+    case 'success':
+      return theme.success;
+    case 'rejected':
+      return theme.red;
+    case 'archive':
+      return theme.textMuted;
+    case 'consultation':
+    case 'documents':
+    case 'visa':
+    case 'new':
+    default:
+      return theme.blue;
+  }
+}
+
 export default function CRMScreen() {
   const router = useRouter();
   const { theme } = useTheme();
@@ -152,16 +183,31 @@ export default function CRMScreen() {
           </View>
 
           <View style={styles.actionRow}>
-            <Pressable onPress={() => router.push('/documents' as any)} style={[styles.circleBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Pressable
+              onPress={() => router.push('/documents' as any)}
+              style={[
+                styles.circleBtn,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+              ]}
+            >
               <Text style={[styles.circleBtnText, { color: theme.blue }]}>DOC</Text>
             </Pressable>
-            <Pressable onPress={() => router.push('/add-client' as any)} style={[styles.primaryBtn, { backgroundColor: theme.blue }]}>
+
+            <Pressable
+              onPress={() => router.push('/add-client' as any)}
+              style={[styles.primaryBtn, { backgroundColor: theme.blue }]}
+            >
               <Text style={styles.primaryBtnText}>+ Клиент</Text>
             </Pressable>
           </View>
         </View>
 
-        <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View
+          style={[
+            styles.searchBox,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
           <TextInput
             value={search}
             onChangeText={setSearch}
@@ -169,8 +215,8 @@ export default function CRMScreen() {
               activeTab === 'clients'
                 ? 'Поиск клиента'
                 : activeTab === 'deals'
-                ? 'Поиск сделки'
-                : 'Поиск платежа'
+                  ? 'Поиск сделки'
+                  : 'Поиск платежа'
             }
             placeholderTextColor={theme.textMuted}
             style={[styles.searchInput, { color: theme.text }]}
@@ -192,7 +238,12 @@ export default function CRMScreen() {
                   },
                 ]}
               >
-                <Text style={{ color: active ? theme.text : theme.textSecondary, fontWeight: active ? '900' : '700' }}>
+                <Text
+                  style={{
+                    color: active ? theme.text : theme.textSecondary,
+                    fontWeight: active ? '900' : '700',
+                  }}
+                >
                   {tab === 'clients' ? 'Клиенты' : tab === 'deals' ? 'Сделки' : 'Платежи'}
                 </Text>
               </Pressable>
@@ -210,19 +261,59 @@ export default function CRMScreen() {
           ) : (
             paginated.map((item) => {
               if (activeTab === 'clients') {
+                const archived = item.status === 'archive';
+
                 return (
                   <Pressable
                     key={`c-${item.id}`}
                     onPress={() => router.push(`/client/${item.id}` as any)}
-                    style={[styles.row, { borderBottomColor: theme.divider }]}
+                    style={[
+                      styles.row,
+                      {
+                        borderBottomColor: theme.divider,
+                        opacity: archived ? 0.55 : 1,
+                      },
+                    ]}
                   >
-                    <View>
-                      <Text style={[styles.rowTitle, { color: theme.text }]}>{item.full_name}</Text>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text
+                        style={[
+                          styles.rowTitle,
+                          { color: archived ? theme.textSecondary : theme.text },
+                        ]}
+                      >
+                        {item.full_name}
+                      </Text>
+
                       <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
                         {item.phone || 'Без телефона'} · {item.city || 'Без города'}
                       </Text>
+
+                      {archived ? (
+                        <Text style={[styles.archivedText, { color: theme.textMuted }]}>
+                          Неактивный клиент
+                        </Text>
+                      ) : null}
                     </View>
-                    <Text style={[styles.rowValue, { color: theme.blue }]}>{item.status || 'new'}</Text>
+
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        {
+                          backgroundColor: archived ? theme.backgroundSoft : theme.blueSoft,
+                          borderColor: archived ? theme.border : theme.blueSoft,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.statusBadgeText,
+                          { color: statusTextColor(item.status, theme) },
+                        ]}
+                      >
+                        {statusLabel(item.status)}
+                      </Text>
+                    </View>
                   </Pressable>
                 );
               }
@@ -261,7 +352,12 @@ export default function CRMScreen() {
                       Сделка #{item.deal} · {item.method || 'payment'}
                     </Text>
                   </View>
-                  <Text style={[styles.rowValue, { color: item.is_confirmed ? theme.success : theme.red }]}>
+                  <Text
+                    style={[
+                      styles.rowValue,
+                      { color: item.is_confirmed ? theme.success : theme.red },
+                    ]}
+                  >
                     ${Math.round(parseFloat(String(item.amount_usd || 0))).toLocaleString('ru-RU')}
                   </Text>
                 </Pressable>
@@ -274,7 +370,14 @@ export default function CRMScreen() {
           <Pressable
             disabled={page <= 1}
             onPress={() => setPage((p) => Math.max(1, p - 1))}
-            style={[styles.pageBtn, { backgroundColor: theme.surface, borderColor: theme.border, opacity: page <= 1 ? 0.4 : 1 }]}
+            style={[
+              styles.pageBtn,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+                opacity: page <= 1 ? 0.4 : 1,
+              },
+            ]}
           >
             <Text style={{ color: theme.text, fontWeight: '800' }}>Назад</Text>
           </Pressable>
@@ -286,7 +389,14 @@ export default function CRMScreen() {
           <Pressable
             disabled={page >= totalPages}
             onPress={() => setPage((p) => Math.min(totalPages, p + 1))}
-            style={[styles.pageBtn, { backgroundColor: theme.surface, borderColor: theme.border, opacity: page >= totalPages ? 0.4 : 1 }]}
+            style={[
+              styles.pageBtn,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+                opacity: page >= totalPages ? 0.4 : 1,
+              },
+            ]}
           >
             <Text style={{ color: theme.text, fontWeight: '800' }}>Вперёд</Text>
           </Pressable>
@@ -312,7 +422,13 @@ const styles = StyleSheet.create({
   circleBtnText: { fontWeight: '900', fontSize: 12 },
   primaryBtn: { borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12 },
   primaryBtnText: { color: '#fff', fontWeight: '900' },
-  searchBox: { marginTop: 18, borderWidth: 1, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14 },
+  searchBox: {
+    marginTop: 18,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
   searchInput: { fontSize: 15, fontWeight: '600' },
   tabs: { marginTop: 14, borderRadius: 18, padding: 4, flexDirection: 'row', gap: 4 },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 14, borderWidth: 1 },
@@ -329,8 +445,33 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 15, fontWeight: '800' },
   rowMeta: { marginTop: 4, fontSize: 12, fontWeight: '600' },
   rowValue: { fontSize: 13, fontWeight: '900' },
+  archivedText: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  statusBadge: {
+    minWidth: 98,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
   empty: { padding: 18, fontSize: 14 },
-  pagination: { marginTop: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pagination: {
+    marginTop: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   pageBtn: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 },
   pageText: { fontSize: 14, fontWeight: '900' },
 });

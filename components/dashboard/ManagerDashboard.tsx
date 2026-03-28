@@ -2,26 +2,42 @@ import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     Modal,
     Pressable,
     RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     View,
 } from 'react-native';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
+import LeadCard, { LeadItem, LeadStatus } from '../../components/dashboard/LeadCard';
 import { CurrentUser } from '../../hooks/useCurrentUser';
 import apiClient, { fetchAllPages } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
-import { getToken } from '../../src/utils/storage';
+import { getToken, saveToken } from '../../src/utils/storage';
 import ScreenWrapper from '../ScreenWrapper';
 
 interface Props {
   user: CurrentUser;
   onRefresh: () => void;
 }
+
+type LocalNote = {
+  id: string;
+  title: string;
+  body?: string;
+  is_pinned?: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+const LOCAL_NOTES_KEY = 'manager_dashboard_notes_v2';
+const LEAD_STATUSES: LeadStatus[] = ['new', 'contacted', 'converted', 'rejected'];
 
 function money(v: number) {
   return `$${Math.round(v || 0).toLocaleString('ru-RU')}`;
@@ -31,18 +47,33 @@ function isMineOrShared(client: any, userId: number) {
   if (!client) return false;
   if (client.manager === userId) return true;
   if (Array.isArray(client.shared_with) && client.shared_with.includes(userId)) return true;
-  if (Array.isArray(client.shared_with_data) && client.shared_with_data.some((u: any) => u.id === userId)) return true;
+  if (Array.isArray(client.shared_with_data) && client.shared_with_data.some((u: any) => u.id === userId)) {
+    return true;
+  }
   return false;
+}
+
+function sortNotes(items: LocalNote[]) {
+  return [...items].sort((a, b) => {
+    if (!!a.is_pinned !== !!b.is_pinned) return a.is_pinned ? -1 : 1;
+    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+  });
 }
 
 function QuickSvgIcon({
   name,
   color,
 }: {
-  name: 'workday' | 'tasks' | 'clients' | 'payments';
+  name: 'workday' | 'tasks' | 'clients' | 'payments' | 'leads';
   color: string;
 }) {
-  const common = { stroke: color, strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, fill: 'none' };
+  const common = {
+    stroke: color,
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    fill: 'none',
+  };
 
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24">
@@ -75,84 +106,160 @@ function QuickSvgIcon({
           <Path d="M8 12h8M8 9.2h2.5M8 14.8h3" {...common} />
         </>
       )}
+
+      {name === 'leads' && (
+        <>
+          <Rect x="4" y="4.5" width="16" height="15" rx="3.5" {...common} />
+          <Path d="M8 9h8M8 12.5h8M8 16h4" {...common} />
+        </>
+      )}
     </Svg>
   );
 }
 
+function ActionSvgIcon({
+  name,
+  color,
+}: {
+  name: 'plus' | 'edit' | 'pin' | 'trash' | 'chevron' | 'arrowUpRight';
+  color: string;
+}) {
+  const common = {
+    stroke: color,
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    fill: 'none',
+  };
+
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24">
+      {name === 'plus' && <Path d="M12 5v14M5 12h14" {...common} />}
+      {name === 'edit' && (
+        <>
+          <Path d="M4 20h4l10-10-4-4L4 16v4Z" {...common} />
+          <Path d="M12.5 5.5l4 4" {...common} />
+        </>
+      )}
+      {name === 'pin' && (
+        <>
+          <Path d="M9 4h6l-1.5 5 3 3H7.5l3-3L9 4Z" {...common} />
+          <Path d="M12 12v8" {...common} />
+        </>
+      )}
+      {name === 'trash' && (
+        <>
+          <Path d="M4 7h16" {...common} />
+          <Path d="M9 7V5h6v2" {...common} />
+          <Path d="M7 7l1 12h8l1-12" {...common} />
+          <Path d="M10 11v5M14 11v5" {...common} />
+        </>
+      )}
+      {name === 'chevron' && <Path d="M9 6l6 6-6 6" {...common} />}
+      {name === 'arrowUpRight' && (
+        <>
+          <Path d="M7 17L17 7" {...common} />
+          <Path d="M9 7h8v8" {...common} />
+        </>
+      )}
+    </Svg>
+  );
+}
+
+function statusTitle(status: LeadStatus) {
+  switch (status) {
+    case 'new':
+      return 'Новая';
+    case 'contacted':
+      return 'В работе';
+    case 'converted':
+      return 'Клиент';
+    case 'rejected':
+      return 'Отказ';
+    default:
+      return status;
+  }
+}
+
+function directionTitle(direction?: string) {
+  if (!direction) return '—';
+  const map: Record<string, string> = {
+    admission: 'Поступление',
+    translation: 'Переводы',
+    umrah: 'Умра / Хадж',
+    visa: 'Виза',
+    tickets: 'Билеты',
+    tours: 'Туры',
+    work_visa: 'Рабочая виза',
+  };
+  return map[direction] || direction;
+}
+
 export default function ManagerDashboard({ user, onRefresh }: Props) {
-  const { theme } = useTheme();
+  const { theme, themeMode } = useTheme();
   const router = useRouter();
+  const dark = themeMode === 'dark';
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [teamTasks, setTeamTasks] = useState<any[]>([]);
+  const [notes, setNotes] = useState<LocalNote[]>([]);
   const [clients, setClients] = useState<any[]>([]);
+  const [leads, setLeads] = useState<LeadItem[]>([]);
   const [hasReport, setHasReport] = useState(false);
   const [fabOpen, setFabOpen] = useState(false);
 
+  const [leadModalOpen, setLeadModalOpen] = useState(false);
+  const [leadSaving, setLeadSaving] = useState(false);
+  const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null);
+
+  const [noteModalOpen, setNoteModalOpen] = useState(false);
+  const [noteForm, setNoteForm] = useState<LocalNote>({
+    id: '',
+    title: '',
+    body: '',
+    is_pinned: false,
+    created_at: '',
+    updated_at: '',
+  });
+
+  const readLocalNotes = useCallback(async () => {
+    try {
+      const raw = await getToken(LOCAL_NOTES_KEY);
+      return raw ? (JSON.parse(raw) as LocalNote[]) : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const persistNotes = useCallback(async (items: LocalNote[]) => {
+    const sorted = sortNotes(items);
+    setNotes(sorted);
+    await saveToken(LOCAL_NOTES_KEY, JSON.stringify(sorted));
+  }, []);
+
   const load = useCallback(async () => {
     try {
-      const cachedOfflineTasks = JSON.parse((await getToken('offline_tasks')) || '[]');
-
-      const [tasksResponse, clientsResponse, reportResponse] = await Promise.allSettled([
-        fetchAllPages('tasks/'),
-        fetchAllPages('clients/'),
-        apiClient.get('reports/daily/today/'),
+      const [storedNotes, clientsResponse, reportResponse, leadsResponse] = await Promise.all([
+        readLocalNotes(),
+        fetchAllPages('clients/').catch(() => []),
+        apiClient.get('reports/daily/today/').catch(() => null),
+        fetchAllPages('leads/mobile/').catch(() => []),
       ]);
 
-      const serverTasks = tasksResponse.status === 'fulfilled' ? tasksResponse.value : [];
-      const serverClients = clientsResponse.status === 'fulfilled' ? clientsResponse.value : [];
+      const myClients = (clientsResponse || []).filter((c: any) => isMineOrShared(c, user.id)).slice(0, 5);
 
-      const mergedTasks = [...serverTasks];
-
-      cachedOfflineTasks.forEach((task: any) => {
-        const index = mergedTasks.findIndex((x: any) => String(x.id) === String(task.id));
-
-        if (task._offlineAction === 'DELETE') {
-          if (index > -1) mergedTasks.splice(index, 1);
-          return;
-        }
-
-        if (index > -1) {
-          mergedTasks[index] = { ...mergedTasks[index], ...task };
-        } else {
-          mergedTasks.push(task);
-        }
-      });
-
-      const ownTasks = mergedTasks
-        .filter((t: any) => {
-          const assignedId =
-            typeof t.assigned_to === 'object' ? t.assigned_to?.id : t.assigned_to;
-          return assignedId === user.id;
-        })
-        .sort((a: any, b: any) => String(a.status).localeCompare(String(b.status)));
-
-      const visibleTeamTasks = mergedTasks
-        .filter((t: any) => {
-          const assignedId =
-            typeof t.assigned_to === 'object' ? t.assigned_to?.id : t.assigned_to;
-          return assignedId !== user.id;
-        })
-        .slice(0, 5);
-
-      const myClients = serverClients
-        .filter((c: any) => isMineOrShared(c, user.id))
-        .slice(0, 5);
-
-      setTasks(ownTasks);
-      setTeamTasks(visibleTeamTasks);
+      setNotes(sortNotes(storedNotes));
       setClients(myClients);
-      setHasReport(reportResponse.status === 'fulfilled' && !!reportResponse.value?.data);
+      setHasReport(!!reportResponse?.data);
+      setLeads((leadsResponse || []).slice(0, 10));
     } catch (e) {
       console.log('Manager dashboard load error', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user.id]);
+  }, [readLocalNotes, user.id]);
 
   useEffect(() => {
     load();
@@ -171,6 +278,208 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
     [user.managersalary]
   );
   const progress = plan > 0 ? Math.min(Math.round((revenue / plan) * 100), 100) : 0;
+
+  const leadStats = useMemo(() => {
+    const total = leads.length;
+    const fresh = leads.filter((l) => l.status === 'new').length;
+    const inWork = leads.filter((l) => l.status === 'contacted').length;
+    const converted = leads.filter((l) => l.status === 'converted').length;
+    return { total, fresh, inWork, converted };
+  }, [leads]);
+
+  const openCreateNote = () => {
+    const now = new Date().toISOString();
+    setNoteForm({
+      id: '',
+      title: '',
+      body: '',
+      is_pinned: false,
+      created_at: now,
+      updated_at: now,
+    });
+    setNoteModalOpen(true);
+  };
+
+  const openEditNote = (note: LocalNote) => {
+    setNoteForm({ ...note });
+    setNoteModalOpen(true);
+  };
+
+  const saveNote = async () => {
+    if (!noteForm.title.trim()) {
+      Alert.alert('Ошибка', 'Название заметки обязательно.');
+      return;
+    }
+
+    const current = await readLocalNotes();
+    const now = new Date().toISOString();
+
+    if (noteForm.id) {
+      const updated = current.map((item) =>
+        item.id === noteForm.id
+          ? {
+              ...item,
+              title: noteForm.title.trim(),
+              body: noteForm.body?.trim() || '',
+              is_pinned: !!noteForm.is_pinned,
+              updated_at: now,
+            }
+          : item
+      );
+      await persistNotes(updated);
+    } else {
+      const created: LocalNote = {
+        id: `note_${Date.now()}`,
+        title: noteForm.title.trim(),
+        body: noteForm.body?.trim() || '',
+        is_pinned: !!noteForm.is_pinned,
+        created_at: now,
+        updated_at: now,
+      };
+      await persistNotes([created, ...current]);
+    }
+
+    setNoteModalOpen(false);
+  };
+
+  const togglePinNote = async (note: LocalNote) => {
+    const current = await readLocalNotes();
+    const updated = current.map((item) =>
+      item.id === note.id
+        ? { ...item, is_pinned: !item.is_pinned, updated_at: new Date().toISOString() }
+        : item
+    );
+    await persistNotes(updated);
+  };
+
+  const removeNote = async (note: LocalNote) => {
+    Alert.alert('Удаление', `Удалить заметку "${note.title}"?`, [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Удалить',
+        style: 'destructive',
+        onPress: async () => {
+          const current = await readLocalNotes();
+          await persistNotes(current.filter((item) => item.id !== note.id));
+        },
+      },
+    ]);
+  };
+
+  const renderDeleteAction = (note: LocalNote) => (
+    <Pressable onPress={() => removeNote(note)} style={styles.swipeDelete}>
+      <ActionSvgIcon name="trash" color="#fff" />
+      <Text style={styles.swipeText}>Удалить</Text>
+    </Pressable>
+  );
+
+  const renderPinAction = (note: LocalNote) => (
+    <Pressable
+      onPress={() => togglePinNote(note)}
+      style={[styles.swipePin, { backgroundColor: note.is_pinned ? '#8B8FA3' : theme.blue }]}
+    >
+      <ActionSvgIcon name="pin" color="#fff" />
+      <Text style={styles.swipeText}>{note.is_pinned ? 'Открепить' : 'Закрепить'}</Text>
+    </Pressable>
+  );
+
+  const patchLead = useCallback(
+    async (leadId: number, payload: Partial<LeadItem>) => {
+      const response = await apiClient.patch(`leads/mobile/${leadId}/`, payload);
+      return response.data as LeadItem;
+    },
+    []
+  );
+
+  const updateLeadInList = useCallback((updatedLead: LeadItem) => {
+    setLeads((prev) =>
+      prev.map((item) => (item.id === updatedLead.id ? { ...item, ...updatedLead } : item))
+    );
+    setSelectedLead((prev) => (prev && prev.id === updatedLead.id ? { ...prev, ...updatedLead } : prev));
+  }, []);
+
+  const handleOpenLead = useCallback(
+    async (lead: LeadItem) => {
+      setSelectedLead(lead);
+      setLeadModalOpen(true);
+
+      if (lead.status === 'new') {
+        try {
+          setLeadSaving(true);
+
+          const optimistic: LeadItem = { ...lead, status: 'contacted' };
+          updateLeadInList(optimistic);
+
+          const updated = await patchLead(lead.id, { status: 'contacted' });
+          updateLeadInList(updated);
+        } catch (e) {
+          console.log('Lead auto-contact failed', e);
+          updateLeadInList(lead);
+          Alert.alert('Ошибка', 'Не удалось автоматически обновить статус заявки.');
+        } finally {
+          setLeadSaving(false);
+        }
+      }
+    },
+    [patchLead, updateLeadInList]
+  );
+
+  const handleChangeLeadStatus = useCallback(
+    async (status: LeadStatus) => {
+      if (!selectedLead) return;
+
+      const prev = selectedLead;
+      const optimistic = { ...selectedLead, status };
+
+      try {
+        setLeadSaving(true);
+        updateLeadInList(optimistic);
+        const updated = await patchLead(selectedLead.id, { status });
+        updateLeadInList(updated);
+      } catch (e) {
+        console.log('Lead status update error', e);
+        updateLeadInList(prev);
+        Alert.alert('Ошибка', 'Не удалось изменить статус заявки.');
+      } finally {
+        setLeadSaving(false);
+      }
+    },
+    [patchLead, selectedLead, updateLeadInList]
+  );
+
+  const openAddClientFromLead = useCallback(() => {
+    if (!selectedLead) return;
+
+    setLeadModalOpen(false);
+
+    router.push({
+      pathname: '/(app)/add-client',
+      params: {
+        full_name: selectedLead.full_name || '',
+        phone: selectedLead.phone || '',
+        email: selectedLead.email || '',
+        city: selectedLead.country || '',
+        comments: [
+          '--- ДАННЫЕ ИЗ ЗАЯВКИ С САЙТА ---',
+          `Направление: ${directionTitle(selectedLead.direction)}`,
+          `ФИО студента: ${selectedLead.student_name || '-'}`,
+          `ФИО родителя: ${selectedLead.parent_name || '-'}`,
+          `Возраст: ${selectedLead.age || '-'}`,
+          `Образование: ${selectedLead.education || '-'}`,
+          `Текущее образование: ${selectedLead.current_education || '-'}`,
+          `Текущий университет: ${selectedLead.current_university || '-'}`,
+          `Текущая страна: ${selectedLead.current_country || '-'}`,
+          `Наличие паспорта: ${selectedLead.has_passport || '-'}`,
+          `Срок действия паспорта: ${selectedLead.passport_expiry || '-'}`,
+          `Месяц поездки: ${selectedLead.travel_month || '-'}`,
+          `Дата поездки: ${selectedLead.travel_date || '-'}`,
+          `Город вылета: ${selectedLead.departure_city || '-'}`,
+          `Город прибытия: ${selectedLead.arrival_city || '-'}`,
+          `Багаж: ${selectedLead.luggage || '-'}`,
+        ].join('\n'),
+      } as any,
+    });
+  }, [router, selectedLead]);
 
   if (loading) {
     return (
@@ -199,20 +508,57 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
         }
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.top}>
-          <View>
-            <Text style={[styles.caption, { color: theme.textSecondary }]}>Менеджер</Text>
-            <Text style={[styles.title, { color: theme.text }]}>
-              {user.first_name} {user.last_name}
-            </Text>
+        <View
+          style={[
+            styles.heroCard,
+            {
+              backgroundColor: dark ? 'rgba(18,24,36,0.92)' : '#FFFFFF',
+              borderColor: theme.border,
+              shadowColor: '#000',
+            },
+          ]}
+        >
+          <View style={styles.top}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.caption, { color: theme.textSecondary }]}>Менеджерская панель</Text>
+              <Text style={[styles.title, { color: theme.text }]}>
+                {user.first_name} {user.last_name}
+              </Text>
+              <Text style={[styles.heroSub, { color: theme.textSecondary }]}>
+                Премиальный дашборд по клиентам, заявкам и ежедневной работе
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={() => setFabOpen(true)}
+              style={[
+                styles.fabMini,
+                {
+                  backgroundColor: dark ? 'rgba(255,255,255,0.06)' : theme.surface,
+                  borderColor: theme.border,
+                },
+              ]}
+            >
+              <Text style={[styles.fabMiniText, { color: theme.text }]}>＋</Text>
+            </Pressable>
           </View>
 
-          <Pressable
-            onPress={() => setFabOpen(true)}
-            style={[styles.fabMini, { backgroundColor: theme.surface, borderColor: theme.border }]}
-          >
-            <Text style={[styles.fabMiniText, { color: theme.text }]}>＋</Text>
-          </Pressable>
+          <View style={styles.heroStatsRow}>
+            <View style={[styles.heroStat, { backgroundColor: theme.backgroundSoft }]}>
+              <Text style={[styles.heroStatValue, { color: theme.text }]}>{leadStats.fresh}</Text>
+              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Новых заявок</Text>
+            </View>
+
+            <View style={[styles.heroStat, { backgroundColor: theme.backgroundSoft }]}>
+              <Text style={[styles.heroStatValue, { color: theme.text }]}>{clients.length}</Text>
+              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Моих клиентов</Text>
+            </View>
+
+            <View style={[styles.heroStat, { backgroundColor: theme.backgroundSoft }]}>
+              <Text style={[styles.heroStatValue, { color: theme.text }]}>{leadStats.converted}</Text>
+              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Конверсий</Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.quickGrid}>
@@ -235,7 +581,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
               <View style={[styles.quickIconBox, { backgroundColor: theme.blueSoft }]}>
                 <QuickSvgIcon name="tasks" color={theme.blue} />
               </View>
-              <Text style={[styles.quickTitle, { color: theme.text }]}>Задачи</Text>
+              <Text style={[styles.quickTitle, { color: theme.text }]}>Портал задач</Text>
             </Pressable>
 
             <Pressable
@@ -269,12 +615,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
           </View>
 
           <View style={[styles.progressBarBg, { backgroundColor: theme.backgroundSoft }]}>
-            <View
-              style={[
-                styles.progressBarFill,
-                { width: `${progress}%`, backgroundColor: theme.blue },
-              ]}
-            />
+            <View style={[styles.progressBarFill, { width: `${progress}%`, backgroundColor: theme.blue }]} />
           </View>
 
           <Text style={[styles.progressSub, { color: theme.textSecondary }]}>
@@ -282,107 +623,148 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
           </Text>
         </View>
 
-        <Text style={[styles.section, { color: theme.text }]}>Мои задачи</Text>
-        <View style={[styles.panel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {tasks.length === 0 ? (
-            <Text style={[styles.empty, { color: theme.textSecondary }]}>
-              Нет задач. Можно работать оффлайн и добавить их в разделе “Задачи”.
+        <View style={styles.sectionHead}>
+          <View>
+            <Text style={[styles.section, { color: theme.text }]}>Заявки с сайта</Text>
+            <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
+              Новые лиды падают сюда. При открытии заявка автоматически берётся в работу.
             </Text>
-          ) : (
-            tasks.slice(0, 7).map((task) => (
-              <Pressable
-                key={String(task.id)}
-                onPress={() => router.push('/(app)/tasks' as any)}
-                style={[styles.row, { borderBottomColor: theme.divider }]}
-              >
-                <View style={{ flex: 1, paddingRight: 10 }}>
-                  <Text style={[styles.rowTitle, { color: theme.text }]}>{task.title}</Text>
-                  <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
-                    {task.description || 'Без описания'}
-                  </Text>
-                </View>
+          </View>
 
-                <View
-                  style={[
-                    styles.statusPill,
-                    {
-                      backgroundColor:
-                        task.status === 'done'
-                          ? '#EAF8EF'
-                          : task.status === 'process'
-                          ? theme.blueSoft
-                          : theme.backgroundSoft,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.statusText,
-                      {
-                        color:
-                          task.status === 'done'
-                            ? theme.success
-                            : task.status === 'process'
-                            ? theme.blue
-                            : theme.textSecondary,
-                      },
-                    ]}
-                  >
-                    {task.status === 'done'
-                      ? 'Готово'
-                      : task.status === 'process'
-                      ? 'В работе'
-                      : 'To do'}
-                  </Text>
-                </View>
-              </Pressable>
+          <View style={styles.leadCounters}>
+            <View style={[styles.leadCounterChip, { backgroundColor: theme.blueSoft }]}>
+              <QuickSvgIcon name="leads" color={theme.blue} />
+              <Text style={[styles.leadCounterChipText, { color: theme.blue }]}>
+                {leadStats.total}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.leadsGrid}>
+          {leads.length === 0 ? (
+            <View style={[styles.emptyPremiumCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.emptyPremiumTitle, { color: theme.text }]}>Пока нет заявок</Text>
+              <Text style={[styles.emptyPremiumSub, { color: theme.textSecondary }]}>
+                Когда с сайта придёт новая заявка, она появится здесь.
+              </Text>
+            </View>
+          ) : (
+            leads.map((lead) => (
+              <LeadCard
+                key={lead.id}
+                lead={lead}
+                theme={theme}
+                onPress={handleOpenLead}
+              />
             ))
           )}
         </View>
 
-        <Text style={[styles.section, { color: theme.text }]}>Общий список команды</Text>
+        <View style={styles.sectionHead}>
+          <View>
+            <Text style={[styles.section, { color: theme.text }]}>Мои заметки</Text>
+            <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
+              Локально на устройстве, без сервера
+            </Text>
+          </View>
+
+          <Pressable onPress={openCreateNote} style={[styles.iconButton, { backgroundColor: theme.blue }]}>
+            <ActionSvgIcon name="plus" color="#fff" />
+          </Pressable>
+        </View>
+
         <View style={[styles.panel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {teamTasks.length === 0 ? (
+          {notes.length === 0 ? (
             <Text style={[styles.empty, { color: theme.textSecondary }]}>
-              Пока нет видимых общих задач.
+              Пока нет заметок. Нажми плюс и добавь первую.
             </Text>
           ) : (
-            teamTasks.map((task) => {
-              const author =
-                typeof task.assigned_to === 'object'
-                  ? `${task.assigned_to?.first_name || ''} ${task.assigned_to?.last_name || ''}`.trim()
-                  : `ID ${task.assigned_to}`;
-
-              return (
+            notes.map((note, index) => (
+              <Swipeable
+                key={note.id}
+                overshootLeft={false}
+                overshootRight={false}
+                renderLeftActions={() => renderDeleteAction(note)}
+                renderRightActions={() => renderPinAction(note)}
+              >
                 <Pressable
-                  key={String(task.id)}
-                  onPress={() => router.push('/(app)/tasks' as any)}
-                  style={[styles.row, { borderBottomColor: theme.divider }]}
+                  onPress={() => openEditNote(note)}
+                  style={[
+                    styles.row,
+                    {
+                      backgroundColor: theme.surface,
+                      borderBottomColor: theme.divider,
+                      borderBottomWidth: index === notes.length - 1 ? 0 : 1,
+                    },
+                  ]}
                 >
-                  <View style={{ flex: 1, paddingRight: 10 }}>
-                    <Text style={[styles.rowTitle, { color: theme.text }]}>{task.title}</Text>
-                    <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
-                      {task.description || 'Без заметки'} · {author || 'Автор не указан'}
+                  <View style={{ flex: 1, paddingRight: 12 }}>
+                    <View style={styles.noteTopRow}>
+                      <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={1}>
+                        {note.title}
+                      </Text>
+                      {note.is_pinned ? (
+                        <View style={[styles.pinBadge, { backgroundColor: theme.blueSoft }]}>
+                          <Text style={[styles.pinBadgeText, { color: theme.blue }]}>PIN</Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    {!!note.body && (
+                      <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={2}>
+                        {note.body}
+                      </Text>
+                    )}
+
+                    <Text style={[styles.noteTime, { color: theme.textMuted || theme.textSecondary }]}>
+                      Изменено: {new Date(note.updated_at).toLocaleString('ru-RU')}
                     </Text>
                   </View>
+
+                  <View style={styles.rowIcons}>
+                    <Pressable onPress={() => openEditNote(note)} style={styles.rowIconBtn}>
+                      <ActionSvgIcon name="edit" color={theme.blue} />
+                    </Pressable>
+                    <ActionSvgIcon name="chevron" color={theme.textSecondary} />
+                  </View>
                 </Pressable>
-              );
-            })
+              </Swipeable>
+            ))
           )}
         </View>
 
-        <Text style={[styles.section, { color: theme.text }]}>Мои клиенты</Text>
+        <View style={[styles.portalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <Text style={[styles.portalTitle, { color: theme.text }]}>Общий портал задач</Text>
+            <Text style={[styles.portalSub, { color: theme.textSecondary }]}>
+              Здесь уже серверные задачи для всей команды: создание, выполнение, закрепление и удаление.
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => router.push('/(app)/tasks' as any)}
+            style={[styles.portalButton, { backgroundColor: theme.blueSoft }]}
+          >
+            <Text style={[styles.portalButtonText, { color: theme.blue }]}>Открыть</Text>
+          </Pressable>
+        </View>
+
+        <Text style={[styles.section, { color: theme.text, marginTop: 18 }]}>Мои клиенты</Text>
         <View style={[styles.panel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           {clients.length === 0 ? (
-            <Text style={[styles.empty, { color: theme.textSecondary }]}>
-              Нет клиентов в видимой базе.
-            </Text>
+            <Text style={[styles.empty, { color: theme.textSecondary }]}>Нет клиентов в видимой базе.</Text>
           ) : (
-            clients.map((client) => (
+            clients.map((client, index) => (
               <Pressable
                 key={String(client.id)}
                 onPress={() => router.push(`/(app)/client/${client.id}` as any)}
-                style={[styles.row, { borderBottomColor: theme.divider }]}
+                style={[
+                  styles.row,
+                  {
+                    borderBottomColor: theme.divider,
+                    borderBottomWidth: index === clients.length - 1 ? 0 : 1,
+                  },
+                ]}
               >
                 <View style={{ flex: 1, paddingRight: 10 }}>
                   <Text style={[styles.rowTitle, { color: theme.text }]}>{client.full_name}</Text>
@@ -391,9 +773,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                   </Text>
                 </View>
 
-                <Text style={[styles.rowValue, { color: theme.blue }]}>
-                  {client.status || 'new'}
-                </Text>
+                <Text style={[styles.rowValue, { color: theme.blue }]}>{client.status || 'new'}</Text>
               </Pressable>
             ))
           )}
@@ -401,9 +781,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
 
         <View style={[styles.reportCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Text style={[styles.reportTitle, { color: theme.text }]}>
-            {hasReport
-              ? 'Отчёт за сегодня уже отправлен'
-              : 'Отчёт за сегодня ещё не отправлен'}
+            {hasReport ? 'Отчёт за сегодня уже отправлен' : 'Отчёт за сегодня ещё не отправлен'}
           </Text>
           <Pressable onPress={() => router.push('/(app)/profile' as any)}>
             <Text style={[styles.reportAction, { color: theme.blue }]}>
@@ -439,11 +817,21 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
             <Pressable
               onPress={() => {
                 setFabOpen(false);
+                openCreateNote();
+              }}
+              style={styles.fabAction}
+            >
+              <Text style={[styles.fabActionText, { color: theme.text }]}>Новая локальная заметка</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                setFabOpen(false);
                 router.push('/(app)/tasks' as any);
               }}
               style={styles.fabAction}
             >
-              <Text style={[styles.fabActionText, { color: theme.text }]}>Быстрая заметка / задача</Text>
+              <Text style={[styles.fabActionText, { color: theme.text }]}>Открыть портал задач</Text>
             </Pressable>
 
             <Pressable
@@ -458,32 +846,259 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
           </View>
         </Pressable>
       </Modal>
+
+      <Modal visible={leadModalOpen} transparent animationType="slide" onRequestClose={() => setLeadModalOpen(false)}>
+        <View style={styles.modalWrap}>
+          <View style={[styles.leadModalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.leadModalHeader}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>
+                  {selectedLead?.full_name || 'Заявка'}
+                </Text>
+                <Text style={[styles.leadModalSubTitle, { color: theme.textSecondary }]}>
+                  {selectedLead?.phone || 'Без телефона'}
+                  {selectedLead?.country ? ` · ${selectedLead.country}` : ''}
+                </Text>
+              </View>
+
+              {leadSaving ? (
+                <ActivityIndicator color={theme.blue} />
+              ) : (
+                <Pressable onPress={() => setLeadModalOpen(false)} style={styles.closeBtn}>
+                  <Text style={[styles.closeBtnText, { color: theme.textSecondary }]}>✕</Text>
+                </Pressable>
+              )}
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+              <View style={styles.statusRowWrap}>
+                {LEAD_STATUSES.map((status) => {
+                  const active = selectedLead?.status === status;
+                  return (
+                    <Pressable
+                      key={status}
+                      onPress={() => handleChangeLeadStatus(status)}
+                      style={[
+                        styles.statusChip,
+                        {
+                          backgroundColor: active ? theme.blue : theme.backgroundSoft,
+                          borderColor: active ? theme.blue : theme.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.statusChipText,
+                          { color: active ? '#fff' : theme.textSecondary },
+                        ]}
+                      >
+                        {statusTitle(status)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={[styles.infoBox, { backgroundColor: theme.backgroundSoft }]}>
+                <InfoRow label="Направление" value={directionTitle(selectedLead?.direction)} theme={theme} />
+                <InfoRow label="Email" value={selectedLead?.email || '—'} theme={theme} />
+                <InfoRow label="Возраст" value={selectedLead?.age ? String(selectedLead.age) : '—'} theme={theme} />
+                <InfoRow label="Родство" value={selectedLead?.relation || '—'} theme={theme} />
+                <InfoRow label="Образование" value={selectedLead?.education || '—'} theme={theme} />
+                <InfoRow label="ФИО студента" value={selectedLead?.student_name || '—'} theme={theme} />
+                <InfoRow label="ФИО родителя" value={selectedLead?.parent_name || '—'} theme={theme} />
+                <InfoRow label="Наличие паспорта" value={selectedLead?.has_passport || '—'} theme={theme} />
+                <InfoRow
+                  label="Срок действия паспорта"
+                  value={selectedLead?.passport_expiry || '—'}
+                  theme={theme}
+                />
+                <InfoRow label="Месяц поездки" value={selectedLead?.travel_month || '—'} theme={theme} />
+                <InfoRow label="Дата поездки" value={selectedLead?.travel_date || '—'} theme={theme} />
+                <InfoRow label="Город вылета" value={selectedLead?.departure_city || '—'} theme={theme} />
+                <InfoRow label="Город прибытия" value={selectedLead?.arrival_city || '—'} theme={theme} />
+                <InfoRow label="Багаж" value={selectedLead?.luggage || '—'} theme={theme} />
+                <InfoRow
+                  label="Текущее образование"
+                  value={selectedLead?.current_education || '—'}
+                  theme={theme}
+                />
+                <InfoRow
+                  label="Текущий университет"
+                  value={selectedLead?.current_university || '—'}
+                  theme={theme}
+                />
+                <InfoRow
+                  label="Текущая страна"
+                  value={selectedLead?.current_country || '—'}
+                  theme={theme}
+                />
+              </View>
+
+              <View style={styles.leadActions}>
+                <Pressable
+                  onPress={openAddClientFromLead}
+                  style={[styles.primaryWideBtn, { backgroundColor: theme.blue }]}
+                >
+                  <Text style={styles.primaryWideBtnText}>Добавить как клиента</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setLeadModalOpen(false)}
+                  style={[
+                    styles.secondaryWideBtn,
+                    { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                  ]}
+                >
+                  <View style={styles.secondaryWideBtnInner}>
+                    <Text style={[styles.secondaryWideBtnText, { color: theme.text }]}>
+                      Закрыть
+                    </Text>
+                    <ActionSvgIcon name="arrowUpRight" color={theme.textSecondary} />
+                  </View>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={noteModalOpen} transparent animationType="slide" onRequestClose={() => setNoteModalOpen(false)}>
+        <View style={styles.modalWrap}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              {noteForm.id ? 'Редактировать заметку' : 'Новая заметка'}
+            </Text>
+
+            <TextInput
+              value={noteForm.title}
+              onChangeText={(v) => setNoteForm((prev) => ({ ...prev, title: v }))}
+              placeholder="Название"
+              placeholderTextColor={theme.textMuted}
+              style={[
+                styles.input,
+                {
+                  color: theme.text,
+                  borderColor: theme.border,
+                  backgroundColor: theme.backgroundSoft,
+                },
+              ]}
+            />
+
+            <TextInput
+              value={noteForm.body}
+              onChangeText={(v) => setNoteForm((prev) => ({ ...prev, body: v }))}
+              placeholder="Текст заметки"
+              placeholderTextColor={theme.textMuted}
+              multiline
+              style={[
+                styles.input,
+                styles.textarea,
+                {
+                  color: theme.text,
+                  borderColor: theme.border,
+                  backgroundColor: theme.backgroundSoft,
+                },
+              ]}
+            />
+
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setNoteModalOpen(false)}
+                style={[
+                  styles.secondaryBtn,
+                  { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                ]}
+              >
+                <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Отмена</Text>
+              </Pressable>
+
+              <Pressable onPress={saveNote} style={[styles.primaryBtn, { backgroundColor: theme.blue }]}>
+                <Text style={styles.primaryBtnText}>Сохранить</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScreenWrapper>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+  theme,
+}: {
+  label: string;
+  value: string;
+  theme: any;
+}) {
+  return (
+    <View style={[styles.infoRow, { borderBottomColor: theme.divider || theme.border }]}>
+      <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>{label}</Text>
+      <Text style={[styles.infoValue, { color: theme.text }]}>{value}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
   container: { padding: 20, paddingBottom: 120 },
-  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+
+  heroCard: {
+    borderWidth: 1,
+    borderRadius: 30,
+    padding: 18,
+    marginBottom: 18,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 3,
+  },
+  heroSub: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+  },
+  heroStatsRow: {
+    marginTop: 18,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  heroStat: {
+    flex: 1,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+  },
+  heroStatValue: {
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  heroStatLabel: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   caption: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
   title: { fontSize: 26, fontWeight: '900', marginTop: 4 },
 
   fabMini: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
   },
   fabMiniText: { fontSize: 24, fontWeight: '900', marginTop: -2 },
 
-  quickGrid: { marginTop: 20, gap: 12 },
-  quickCardPrimary: {
-    borderRadius: 24,
-    padding: 18,
-  },
+  quickGrid: { gap: 12 },
+  quickCardPrimary: { borderRadius: 24, padding: 18 },
   quickIconBoxDark: {
     width: 42,
     height: 42,
@@ -492,12 +1107,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quickPrimaryTitle: {
-    marginTop: 14,
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '900',
-  },
+  quickPrimaryTitle: { marginTop: 14, color: '#fff', fontSize: 18, fontWeight: '900' },
   quickPrimarySub: {
     marginTop: 6,
     color: 'rgba(255,255,255,0.92)',
@@ -506,12 +1116,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   quickRow: { flexDirection: 'row', gap: 12 },
-  quickCard: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 16,
-  },
+  quickCard: { flex: 1, borderWidth: 1, borderRadius: 22, padding: 16 },
   quickIconBox: {
     width: 40,
     height: 40,
@@ -519,11 +1124,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quickTitle: {
-    marginTop: 12,
-    fontSize: 15,
-    fontWeight: '800',
-  },
+  quickTitle: { marginTop: 12, fontSize: 15, fontWeight: '800' },
 
   kpiGrid: { flexDirection: 'row', gap: 12, marginTop: 22 },
   kpiCard: { flex: 1, borderRadius: 22, borderWidth: 1, padding: 18 },
@@ -538,12 +1139,65 @@ const styles = StyleSheet.create({
   progressBarFill: { height: 10, borderRadius: 999 },
   progressSub: { marginTop: 10, fontSize: 13, fontWeight: '700' },
 
-  section: { fontSize: 18, fontWeight: '900', marginTop: 24, marginBottom: 12 },
+  sectionHead: {
+    marginTop: 24,
+    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  section: { fontSize: 18, fontWeight: '900' },
+  sectionSub: { marginTop: 4, fontSize: 12, fontWeight: '600', lineHeight: 17 },
+
+  leadCounters: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  leadCounterChip: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  leadCounterChipText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  leadsGrid: {
+    gap: 0,
+  },
+  emptyPremiumCard: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 18,
+  },
+  emptyPremiumTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  emptyPremiumSub: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+  },
+
+  iconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   panel: { borderWidth: 1, borderRadius: 22, overflow: 'hidden' },
   row: {
     paddingHorizontal: 16,
     paddingVertical: 14,
-    borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -551,9 +1205,41 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 15, fontWeight: '800' },
   rowMeta: { marginTop: 4, fontSize: 12, fontWeight: '600' },
   rowValue: { fontSize: 13, fontWeight: '900' },
+  rowIcons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rowIconBtn: { padding: 4 },
 
-  statusPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
-  statusText: { fontSize: 12, fontWeight: '900' },
+  noteTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  pinBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  pinBadgeText: { fontSize: 10, fontWeight: '900' },
+  noteTime: { marginTop: 8, fontSize: 11, fontWeight: '600' },
+
+  swipeDelete: {
+    width: 112,
+    backgroundColor: '#E5484D',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+  },
+  swipePin: {
+    width: 126,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+  },
+  swipeText: { color: '#fff', fontSize: 12, fontWeight: '900' },
+
+  portalCard: {
+    marginTop: 18,
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  portalTitle: { fontSize: 15, fontWeight: '900' },
+  portalSub: { marginTop: 6, fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  portalButton: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 },
+  portalButtonText: { fontSize: 13, fontWeight: '900' },
 
   empty: { padding: 16, fontSize: 14, lineHeight: 20 },
 
@@ -575,4 +1261,137 @@ const styles = StyleSheet.create({
   },
   fabAction: { paddingHorizontal: 16, paddingVertical: 16 },
   fabActionText: { fontSize: 15, fontWeight: '800' },
+
+  modalWrap: {
+    flex: 1,
+    backgroundColor: 'rgba(7, 12, 20, 0.35)',
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+  modalCard: { borderWidth: 1, borderRadius: 24, padding: 18 },
+  leadModalCard: {
+    borderWidth: 1,
+    borderRadius: 28,
+    padding: 18,
+    maxHeight: '86%',
+  },
+  leadModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  leadModalSubTitle: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  modalTitle: { fontSize: 18, fontWeight: '900' },
+
+  closeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeBtnText: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+
+  statusRowWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  statusChip: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1,
+  },
+  statusChipText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  infoBox: {
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  infoRow: {
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+  },
+  infoLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  infoValue: {
+    marginTop: 5,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+
+  leadActions: {
+    gap: 10,
+    marginTop: 16,
+  },
+  primaryWideBtn: {
+    borderRadius: 18,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  primaryWideBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  secondaryWideBtn: {
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingVertical: 15,
+    paddingHorizontal: 14,
+  },
+  secondaryWideBtnInner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  secondaryWideBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  input: {
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    fontWeight: '600',
+    marginTop: 10,
+  },
+  textarea: { minHeight: 110, textAlignVertical: 'top' as const },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  secondaryBtn: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  secondaryBtnText: { fontSize: 14, fontWeight: '800' },
+  primaryBtn: {
+    flex: 1,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  primaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '900' },
 });

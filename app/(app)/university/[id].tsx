@@ -322,7 +322,7 @@ export default function UniversityDetailScreen() {
 
                     <View style={[styles.programPill, { backgroundColor: theme.backgroundSoft }]}>
                       <Text style={[styles.programPillText, { color: theme.textSecondary }]}>
-                        Услуги: {moneyLocal(program.service_fee, programCurrency)}
+                        Услуги: {moneyLocal(program.service_fee)}
                       </Text>
                     </View>
                   </View>

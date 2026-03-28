@@ -1,4 +1,3 @@
-// app/(app)/add-deal.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -28,7 +27,7 @@ const degreeMap: Record<string, string> = {
 };
 
 function toNum(value: any) {
-  const n = Number(value);
+  const n = Number(String(value).replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -62,9 +61,7 @@ export default function AddDealScreen() {
   const [universitiesList, setUniversitiesList] = useState<any[]>([]);
   const [currenciesList, setCurrenciesList] = useState<any[]>([]);
 
-  const [dealType, setDealType] = useState<'university' | 'service'>(
-    'university'
-  );
+  const [dealType, setDealType] = useState<'university' | 'service'>('university');
   const [selectedClient, setSelectedClient] = useState<string | number>(
     clientId ? Number(clientId) : ''
   );
@@ -120,20 +117,15 @@ export default function AddDealScreen() {
   }, [progSearch]);
 
   const uniqueCountries = useMemo(
-    () =>
-      Array.from(new Set(universitiesList.map((u) => u.country))).filter(Boolean),
+    () => Array.from(new Set(universitiesList.map((u) => u.country))).filter(Boolean),
     [universitiesList]
   );
 
   const filteredUnis = useMemo(() => {
     return universitiesList
+      .filter((u) => (selectedCountry === '' ? true : u.country === selectedCountry))
       .filter((u) =>
-        selectedCountry === '' ? true : u.country === selectedCountry
-      )
-      .filter((u) =>
-        String(u.name || '')
-          .toLowerCase()
-          .includes(debouncedUniSearch.toLowerCase())
+        String(u.name || '').toLowerCase().includes(debouncedUniSearch.toLowerCase())
       );
   }, [universitiesList, selectedCountry, debouncedUniSearch]);
 
@@ -145,9 +137,7 @@ export default function AddDealScreen() {
   const availablePrograms = useMemo(() => {
     if (!selectedUniObj?.programs) return [];
     return selectedUniObj.programs.filter((p: any) =>
-      String(p.name || '')
-        .toLowerCase()
-        .includes(debouncedProgSearch.toLowerCase())
+      String(p.name || '').toLowerCase().includes(debouncedProgSearch.toLowerCase())
     );
   }, [selectedUniObj, debouncedProgSearch]);
 
@@ -205,7 +195,7 @@ export default function AddDealScreen() {
       return;
     }
 
-    if (!priceClient || Number.isNaN(Number(priceClient)) || Number(priceClient) <= 0) {
+    if (!priceClient || Number.isNaN(Number(priceClient.replace(',', '.'))) || Number(priceClient.replace(',', '.')) <= 0) {
       Alert.alert('Ошибка', 'Введите корректную цену');
       return;
     }
@@ -259,12 +249,19 @@ export default function AddDealScreen() {
         payload.custom_service_desc = customServiceDesc.trim();
       }
 
-      await apiClient.post('analytics/deals/', payload);
+      const response = await apiClient.post('analytics/deals/', payload);
+      const createdDeal = response?.data;
 
       Alert.alert('Успех', 'Сделка успешно создана', [
         {
-          text: 'OK',
-          onPress: () => router.replace('/(app)/crm' as any),
+          text: 'Открыть сделку',
+          onPress: () => {
+            if (createdDeal?.id) {
+              router.replace(`/(app)/deal/${createdDeal.id}` as any);
+            } else {
+              router.replace('/(app)/crm' as any);
+            }
+          },
         },
       ]);
     } catch (error: any) {
@@ -272,9 +269,7 @@ export default function AddDealScreen() {
         const messageLines = flattenError(error.response.data);
         Alert.alert(
           'Ошибка сервера',
-          messageLines.length
-            ? messageLines.join('\n')
-            : 'Сделка не прошла валидацию.'
+          messageLines.length ? messageLines.join('\n') : 'Сделка не прошла валидацию.'
         );
       } else {
         try {
@@ -289,6 +284,9 @@ export default function AddDealScreen() {
             currency: currenciesList.find((c) => c.code === 'USD')?.id ?? currenciesList[0]?.id,
             price_client: toNum(priceClient),
             isOffline: true,
+            payment_status: 'new',
+            paid_amount_usd: 0,
+            total_to_pay_usd: toNum(priceClient),
             ...(dealType === 'university'
               ? {
                   university: universityId,
@@ -355,9 +353,7 @@ export default function AddDealScreen() {
             { backgroundColor: theme.surface, borderColor: theme.border },
           ]}
         >
-          <Text style={[styles.label, { color: theme.textSecondary }]}>
-            Клиент *
-          </Text>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>Клиент *</Text>
 
           {clientId ? (
             <View
@@ -408,9 +404,7 @@ export default function AddDealScreen() {
             </ScrollView>
           )}
 
-          <Text style={[styles.label, { color: theme.textSecondary }]}>
-            Тип сделки
-          </Text>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>Тип сделки</Text>
 
           <View style={styles.row}>
             <Pressable
@@ -476,9 +470,7 @@ export default function AddDealScreen() {
 
           {dealType === 'university' ? (
             <>
-              <Text style={[styles.label, { color: theme.textSecondary }]}>
-                Страна ВУЗа
-              </Text>
+              <Text style={[styles.label, { color: theme.textSecondary }]}>Страна ВУЗа</Text>
 
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.chipsRow}>
@@ -542,9 +534,7 @@ export default function AddDealScreen() {
                 </View>
               </ScrollView>
 
-              <Text style={[styles.label, { color: theme.textSecondary }]}>
-                Университет *
-              </Text>
+              <Text style={[styles.label, { color: theme.textSecondary }]}>Университет *</Text>
 
               <View
                 style={[
@@ -621,9 +611,7 @@ export default function AddDealScreen() {
 
               {!!selectedUniObj && (
                 <>
-                  <Text style={[styles.label, { color: theme.textSecondary }]}>
-                    Программа *
-                  </Text>
+                  <Text style={[styles.label, { color: theme.textSecondary }]}>Программа *</Text>
 
                   <View
                     style={[
@@ -683,8 +671,7 @@ export default function AddDealScreen() {
                                 { color: theme.textSecondary },
                               ]}
                             >
-                              {degreeMap[p.degree] || p.degree || 'Программа'} •{' '}
-                              {p.duration || '-'}
+                              {degreeMap[p.degree] || p.degree || 'Программа'} • {p.duration || '-'}
                             </Text>
                           </View>
                         </Pressable>
@@ -696,9 +683,7 @@ export default function AddDealScreen() {
             </>
           ) : (
             <>
-              <Text style={[styles.label, { color: theme.textSecondary }]}>
-                Название услуги *
-              </Text>
+              <Text style={[styles.label, { color: theme.textSecondary }]}>Название услуги *</Text>
               <View
                 style={[
                   styles.inputWrap,
@@ -714,9 +699,7 @@ export default function AddDealScreen() {
                 />
               </View>
 
-              <Text style={[styles.label, { color: theme.textSecondary }]}>
-                Описание услуги
-              </Text>
+              <Text style={[styles.label, { color: theme.textSecondary }]}>Описание услуги</Text>
               <View
                 style={[
                   styles.inputWrap,

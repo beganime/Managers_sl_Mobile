@@ -25,7 +25,7 @@ type CurrencyItem = {
 
 type DealItem = {
   id: number | string;
-  status?: string;
+  payment_status?: string;
   deal_type?: string;
   total_to_pay_usd?: number | string;
   paid_amount_usd?: number | string;
@@ -67,13 +67,12 @@ export default function CreatePaymentScreen() {
   const [loading, setLoading] = useState(true);
   const [submitLoading, setSubmitLoading] = useState(false);
 
-  const [currencies, setCurrencies] = useState<CurrencyItem[]>([]);
+  const [usdCurrencyId, setUsdCurrencyId] = useState<number | null>(null);
   const [deals, setDeals] = useState<DealItem[]>([]);
 
   const [selectedDealId, setSelectedDealId] = useState<string>(
     params.dealId ? String(params.dealId) : ''
   );
-  const [selectedCurrency, setSelectedCurrency] = useState<string>('');
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<'cash' | 'card' | 'bank'>('cash');
 
@@ -88,12 +87,13 @@ export default function CreatePaymentScreen() {
         const loadedCurrencies = currenciesData as CurrencyItem[];
         const loadedDeals = dealsData as DealItem[];
 
-        setCurrencies(loadedCurrencies);
         setDeals(loadedDeals);
 
-        if (loadedCurrencies.length) {
-          const usd = loadedCurrencies.find((c) => c.code === 'USD');
-          setSelectedCurrency(String(usd?.id ?? loadedCurrencies[0].id));
+        const usd = loadedCurrencies.find((c) => c.code === 'USD');
+        if (!usd) {
+          Alert.alert('Ошибка', 'В каталоге валют не найдена USD.');
+        } else {
+          setUsdCurrencyId(Number(usd.id));
         }
 
         if (!params.dealId && loadedDeals.length) {
@@ -112,19 +112,26 @@ export default function CreatePaymentScreen() {
     [deals, selectedDealId]
   );
 
+  const remainingUsd = useMemo(() => {
+    return Math.max(
+      0,
+      num(selectedDeal?.total_to_pay_usd) - num(selectedDeal?.paid_amount_usd)
+    );
+  }, [selectedDeal]);
+
   const handleSubmit = async () => {
     if (!selectedDealId || Number.isNaN(Number(selectedDealId))) {
       Alert.alert('Ошибка', 'Некорректная сделка.');
       return;
     }
 
-    if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
-      Alert.alert('Ошибка', 'Введите корректную сумму платежа.');
+    if (!amount || Number.isNaN(Number(amount.replace(',', '.'))) || Number(amount.replace(',', '.')) <= 0) {
+      Alert.alert('Ошибка', 'Введите корректную сумму платежа в USD.');
       return;
     }
 
-    if (!selectedCurrency || Number.isNaN(Number(selectedCurrency))) {
-      Alert.alert('Ошибка', 'Выберите валюту платежа.');
+    if (!usdCurrencyId) {
+      Alert.alert('Ошибка', 'USD валюта не найдена.');
       return;
     }
 
@@ -133,15 +140,15 @@ export default function CreatePaymentScreen() {
     try {
       await apiClient.post('analytics/payments/', {
         deal: Number(selectedDealId),
-        amount: parseFloat(amount),
+        amount: parseFloat(amount.replace(',', '.')),
         method,
-        currency: Number(selectedCurrency),
+        currency: usdCurrencyId,
       });
 
       Alert.alert('Успешно', 'Платёж отправлен администратору на подтверждение.', [
         {
-          text: 'OK',
-          onPress: () => router.replace('/(app)/crm' as any),
+          text: 'Открыть сделку',
+          onPress: () => router.replace(`/(app)/deal/${selectedDealId}` as any),
         },
       ]);
     } catch (error: any) {
@@ -166,15 +173,10 @@ export default function CreatePaymentScreen() {
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={[styles.title, { color: theme.text }]}>Новый платёж</Text>
         <Text style={[styles.sub, { color: theme.textSecondary }]}>
-          Платёж будет учтён после подтверждения администратором
+          Сумма вводится только в USD. После создания платёж ждёт подтверждения администратора.
         </Text>
 
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.surface, borderColor: theme.border },
-          ]}
-        >
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Text style={[styles.label, { color: theme.textSecondary }]}>Сделка</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.chipsRow}>
@@ -201,73 +203,32 @@ export default function CreatePaymentScreen() {
             </View>
           </ScrollView>
 
-          <View
-            style={[
-              styles.selectedBox,
-              { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
-            ]}
-          >
+          <View style={[styles.selectedBox, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
             <Text style={[styles.selectedTitle, { color: theme.text }]}>
               {selectedDeal
                 ? `${selectedDeal.client_data?.full_name || 'Клиент'} · #${selectedDeal.id}`
                 : 'Сделка не выбрана'}
             </Text>
             <Text style={[styles.selectedSub, { color: theme.textSecondary }]}>
-              Остаток: $
-              {Math.max(
-                0,
-                num(selectedDeal?.total_to_pay_usd) - num(selectedDeal?.paid_amount_usd)
-              ).toFixed(2)}
+              Остаток: ${remainingUsd.toFixed(2)}
             </Text>
           </View>
-        </View>
-
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.surface, borderColor: theme.border },
-          ]}
-        >
-          <Text style={[styles.label, { color: theme.textSecondary }]}>Валюта</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.chipsRow}>
-              {currencies.map((currency) => {
-                const active = String(selectedCurrency) === String(currency.id);
-                return (
-                  <Pressable
-                    key={String(currency.id)}
-                    onPress={() => setSelectedCurrency(String(currency.id))}
-                    style={[
-                      styles.chip,
-                      {
-                        backgroundColor: active ? theme.blue : theme.surface,
-                        borderColor: active ? theme.blue : theme.border,
-                      },
-                    ]}
-                  >
-                    <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
-                      {currency.code || currency.name || `#${currency.id}`}
-                      {currency.symbol ? ` (${currency.symbol})` : ''}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </ScrollView>
 
           <Text style={[styles.label, { color: theme.textSecondary, marginTop: 16 }]}>
-            Сумма
+            Валюта
           </Text>
-          <View
-            style={[
-              styles.inputWrap,
-              { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
-            ]}
-          >
+          <View style={[styles.fixedBox, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+            <Text style={[styles.fixedBoxText, { color: theme.text }]}>USD ($)</Text>
+          </View>
+
+          <Text style={[styles.label, { color: theme.textSecondary, marginTop: 16 }]}>
+            Сумма в USD
+          </Text>
+          <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
             <TextInput
               value={amount}
               onChangeText={setAmount}
-              placeholder="Введите сумму"
+              placeholder="Введите сумму в USD"
               placeholderTextColor={theme.textMuted}
               keyboardType="numeric"
               style={[styles.input, { color: theme.text }]}
@@ -305,10 +266,7 @@ export default function CreatePaymentScreen() {
           </View>
         </View>
 
-        <Pressable
-          onPress={handleSubmit}
-          style={[styles.submitBtn, { backgroundColor: theme.success }]}
-        >
+        <Pressable onPress={handleSubmit} style={[styles.submitBtn, { backgroundColor: theme.success }]}>
           {submitLoading ? (
             <ActivityIndicator color="#fff" />
           ) : (
@@ -326,38 +284,18 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '900' },
   sub: { marginTop: 6, fontSize: 13, fontWeight: '700' },
   card: { borderWidth: 1, borderRadius: 24, padding: 16 },
-  label: {
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
+  label: { fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.4 },
   chipsRow: { flexDirection: 'row', gap: 8, paddingRight: 16, marginTop: 10 },
   chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10 },
   selectedBox: { borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 14 },
   selectedTitle: { fontSize: 15, fontWeight: '900' },
   selectedSub: { marginTop: 6, fontSize: 12, fontWeight: '600' },
-  inputWrap: {
-    borderWidth: 1,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginTop: 8,
-  },
+  fixedBox: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 16, marginTop: 8 },
+  fixedBoxText: { fontSize: 15, fontWeight: '800' },
+  inputWrap: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 12, marginTop: 8 },
   input: { fontSize: 15, fontWeight: '600' },
   methodRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
-  methodBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingVertical: 13,
-    alignItems: 'center',
-  },
-  submitBtn: {
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 18,
-  },
+  methodBtn: { flex: 1, borderWidth: 1, borderRadius: 16, paddingVertical: 13, alignItems: 'center' },
+  submitBtn: { borderRadius: 20, alignItems: 'center', justifyContent: 'center', paddingVertical: 18 },
   submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '900' },
 });

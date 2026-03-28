@@ -1,7 +1,6 @@
-// app/(app)/add-client.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -18,14 +17,101 @@ import ScreenWrapper from '../../components/ScreenWrapper';
 import apiClient from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
 
+type FormState = {
+  full_name: string;
+  phone: string;
+  email: string;
+  city: string;
+  dob: string;
+  status: string;
+  citizenship: string;
+  is_priority: boolean;
+
+  passport_local_num: string;
+  passport_inter_num: string;
+  passport_issued_by: string;
+  passport_issued_date: string;
+  address_registration: string;
+
+  is_partner_client: boolean;
+  partner_name: string;
+  has_discount: boolean;
+  discount_amount: string;
+
+  current_tasks: string;
+  comments: string;
+
+  relative_full_name: string;
+  relative_relation_type: string;
+  relative_phone: string;
+  relative_work_place: string;
+
+  doc_notes: string;
+  contract_notes: string;
+};
+
+type ThemeType = {
+  text: string;
+  textSecondary: string;
+  textMuted: string;
+  backgroundSoft: string;
+  surface: string;
+  border: string;
+  blue: string;
+};
+
+type InputFieldProps = {
+  theme: ThemeType;
+  label: string;
+  value: string;
+  placeholder: string;
+  onChangeText: (value: string) => void;
+  multiline?: boolean;
+  keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
+  required?: boolean;
+  hint?: string;
+};
+
+type ToggleRowProps = {
+  theme: ThemeType;
+  label: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+  hint?: string;
+};
+
+type SectionCardProps = {
+  theme: ThemeType;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+};
+
+const STATUS_OPTIONS = [
+  { value: 'new', label: 'Новый', icon: 'sparkles-outline' as const },
+  { value: 'consultation', label: 'Консультация', icon: 'chatbubble-ellipses-outline' as const },
+  { value: 'documents', label: 'Документы', icon: 'document-text-outline' as const },
+  { value: 'visa', label: 'Виза', icon: 'airplane-outline' as const },
+  { value: 'success', label: 'Успех', icon: 'checkmark-circle-outline' as const },
+  { value: 'rejected', label: 'Отказ', icon: 'close-circle-outline' as const },
+  { value: 'archive', label: 'Архив', icon: 'archive-outline' as const },
+];
+
 function cleanNullable(value: string) {
   const v = value.trim();
   return v ? v : null;
 }
 
+function normalizeDecimal(value: string) {
+  if (!value.trim()) return 0;
+  const normalized = value.replace(',', '.').trim();
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function flattenServerError(data: any): string {
   if (!data) return 'Не удалось создать клиента.';
-
   if (typeof data === 'string') return data;
 
   if (Array.isArray(data)) {
@@ -45,13 +131,171 @@ function flattenServerError(data: any): string {
   return 'Не удалось создать клиента.';
 }
 
+function buildStructuredComments(form: FormState) {
+  const chunks: string[] = [];
+
+  if (form.comments.trim()) {
+    chunks.push(form.comments.trim());
+  }
+
+  const hasRelative =
+    form.relative_full_name.trim() ||
+    form.relative_relation_type.trim() ||
+    form.relative_phone.trim() ||
+    form.relative_work_place.trim();
+
+  if (hasRelative) {
+    chunks.push(
+      [
+        '=== RELATIVE ===',
+        `ФИО: ${form.relative_full_name.trim() || '-'}`,
+        `Кем приходится: ${form.relative_relation_type.trim() || '-'}`,
+        `Телефон: ${form.relative_phone.trim() || '-'}`,
+        `Место работы: ${form.relative_work_place.trim() || '-'}`,
+      ].join('\n')
+    );
+  }
+
+  if (form.contract_notes.trim()) {
+    chunks.push(['=== CONTRACT NOTES ===', form.contract_notes.trim()].join('\n'));
+  }
+
+  return chunks.filter(Boolean).join('\n\n');
+}
+
+function buildStructuredTasks(form: FormState) {
+  const chunks: string[] = [];
+
+  if (form.current_tasks.trim()) {
+    chunks.push(form.current_tasks.trim());
+  }
+
+  if (form.doc_notes.trim()) {
+    chunks.push(['=== DOC PREP ===', form.doc_notes.trim()].join('\n'));
+  }
+
+  return chunks.filter(Boolean).join('\n\n');
+}
+
+function formatDateHint(value: string) {
+  if (!value.trim()) return 'Например: 2004-09-21';
+  return value;
+}
+
+const InputField = memo(function InputField({
+  theme,
+  label,
+  value,
+  placeholder,
+  onChangeText,
+  multiline = false,
+  keyboardType = 'default',
+  required = false,
+  hint,
+}: InputFieldProps) {
+  return (
+    <View style={styles.fieldBlock}>
+      <Text style={[styles.label, { color: theme.textSecondary }]}>
+        {label}
+        {required ? ' *' : ''}
+      </Text>
+
+      <View
+        style={[
+          styles.inputWrap,
+          {
+            backgroundColor: theme.backgroundSoft,
+            borderColor: theme.border,
+            minHeight: multiline ? 104 : 58,
+          },
+        ]}
+      >
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={theme.textMuted}
+          multiline={multiline}
+          keyboardType={keyboardType}
+          autoCorrect={false}
+          autoCapitalize="none"
+          style={[
+            styles.input,
+            {
+              color: theme.text,
+              minHeight: multiline ? 82 : 24,
+              textAlignVertical: multiline ? 'top' : 'center',
+            },
+          ]}
+        />
+      </View>
+
+      {hint ? <Text style={[styles.hint, { color: theme.textSecondary }]}>{hint}</Text> : null}
+    </View>
+  );
+});
+
+const ToggleRow = memo(function ToggleRow({
+  theme,
+  label,
+  value,
+  onChange,
+  hint,
+}: ToggleRowProps) {
+  return (
+    <View style={styles.toggleWrap}>
+      <View style={{ flex: 1, paddingRight: 14 }}>
+        <Text style={[styles.toggleLabel, { color: theme.text }]}>{label}</Text>
+        {hint ? <Text style={[styles.toggleHint, { color: theme.textSecondary }]}>{hint}</Text> : null}
+      </View>
+      <Switch value={value} onValueChange={onChange} />
+    </View>
+  );
+});
+
+const SectionCard = memo(function SectionCard({
+  theme,
+  icon,
+  title,
+  subtitle,
+  children,
+}: SectionCardProps) {
+  return (
+    <View
+      style={[
+        styles.card,
+        { backgroundColor: theme.surface, borderColor: theme.border },
+      ]}
+    >
+      <View style={styles.sectionHeader}>
+        <View
+          style={[
+            styles.sectionIcon,
+            { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+          ]}
+        >
+          <Ionicons name={icon} size={20} color={theme.blue} />
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>{title}</Text>
+          {subtitle ? (
+            <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>{subtitle}</Text>
+          ) : null}
+        </View>
+      </View>
+
+      {children}
+    </View>
+  );
+});
+
 export default function AddClientScreen() {
   const router = useRouter();
   const { theme } = useTheme();
 
   const [submitLoading, setSubmitLoading] = useState(false);
-
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<FormState>({
     full_name: '',
     phone: '',
     email: '',
@@ -75,72 +319,27 @@ export default function AddClientScreen() {
     current_tasks: '',
     comments: '',
 
-    // временно, пока relative на бэке read-only
     relative_full_name: '',
     relative_relation_type: '',
     relative_phone: '',
     relative_work_place: '',
 
-    // временно для оформления документов
     doc_notes: '',
     contract_notes: '',
   });
 
-  const canSubmit = useMemo(
-    () =>
+  const canSubmit = useMemo(() => {
+    return (
       !!form.full_name.trim() &&
       !!form.phone.trim() &&
       !!form.city.trim() &&
-      !submitLoading,
-    [form.full_name, form.phone, form.city, submitLoading]
-  );
+      !submitLoading
+    );
+  }, [form.full_name, form.phone, form.city, submitLoading]);
 
-  const setField = (key: string, value: any) => {
+  const setField = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const Input = ({
-    label,
-    field,
-    placeholder,
-    multiline = false,
-    keyboardType = 'default' as
-      | 'default'
-      | 'email-address'
-      | 'numeric'
-      | 'phone-pad',
-  }) => (
-    <View style={styles.fieldBlock}>
-      <Text style={[styles.label, { color: theme.textSecondary }]}>{label}</Text>
-      <View
-        style={[
-          styles.inputWrap,
-          {
-            backgroundColor: theme.backgroundSoft,
-            borderColor: theme.border,
-            minHeight: multiline ? 96 : 58,
-          },
-        ]}
-      >
-        <TextInput
-          value={(form as any)[field]}
-          onChangeText={(value) => setField(field, value)}
-          placeholder={placeholder}
-          placeholderTextColor={theme.textMuted}
-          multiline={multiline}
-          keyboardType={keyboardType}
-          style={[
-            styles.input,
-            {
-              color: theme.text,
-              minHeight: multiline ? 74 : 24,
-              textAlignVertical: multiline ? 'top' : 'center',
-            },
-          ]}
-        />
-      </View>
-    </View>
-  );
+  }, []);
 
   const submit = async () => {
     if (!form.full_name.trim() || !form.phone.trim() || !form.city.trim()) {
@@ -148,39 +347,19 @@ export default function AddClientScreen() {
       return;
     }
 
+    if (form.email.trim() && !form.email.includes('@')) {
+      Alert.alert('Ошибка', 'Проверь email.');
+      return;
+    }
+
+    if (form.is_partner_client && !form.partner_name.trim()) {
+      Alert.alert('Ошибка', 'Укажи название партнёра.');
+      return;
+    }
+
     setSubmitLoading(true);
 
     try {
-      const extraComments = [
-        form.comments.trim(),
-        form.relative_full_name ||
-        form.relative_relation_type ||
-        form.relative_phone ||
-        form.relative_work_place
-          ? [
-              '=== RELATIVE ===',
-              `ФИО: ${form.relative_full_name || '-'}`,
-              `Кем приходится: ${form.relative_relation_type || '-'}`,
-              `Телефон: ${form.relative_phone || '-'}`,
-              `Место работы: ${form.relative_work_place || '-'}`,
-            ].join('\n')
-          : '',
-        form.contract_notes.trim()
-          ? ['=== CONTRACT NOTES ===', form.contract_notes.trim()].join('\n')
-          : '',
-      ]
-        .filter(Boolean)
-        .join('\n\n');
-
-      const mergedTasks = [
-        form.current_tasks.trim(),
-        form.doc_notes.trim()
-          ? ['=== DOC PREP ===', form.doc_notes.trim()].join('\n')
-          : '',
-      ]
-        .filter(Boolean)
-        .join('\n\n');
-
       const payload: any = {
         full_name: form.full_name.trim(),
         phone: form.phone.trim(),
@@ -198,27 +377,31 @@ export default function AddClientScreen() {
         address_registration: form.address_registration.trim(),
 
         is_partner_client: form.is_partner_client,
-        partner_name: form.partner_name.trim(),
+        partner_name: form.is_partner_client ? form.partner_name.trim() : '',
         has_discount: form.has_discount,
-        discount_amount: Number(form.discount_amount || 0),
+        discount_amount: form.has_discount ? normalizeDecimal(form.discount_amount) : 0,
 
-        current_tasks: mergedTasks,
-        comments: extraComments,
+        current_tasks: buildStructuredTasks(form),
+        comments: buildStructuredComments(form),
       };
 
-      await apiClient.post('clients/', payload);
+      const response = await apiClient.post('clients/', payload);
+      const created = response?.data;
 
       Alert.alert('Готово', 'Клиент успешно создан.', [
         {
-          text: 'OK',
-          onPress: () => router.replace('/(app)/crm' as any),
+          text: 'Открыть карточку',
+          onPress: () => {
+            if (created?.id) {
+              router.replace(`/(app)/client/${created.id}` as any);
+            } else {
+              router.replace('/(app)/crm' as any);
+            }
+          },
         },
       ]);
     } catch (error: any) {
-      Alert.alert(
-        'Ошибка сервера',
-        flattenServerError(error?.response?.data)
-      );
+      Alert.alert('Ошибка сервера', flattenServerError(error?.response?.data));
     } finally {
       setSubmitLoading(false);
     }
@@ -229,6 +412,7 @@ export default function AddClientScreen() {
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
           <Pressable
@@ -248,199 +432,281 @@ export default function AddClientScreen() {
 
         <View
           style={[
-            styles.card,
+            styles.hero,
             { backgroundColor: theme.surface, borderColor: theme.border },
           ]}
         >
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>Основное</Text>
+          <Text style={[styles.heroTitle, { color: theme.text }]}>
+            Анкета клиента
+          </Text>
+          <Text style={[styles.heroText, { color: theme.textSecondary }]}>
+            Все основные поля собраны в одной форме.
+          </Text>
+        </View>
 
-          <Input label="ФИО *" field="full_name" placeholder="ФИО клиента" />
-          <Input
-            label="Телефон *"
-            field="phone"
+        <SectionCard
+          theme={theme}
+          icon="person-outline"
+          title="Основная информация"
+          subtitle="Главные поля, которые нужны для карточки клиента"
+        >
+          <InputField
+            theme={theme}
+            label="ФИО"
+            value={form.full_name}
+            onChangeText={(value) => setField('full_name', value)}
+            placeholder="Введите полное имя клиента"
+            required
+          />
+          <InputField
+            theme={theme}
+            label="Телефон"
+            value={form.phone}
+            onChangeText={(value) => setField('phone', value)}
             placeholder="+993..."
             keyboardType="phone-pad"
+            required
           />
-          <Input
+          <InputField
+            theme={theme}
             label="Email"
-            field="email"
+            value={form.email}
+            onChangeText={(value) => setField('email', value)}
             placeholder="mail@example.com"
             keyboardType="email-address"
           />
-          <Input label="Город *" field="city" placeholder="Ашхабад" />
-          <Input label="Дата рождения" field="dob" placeholder="YYYY-MM-DD" />
-          <Input
+          <InputField
+            theme={theme}
+            label="Город"
+            value={form.city}
+            onChangeText={(value) => setField('city', value)}
+            placeholder="Ашхабад"
+            required
+          />
+          <InputField
+            theme={theme}
+            label="Дата рождения"
+            value={form.dob}
+            onChangeText={(value) => setField('dob', value)}
+            placeholder="YYYY-MM-DD"
+            hint={formatDateHint(form.dob)}
+          />
+          <InputField
+            theme={theme}
             label="Гражданство"
-            field="citizenship"
+            value={form.citizenship}
+            onChangeText={(value) => setField('citizenship', value)}
             placeholder="Туркменистан"
           />
 
-          <View style={styles.switchRow}>
-            <Text style={[styles.switchText, { color: theme.text }]}>
-              Приоритетный клиент
-            </Text>
-            <Switch
-              value={form.is_priority}
-              onValueChange={(v) => setField('is_priority', v)}
-            />
+          <Text style={[styles.label, { color: theme.textSecondary }]}>Статус клиента</Text>
+          <View style={styles.chipsWrap}>
+            {STATUS_OPTIONS.map((item) => {
+              const active = form.status === item.value;
+              return (
+                <Pressable
+                  key={item.value}
+                  onPress={() => setField('status', item.value)}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: active ? theme.blue : theme.backgroundSoft,
+                      borderColor: active ? theme.blue : theme.border,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={item.icon}
+                    size={16}
+                    color={active ? '#fff' : theme.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: active ? '#fff' : theme.text },
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
-        </View>
 
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.surface, borderColor: theme.border },
-          ]}
+          <ToggleRow
+            theme={theme}
+            label="Приоритетный клиент"
+            value={form.is_priority}
+            onChange={(v) => setField('is_priority', v)}
+            hint="Приоритетного клиента проще выделять в CRM и не терять среди остальных"
+          />
+        </SectionCard>
+
+        <SectionCard
+          theme={theme}
+          icon="card-outline"
+          title="Паспорт и регистрация"
+          subtitle="Данные для договора и оформления"
         >
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Паспорт и договор
-          </Text>
-
-          <Input
+          <InputField
+            theme={theme}
             label="Внутренний паспорт"
-            field="passport_local_num"
+            value={form.passport_local_num}
+            onChangeText={(value) => setField('passport_local_num', value)}
             placeholder="Серия / номер"
           />
-          <Input
+          <InputField
+            theme={theme}
             label="Загранпаспорт"
-            field="passport_inter_num"
+            value={form.passport_inter_num}
+            onChangeText={(value) => setField('passport_inter_num', value)}
             placeholder="Номер загранпаспорта"
           />
-          <Input
-            label="Кем выдан"
-            field="passport_issued_by"
-            placeholder="МВД Туркменистана"
+          <InputField
+            theme={theme}
+            label="Кем выдан паспорт"
+            value={form.passport_issued_by}
+            onChangeText={(value) => setField('passport_issued_by', value)}
+            placeholder="Например: МВД Туркменистана"
           />
-          <Input
-            label="Дата выдачи"
-            field="passport_issued_date"
+          <InputField
+            theme={theme}
+            label="Дата выдачи паспорта"
+            value={form.passport_issued_date}
+            onChangeText={(value) => setField('passport_issued_date', value)}
             placeholder="YYYY-MM-DD"
           />
-          <Input
+          <InputField
+            theme={theme}
             label="Адрес регистрации"
-            field="address_registration"
-            placeholder="Полный адрес"
+            value={form.address_registration}
+            onChangeText={(value) => setField('address_registration', value)}
+            placeholder="Полный адрес прописки"
             multiline
           />
-          <Input
+          <InputField
+            theme={theme}
             label="Заметки по договору"
-            field="contract_notes"
-            placeholder="Особые условия, доверенность, кто подписывает..."
+            value={form.contract_notes}
+            onChangeText={(value) => setField('contract_notes', value)}
+            placeholder="Особые условия, доверенность, кто подписывает, что важно не забыть"
             multiline
           />
-        </View>
+        </SectionCard>
 
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.surface, borderColor: theme.border },
-          ]}
+        <SectionCard
+          theme={theme}
+          icon="people-outline"
+          title="Родственник / контактное лицо"
+          subtitle="Эти данные пойдут в комментарии структурированным блоком"
         >
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Партнёрский блок
-          </Text>
-
-          <View style={styles.switchRow}>
-            <Text style={[styles.switchText, { color: theme.text }]}>
-              Клиент от партнёра
-            </Text>
-            <Switch
-              value={form.is_partner_client}
-              onValueChange={(v) => setField('is_partner_client', v)}
-            />
-          </View>
-
-          <Input
-            label="Название партнёра"
-            field="partner_name"
-            placeholder="Название партнёра"
-          />
-
-          <View style={styles.switchRow}>
-            <Text style={[styles.switchText, { color: theme.text }]}>
-              Есть скидка
-            </Text>
-            <Switch
-              value={form.has_discount}
-              onValueChange={(v) => setField('has_discount', v)}
-            />
-          </View>
-
-          <Input
-            label="Сумма / процент скидки"
-            field="discount_amount"
-            placeholder="0"
-            keyboardType="numeric"
-          />
-        </View>
-
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.surface, borderColor: theme.border },
-          ]}
-        >
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Родственник
-          </Text>
-
-          <Input
+          <InputField
+            theme={theme}
             label="ФИО родственника"
-            field="relative_full_name"
+            value={form.relative_full_name}
+            onChangeText={(value) => setField('relative_full_name', value)}
             placeholder="ФИО"
           />
-          <Input
+          <InputField
+            theme={theme}
             label="Кем приходится"
-            field="relative_relation_type"
-            placeholder="Отец / мать / брат"
+            value={form.relative_relation_type}
+            onChangeText={(value) => setField('relative_relation_type', value)}
+            placeholder="Отец / мать / брат / сестра"
           />
-          <Input
+          <InputField
+            theme={theme}
             label="Телефон родственника"
-            field="relative_phone"
+            value={form.relative_phone}
+            onChangeText={(value) => setField('relative_phone', value)}
             placeholder="+993..."
             keyboardType="phone-pad"
           />
-          <Input
+          <InputField
+            theme={theme}
             label="Место работы"
-            field="relative_work_place"
-            placeholder="Работа родственника"
+            value={form.relative_work_place}
+            onChangeText={(value) => setField('relative_work_place', value)}
+            placeholder="Где работает родственник"
           />
 
           <Text style={[styles.helper, { color: theme.textSecondary }]}>
-            Пока backend не принимает nested relative через POST /clients/.
-            Эти данные временно сохраняются в комментариях клиента.
+            Когда добавишь nested create на backend, этот блок можно будет сразу
+            отправлять в `relative`.
           </Text>
-        </View>
+        </SectionCard>
 
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.surface, borderColor: theme.border },
-          ]}
+        <SectionCard
+          theme={theme}
+          icon="business-outline"
+          title="Партнёрство и скидка"
+          subtitle="Финансовый блок клиента"
         >
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Работа менеджера
-          </Text>
+          <ToggleRow
+            theme={theme}
+            label="Клиент от партнёра"
+            value={form.is_partner_client}
+            onChange={(v) => setField('is_partner_client', v)}
+          />
 
-          <Input
+          <InputField
+            theme={theme}
+            label="Название партнёра"
+            value={form.partner_name}
+            onChangeText={(value) => setField('partner_name', value)}
+            placeholder="Название партнёра"
+            hint="Обязательно, если включён режим «Клиент от партнёра»"
+          />
+
+          <ToggleRow
+            theme={theme}
+            label="Есть скидка"
+            value={form.has_discount}
+            onChange={(v) => setField('has_discount', v)}
+          />
+
+          <InputField
+            theme={theme}
+            label="Размер скидки"
+            value={form.discount_amount}
+            onChangeText={(value) => setField('discount_amount', value)}
+            placeholder="0"
+            keyboardType="numeric"
+            hint="Можно хранить сумму или процент — как у тебя заведено в процессе"
+          />
+        </SectionCard>
+
+        <SectionCard
+          theme={theme}
+          icon="briefcase-outline"
+          title="Работа менеджера"
+          subtitle="Что уже делается по клиенту и что ещё нужно"
+        >
+          <InputField
+            theme={theme}
             label="Текущие задачи"
-            field="current_tasks"
+            value={form.current_tasks}
+            onChangeText={(value) => setField('current_tasks', value)}
             placeholder="Что сейчас делаем по клиенту"
             multiline
           />
-          <Input
+          <InputField
+            theme={theme}
             label="Комментарий"
-            field="comments"
-            placeholder="Важные комментарии"
+            value={form.comments}
+            onChangeText={(value) => setField('comments', value)}
+            placeholder="Любые важные комментарии"
             multiline
           />
-          <Input
-            label="Поля для оформления документа"
-            field="doc_notes"
-            placeholder="Что собрано / что не собрано / что проверить"
+          <InputField
+            theme={theme}
+            label="Подготовка документов"
+            value={form.doc_notes}
+            onChangeText={(value) => setField('doc_notes', value)}
+            placeholder="Что собрано, что не хватает, что проверить"
             multiline
           />
-        </View>
+        </SectionCard>
 
         <Pressable
           onPress={submit}
@@ -453,9 +719,14 @@ export default function AddClientScreen() {
           {submitLoading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.submitText}>Сохранить клиента</Text>
+            <>
+              <Ionicons name="save-outline" size={18} color="#fff" />
+              <Text style={styles.submitText}>Сохранить клиента</Text>
+            </>
           )}
         </Pressable>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
     </ScreenWrapper>
   );
@@ -484,15 +755,49 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '900',
   },
+  hero: {
+    borderWidth: 1,
+    borderRadius: 26,
+    padding: 18,
+  },
+  heroTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
+  heroText: {
+    fontSize: 13,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
   card: {
     borderWidth: 1,
     borderRadius: 24,
     padding: 16,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  sectionIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '900',
-    marginBottom: 14,
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+    lineHeight: 18,
   },
   fieldBlock: {
     marginBottom: 14,
@@ -514,26 +819,63 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  switchText: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  helper: {
+  hint: {
+    marginTop: 7,
     fontSize: 12,
     lineHeight: 18,
     fontWeight: '600',
   },
+  helper: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  chipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 14,
+  },
+  chip: {
+    minHeight: 42,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  toggleWrap: {
+    minHeight: 62,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  toggleLabel: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  toggleHint: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
   submitBtn: {
+    minHeight: 58,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 18,
+    flexDirection: 'row',
+    gap: 10,
   },
   submitText: {
     color: '#fff',

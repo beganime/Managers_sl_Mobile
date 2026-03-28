@@ -1,7 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -15,9 +16,13 @@ import apiClient, { extractList, fetchAllPages } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
 
 function revenueOf(user: any) {
-  return parseFloat(
-    String(user?.managersalary?.current_month_revenue ?? user?.revenue ?? 0)
-  );
+  const raw =
+    user?.revenue ??
+    user?.managersalary?.current_month_revenue ??
+    0;
+
+  const parsed = parseFloat(String(raw));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function fullNameOf(user: any) {
@@ -30,23 +35,152 @@ function fullNameOf(user: any) {
 }
 
 function officeOf(user: any) {
-  return user?.office?.city || 'Без офиса';
+  return (
+    user?.office?.city ||
+    user?.office_name ||
+    'Без офиса'
+  );
+}
+
+function avatarOf(user: any) {
+  return user?.avatar_url || user?.avatar || null;
 }
 
 function money(v: number) {
   return `$${Math.round(v || 0).toLocaleString('ru-RU')}`;
 }
 
-function Crown({
-  place,
-  size = 24,
-}: {
-  place: 1 | 2 | 3;
-  size?: number;
-}) {
-  const color = place === 1 ? '#D4AF37' : place === 2 ? '#C0C0C0' : '#CD7F32';
+function initialsOf(user: any) {
+  const full = fullNameOf(user).trim();
+  if (!full) return '?';
 
-  return <Ionicons name="crown" size={size} color={color} />;
+  const parts = full.split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map((x) => x[0]?.toUpperCase()).join('') || '?';
+}
+
+function crownColor(place: 1 | 2 | 3) {
+  if (place === 1) return '#D4AF37';
+  if (place === 2) return '#C0C0C0';
+  return '#CD7F32';
+}
+
+function medalBg(place: 1 | 2 | 3) {
+  if (place === 1) return '#FFF7DA';
+  if (place === 2) return '#F3F4F6';
+  return '#FBE9DD';
+}
+
+function rankAccent(place: number, theme: any) {
+  if (place === 1) return '#D4AF37';
+  if (place === 2) return '#98A2B3';
+  if (place === 3) return '#CD7F32';
+  return theme.blue;
+}
+
+function Avatar({
+  user,
+  size = 56,
+  theme,
+}: {
+  user: any;
+  size?: number;
+  theme: any;
+}) {
+  const uri = avatarOf(user);
+
+  if (uri) {
+    return (
+      <Image
+        source={{ uri }}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: theme.backgroundSoft,
+        }}
+      />
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.avatarFallback,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: theme.blueSoft || '#EAF1FF',
+          borderColor: theme.border,
+        },
+      ]}
+    >
+      <Text style={[styles.avatarFallbackText, { color: theme.blue }]}>
+        {initialsOf(user)}
+      </Text>
+    </View>
+  );
+}
+
+function TopCard({
+  user,
+  place,
+  theme,
+}: {
+  user: any;
+  place: 1 | 2 | 3;
+  theme: any;
+}) {
+  const accent = crownColor(place);
+
+  return (
+    <View
+      style={[
+        styles.topCard,
+        {
+          backgroundColor: theme.surface,
+          borderColor: theme.border,
+        },
+      ]}
+    >
+      <View style={styles.topHeaderRow}>
+        <View
+          style={[
+            styles.topPlaceBadge,
+            { backgroundColor: medalBg(place), borderColor: theme.border },
+          ]}
+        >
+          <MaterialCommunityIcons name="crown" size={22} color={accent} />
+          <Text style={[styles.topPlaceText, { color: accent }]}>#{place}</Text>
+        </View>
+
+        {place === 1 ? (
+          <View style={[styles.topLeaderChip, { backgroundColor: theme.redSoft || '#FFE7E7' }]}>
+            <Text style={[styles.topLeaderChipText, { color: theme.red }]}>ЛИДЕР</Text>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.topAvatarWrap}>
+        <Avatar user={user} size={74} theme={theme} />
+      </View>
+
+      <Text style={[styles.topName, { color: theme.text }]} numberOfLines={1}>
+        {fullNameOf(user)}
+      </Text>
+
+      <Text style={[styles.topOffice, { color: theme.textSecondary }]} numberOfLines={1}>
+        {officeOf(user)}
+      </Text>
+
+      <View style={[styles.topRevenueBox, { backgroundColor: theme.backgroundSoft }]}>
+        <Text style={[styles.topRevenueLabel, { color: theme.textSecondary }]}>Выручка</Text>
+        <Text style={[styles.topRevenueValue, { color: theme.success }]}>
+          {money(revenueOf(user))}
+        </Text>
+      </View>
+    </View>
+  );
 }
 
 export default function LeaderboardScreen() {
@@ -64,18 +198,38 @@ export default function LeaderboardScreen() {
       try {
         const response = await apiClient.get('gamification/leaderboard/');
         ranked = extractList(response.data);
-      } catch {
+      } catch (e) {
+        console.log('Leaderboard API fallback', e);
         ranked = [];
       }
 
       if (!ranked.length) {
         const users = await fetchAllPages('users/users/');
-        ranked = users.sort((a: any, b: any) => revenueOf(b) - revenueOf(a));
+        ranked = users
+          .map((u: any) => ({
+            ...u,
+            revenue: revenueOf(u),
+            office_name: officeOf(u),
+            avatar_url: avatarOf(u),
+            full_name: fullNameOf(u),
+          }))
+          .sort((a: any, b: any) => revenueOf(b) - revenueOf(a));
       }
+
+      ranked = ranked
+        .map((item: any) => ({
+          ...item,
+          revenue: revenueOf(item),
+          office_name: officeOf(item),
+          avatar_url: avatarOf(item),
+          full_name: fullNameOf(item),
+        }))
+        .sort((a: any, b: any) => revenueOf(b) - revenueOf(a));
 
       setLeaders(ranked);
     } catch (e) {
       console.log('Leaderboard load error', e);
+      setLeaders([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -92,11 +246,25 @@ export default function LeaderboardScreen() {
         ...item,
         _rank: index + 1,
         _revenue: revenueOf(item),
+        _office: officeOf(item),
+        _avatar: avatarOf(item),
+        _fullName: fullNameOf(item),
       })),
     [leaders]
   );
 
-  const top3 = enriched.slice(0, 3);
+  const podiumOrder = useMemo(() => {
+    const first = enriched[0];
+    const second = enriched[1];
+    const third = enriched[2];
+
+    return [
+      second ? { ...second, _podiumPlace: 2 as 2 } : null,
+      first ? { ...first, _podiumPlace: 1 as 1 } : null,
+      third ? { ...third, _podiumPlace: 3 as 3 } : null,
+    ].filter(Boolean) as Array<any>;
+  }, [enriched]);
+
   const rest = enriched.slice(3);
   const myRow = enriched.find((item) => item.id === currentUser?.id);
 
@@ -126,10 +294,12 @@ export default function LeaderboardScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.title, { color: theme.text }]}>Рейтинг команды</Text>
-        <Text style={[styles.sub, { color: theme.textSecondary }]}>
-          Если серверный рейтинг пуст, экран строится из текущей месячной выручки сотрудников.
-        </Text>
+        <View style={styles.hero}>
+          <Text style={[styles.title, { color: theme.text }]}>Рейтинг команды</Text>
+          <Text style={[styles.sub, { color: theme.textSecondary }]}>
+            Текущий рейтинг сотрудников по выручке за месяц
+          </Text>
+        </View>
 
         {myRow ? (
           <View
@@ -138,16 +308,22 @@ export default function LeaderboardScreen() {
               { backgroundColor: theme.surface, borderColor: theme.border },
             ]}
           >
-            <View>
-              <Text style={[styles.meCaption, { color: theme.textSecondary }]}>
-                Мой результат
-              </Text>
-              <Text style={[styles.meName, { color: theme.text }]}>
-                {fullNameOf(myRow)}
-              </Text>
+            <View style={styles.meLeft}>
+              <Avatar user={myRow} size={56} theme={theme} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.meCaption, { color: theme.textSecondary }]}>
+                  Мой результат
+                </Text>
+                <Text style={[styles.meName, { color: theme.text }]} numberOfLines={1}>
+                  {myRow._fullName}
+                </Text>
+                <Text style={[styles.meOffice, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {myRow._office}
+                </Text>
+              </View>
             </View>
 
-            <View style={{ alignItems: 'flex-end' }}>
+            <View style={styles.meRight}>
               <Text style={[styles.meRank, { color: theme.blue }]}>#{myRow._rank}</Text>
               <Text style={[styles.meRevenue, { color: theme.success }]}>
                 {money(myRow._revenue)}
@@ -156,80 +332,112 @@ export default function LeaderboardScreen() {
           </View>
         ) : null}
 
-        <View style={styles.topGrid}>
-          {top3.map((user, index) => {
-            const place = (index + 1) as 1 | 2 | 3;
-            const accent =
-              place === 1 ? '#D4AF37' : place === 2 ? '#C0C0C0' : '#CD7F32';
-
-            return (
+        {podiumOrder.length ? (
+          <View style={styles.podiumRow}>
+            {podiumOrder.map((user) => (
               <View
-                key={user.id || `top-${index}`}
+                key={String(user.id)}
                 style={[
-                  styles.topCard,
-                  { backgroundColor: theme.surface, borderColor: theme.border },
+                  styles.podiumCol,
+                  user._podiumPlace === 1
+                    ? styles.podiumColCenter
+                    : styles.podiumColSide,
                 ]}
               >
-                <View style={styles.topCardHeader}>
-                  <View style={styles.crownWrap}>
-                    <Crown place={place} size={22} />
-                    <Text style={[styles.place, { color: accent }]}>#{place}</Text>
-                  </View>
-
-                  {place === 1 ? (
-                    <View
-                      style={[
-                        styles.leaderBadge,
-                        { backgroundColor: theme.redSoft },
-                      ]}
-                    >
-                      <Text style={[styles.leaderBadgeText, { color: theme.red }]}>
-                        TOP 1
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
-                  {fullNameOf(user)}
-                </Text>
-                <Text style={[styles.office, { color: theme.textSecondary }]} numberOfLines={1}>
-                  {officeOf(user)}
-                </Text>
-                <Text style={[styles.revenue, { color: theme.success }]}>
-                  {money(user._revenue)}
-                </Text>
+                <TopCard
+                  user={user}
+                  place={user._podiumPlace}
+                  theme={theme}
+                />
               </View>
-            );
-          })}
-        </View>
+            ))}
+          </View>
+        ) : null}
 
-        <View style={[styles.list, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {rest.length === 0 ? (
+        <View
+          style={[
+            styles.sectionCard,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Общий рейтинг</Text>
+            <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
+              Все сотрудники
+            </Text>
+          </View>
+
+          {enriched.length === 0 ? (
             <Text style={[styles.emptyList, { color: theme.textSecondary }]}>
-              Пока только топ сотрудников.
+              Данных рейтинга пока нет.
             </Text>
           ) : (
-            rest.map((user, index) => (
-              <View
-                key={user.id || `rest-${index}`}
-                style={[styles.row, { borderBottomColor: theme.divider }]}
-              >
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={1}>
-                    #{index + 4} · {fullNameOf(user)}
-                  </Text>
-                  <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                    {officeOf(user)}
-                  </Text>
+            enriched.map((user, index) => {
+              const isTop3 = user._rank <= 3;
+              const accent = rankAccent(user._rank, theme);
+              const isMe = currentUser?.id === user.id;
+
+              return (
+                <View
+                  key={user.id || `leader-${index}`}
+                  style={[
+                    styles.row,
+                    {
+                      borderBottomColor: theme.divider,
+                      backgroundColor: isMe ? theme.backgroundSoft : 'transparent',
+                    },
+                  ]}
+                >
+                  <View style={styles.rowLeft}>
+                    <View
+                      style={[
+                        styles.rankCircle,
+                        {
+                          backgroundColor: isTop3 ? medalBg(user._rank as 1 | 2 | 3) : theme.backgroundSoft,
+                          borderColor: theme.border,
+                        },
+                      ]}
+                    >
+                      {isTop3 ? (
+                        <MaterialCommunityIcons
+                          name="crown"
+                          size={18}
+                          color={accent}
+                        />
+                      ) : (
+                        <Text style={[styles.rankCircleText, { color: theme.text }]}>
+                          {user._rank}
+                        </Text>
+                      )}
+                    </View>
+
+                    <Avatar user={user} size={48} theme={theme} />
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={1}>
+                        {user._fullName}
+                      </Text>
+                      <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                        {user._office}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.rowRight}>
+                    <Text style={[styles.rowRank, { color: accent }]}>#{user._rank}</Text>
+                    <Text style={[styles.rowValue, { color: theme.success }]}>
+                      {money(user._revenue)}
+                    </Text>
+                  </View>
                 </View>
-                <Text style={[styles.rowValue, { color: theme.blue }]}>
-                  {money(revenueOf(user))}
-                </Text>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
+
+        {rest.length > 0 ? (
+          <View style={{ height: 8 }} />
+        ) : null}
       </ScrollView>
     </ScreenWrapper>
   );
@@ -237,54 +445,272 @@ export default function LeaderboardScreen() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  container: { padding: 20, paddingBottom: 120 },
-  title: { fontSize: 28, fontWeight: '900' },
-  sub: { marginTop: 6, fontSize: 13, fontWeight: '600' },
+
+  container: {
+    padding: 20,
+    paddingBottom: 120,
+  },
+
+  hero: {
+    marginBottom: 2,
+  },
+
+  title: {
+    fontSize: 30,
+    fontWeight: '900',
+  },
+
+  sub: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '600',
+  },
 
   meCard: {
     marginTop: 18,
     borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
+    borderRadius: 24,
+    padding: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  meCaption: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
-  meName: { marginTop: 6, fontSize: 17, fontWeight: '900' },
-  meRank: { fontSize: 20, fontWeight: '900' },
-  meRevenue: { marginTop: 4, fontSize: 14, fontWeight: '900' },
 
-  topGrid: { marginTop: 18, gap: 12 },
-  topCard: { borderWidth: 1, borderRadius: 22, padding: 18 },
-  topCardHeader: {
+  meLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    paddingRight: 12,
+  },
+
+  meRight: {
+    alignItems: 'flex-end',
+  },
+
+  meCaption: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+
+  meName: {
+    marginTop: 5,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+
+  meOffice: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  meRank: {
+    fontSize: 22,
+    fontWeight: '900',
+  },
+
+  meRevenue: {
+    marginTop: 4,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  podiumRow: {
+    marginTop: 18,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+
+  podiumCol: {
+    flex: 1,
+  },
+
+  podiumColCenter: {
+    marginBottom: 0,
+  },
+
+  podiumColSide: {
+    marginBottom: 12,
+  },
+
+  topCard: {
+    borderWidth: 1,
+    borderRadius: 26,
+    padding: 16,
+    alignItems: 'center',
+  },
+
+  topHeaderRow: {
+    width: '100%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  crownWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  place: { fontSize: 18, fontWeight: '900' },
-  leaderBadge: {
+
+  topPlaceBadge: {
+    minHeight: 36,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+
+  topPlaceText: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  topLeaderChip: {
+    borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
   },
-  leaderBadgeText: { fontSize: 11, fontWeight: '900' },
-  name: { marginTop: 12, fontSize: 18, fontWeight: '900' },
-  office: { marginTop: 6, fontSize: 13, fontWeight: '700' },
-  revenue: { marginTop: 10, fontSize: 16, fontWeight: '900' },
 
-  list: { marginTop: 18, borderWidth: 1, borderRadius: 22, overflow: 'hidden' },
-  row: {
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  topLeaderChipText: {
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
+  topAvatarWrap: {
+    marginTop: 16,
+  },
+
+  topName: {
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  topOffice: {
+    marginTop: 5,
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  topRevenueBox: {
+    marginTop: 14,
+    width: '100%',
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
     alignItems: 'center',
   },
-  rowTitle: { fontSize: 15, fontWeight: '800' },
-  rowMeta: { marginTop: 4, fontSize: 12, fontWeight: '600' },
-  rowValue: { fontSize: 13, fontWeight: '900' },
-  emptyList: { padding: 18, fontSize: 14 },
+
+  topRevenueLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+
+  topRevenueValue: {
+    marginTop: 6,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+
+  sectionCard: {
+    marginTop: 20,
+    borderWidth: 1,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+
+  sectionHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+
+  sectionSub: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  row: {
+    minHeight: 82,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  rowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    paddingRight: 12,
+  },
+
+  rowRight: {
+    alignItems: 'flex-end',
+  },
+
+  rankCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  rankCircleText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  rowTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  rowMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  rowRank: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  rowValue: {
+    marginTop: 4,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  avatarFallback: {
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  avatarFallbackText: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+
+  emptyList: {
+    padding: 18,
+    fontSize: 14,
+  },
 });

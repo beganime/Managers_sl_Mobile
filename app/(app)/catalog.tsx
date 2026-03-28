@@ -314,7 +314,7 @@ export default function CatalogScreen() {
                   <View style={styles.priceRow}>
                     <Text style={[styles.priceLabel, { color: theme.textSecondary }]}>Услуги</Text>
                     <Text style={[styles.priceValue, { color: theme.red }]}>
-                      {money(program.service_fee, currency)}
+                      {money(program.service_fee, "$")}
                     </Text>
                   </View>
                 </View>

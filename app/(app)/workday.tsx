@@ -32,6 +32,21 @@ type Shift = {
   updated_at?: string;
 };
 
+type DailyReport = {
+  id: number;
+  employee?: number;
+  employee_name?: string;
+  date?: string;
+  content?: string;
+  income?: string | number;
+  expense?: string | number;
+  leads_processed?: number;
+  deals_closed?: number;
+  net_result?: string | number;
+  created_at?: string;
+  updated_at?: string;
+};
+
 type CommonNote = {
   id: string;
   authorId?: number;
@@ -76,6 +91,18 @@ function fullNameOf(user: any) {
   );
 }
 
+function asTextNumber(value: unknown) {
+  if (value === null || value === undefined) return '';
+  return String(value);
+}
+
+function toNumber(value: string) {
+  if (!value?.trim()) return 0;
+  const normalized = value.replace(',', '.').trim();
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export default function WorkdayScreen() {
   const router = useRouter();
   const { theme } = useTheme();
@@ -86,10 +113,18 @@ export default function WorkdayScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [reportSaving, setReportSaving] = useState(false);
 
   const [currentShift, setCurrentShift] = useState<Shift | null>(null);
   const [todayShifts, setTodayShifts] = useState<Shift[]>([]);
   const [historyShifts, setHistoryShifts] = useState<Shift[]>([]);
+
+  const [todayReport, setTodayReport] = useState<DailyReport | null>(null);
+  const [reportContent, setReportContent] = useState('');
+  const [reportIncome, setReportIncome] = useState('');
+  const [reportExpense, setReportExpense] = useState('');
+  const [reportLeads, setReportLeads] = useState('');
+  const [reportDeals, setReportDeals] = useState('');
 
   const [personalNotes, setPersonalNotes] = useState<PersonalNote[]>([]);
   const [commonNotes, setCommonNotes] = useState<CommonNote[]>([]);
@@ -121,28 +156,61 @@ export default function WorkdayScreen() {
     await saveToken(commonKey, JSON.stringify(items));
   };
 
+  const applyReportToState = (report: DailyReport | null) => {
+    setTodayReport(report);
+
+    if (!report) {
+      setReportContent('');
+      setReportIncome('');
+      setReportExpense('');
+      setReportLeads('');
+      setReportDeals('');
+      return;
+    }
+
+    setReportContent(report.content || '');
+    setReportIncome(asTextNumber(report.income));
+    setReportExpense(asTextNumber(report.expense));
+    setReportLeads(asTextNumber(report.leads_processed));
+    setReportDeals(asTextNumber(report.deals_closed));
+  };
+
   const loadData = async () => {
     try {
-      let current: Shift | null = null;
-      try {
-        const currentRes = await apiClient.get('timetracking/shifts/current/');
-        current = currentRes.data;
-      } catch {
-        current = null;
-      }
-
       const today = todayStr();
-      const shiftsRes = await apiClient.get(
-        `timetracking/shifts/?date_from=${today}&date_to=${today}`
-      );
-      const shifts = shiftsRes.data?.results ?? shiftsRes.data ?? [];
 
-      const historyRes = await apiClient.get('timetracking/shifts/?date_from=2026-01-01');
+      const [currentRes, shiftsRes, historyRes] = await Promise.all([
+        apiClient.get('timetracking/shifts/current/'),
+        apiClient.get(`timetracking/shifts/?date_from=${today}&date_to=${today}`),
+        apiClient.get('timetracking/shifts/?date_from=2026-01-01'),
+      ]);
+
+      const currentPayload = currentRes.data;
+      const current =
+        currentPayload?.shift !== undefined
+          ? currentPayload.shift
+          : currentPayload?.id
+            ? currentPayload
+            : null;
+
+      const shifts = shiftsRes.data?.results ?? shiftsRes.data ?? [];
       const history = historyRes.data?.results ?? historyRes.data ?? [];
 
       setCurrentShift(current);
-      setTodayShifts(shifts);
-      setHistoryShifts(history);
+      setTodayShifts(Array.isArray(shifts) ? shifts : []);
+      setHistoryShifts(Array.isArray(history) ? history : []);
+
+      try {
+        const reportRes = await apiClient.get('reports/daily/today/');
+        applyReportToState(reportRes.data);
+      } catch (error: any) {
+        if (error?.response?.status === 404) {
+          applyReportToState(null);
+        } else {
+          throw error;
+        }
+      }
+
       await loadNotes();
     } catch (error) {
       console.error('Ошибка загрузки таймтрекинга', error);
@@ -156,6 +224,52 @@ export default function WorkdayScreen() {
   useEffect(() => {
     loadData();
   }, [user?.id]);
+
+  const buildReportPayload = () => ({
+    content: reportContent.trim(),
+    income: toNumber(reportIncome),
+    expense: toNumber(reportExpense),
+    leads_processed: Math.max(0, Math.floor(toNumber(reportLeads))),
+    deals_closed: Math.max(0, Math.floor(toNumber(reportDeals))),
+  });
+
+  const hasAnyReportDraft = useMemo(() => {
+    return Boolean(
+      reportContent.trim() ||
+        reportIncome.trim() ||
+        reportExpense.trim() ||
+        reportLeads.trim() ||
+        reportDeals.trim()
+    );
+  }, [reportContent, reportIncome, reportExpense, reportLeads, reportDeals]);
+
+  const saveTodayReport = async () => {
+    if (!reportContent.trim()) {
+      Alert.alert('Нужен отчёт', 'Напиши, что было сделано за день.');
+      return;
+    }
+
+    setReportSaving(true);
+    try {
+      const payload = buildReportPayload();
+      const res = await apiClient.post('reports/daily/submit_today/', payload);
+      const report = res?.data?.report ?? res?.data ?? null;
+
+      if (report) {
+        applyReportToState(report);
+      }
+
+      Alert.alert('Готово', 'Отчёт за сегодня сохранён.');
+    } catch (error: any) {
+      const msg =
+        error?.response?.data?.detail ||
+        error?.response?.data?.date?.[0] ||
+        'Не удалось сохранить отчёт.';
+      Alert.alert('Ошибка', msg);
+    } finally {
+      setReportSaving(false);
+    }
+  };
 
   const startDay = async () => {
     setActionLoading(true);
@@ -173,14 +287,45 @@ export default function WorkdayScreen() {
   };
 
   const endDay = async () => {
+    if (!isAdmin && !reportContent.trim()) {
+      Alert.alert('Нужен отчёт', 'Сначала заполни отчёт внутри этой страницы.');
+      return;
+    }
+
     setActionLoading(true);
     try {
-      await apiClient.post('timetracking/shifts/end_day/', {});
+      let payload: any = {};
+
+      if (!isAdmin) {
+        payload = {
+          report: buildReportPayload(),
+        };
+      } else if (hasAnyReportDraft || todayReport?.id) {
+        payload = {
+          report: buildReportPayload(),
+        };
+      }
+
+      const res = await apiClient.post('timetracking/shifts/end_day/', payload);
+
+      if (res?.data?.report) {
+        applyReportToState(res.data.report);
+      } else if (isAdmin && !payload.report) {
+        applyReportToState(todayReport);
+      }
+
       await loadData();
-      Alert.alert('Готово', 'Рабочий день завершён.');
+      Alert.alert(
+        'Готово',
+        isAdmin
+          ? 'Рабочий день завершён.'
+          : 'Рабочий день завершён, отчёт сохранён.'
+      );
     } catch (error: any) {
       const msg =
-        error?.response?.data?.detail || 'Не удалось завершить рабочий день.';
+        error?.response?.data?.detail ||
+        error?.response?.data?.date?.[0] ||
+        'Не удалось завершить рабочий день.';
       Alert.alert('Ошибка', msg);
     } finally {
       setActionLoading(false);
@@ -228,6 +373,10 @@ export default function WorkdayScreen() {
     return { active, total, hours };
   }, [todayShifts]);
 
+  const reportNet = useMemo(() => {
+    return toNumber(reportIncome) - toNumber(reportExpense);
+  }, [reportIncome, reportExpense]);
+
   if (loading) {
     return (
       <ScreenWrapper>
@@ -269,7 +418,7 @@ export default function WorkdayScreen() {
       >
         <View style={[styles.hero, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.heroTop}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={[styles.heroTitle, { color: theme.text }]}>
                 {currentShift?.is_active ? 'Рабочий день активен' : 'Рабочий день не начат'}
               </Text>
@@ -297,20 +446,30 @@ export default function WorkdayScreen() {
             </View>
           </View>
 
-          <View style={styles.actionRow}>
+          <View style={styles.actionColumn}>
             {!currentShift?.is_active ? (
               <Pressable onPress={startDay} style={[styles.mainAction, { backgroundColor: theme.success }]}>
-                {actionLoading ? <ActivityIndicator color="#fff" /> : <>
-                  <Ionicons name="play" size={18} color="#fff" />
-                  <Text style={styles.mainActionText}>Начать день</Text>
-                </>}
+                {actionLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="play" size={18} color="#fff" />
+                    <Text style={styles.mainActionText}>Начать день</Text>
+                  </>
+                )}
               </Pressable>
             ) : (
               <Pressable onPress={endDay} style={[styles.mainAction, { backgroundColor: theme.red }]}>
-                {actionLoading ? <ActivityIndicator color="#fff" /> : <>
-                  <Ionicons name="stop" size={18} color="#fff" />
-                  <Text style={styles.mainActionText}>Завершить день</Text>
-                </>}
+                {actionLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="stop" size={18} color="#fff" />
+                    <Text style={styles.mainActionText}>
+                      {isAdmin ? 'Завершить день' : 'Завершить день и отправить отчёт'}
+                    </Text>
+                  </>
+                )}
               </Pressable>
             )}
           </View>
@@ -331,6 +490,132 @@ export default function WorkdayScreen() {
             <Text style={[styles.kpiValue, { color: theme.text }]}>{todayStats.hours.toFixed(2)}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Часы</Text>
           </View>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.cardTitle, { color: theme.text }]}>Ежедневный отчёт</Text>
+          <Text style={[styles.cardSub, { color: theme.textSecondary }]}>
+            {isAdmin
+              ? 'Для администратора отчёт необязателен. Можно завершить день и без него.'
+              : 'Отчёт обязателен перед завершением рабочего дня.'}
+          </Text>
+
+          <View
+            style={[
+              styles.inputWrap,
+              {
+                backgroundColor: theme.backgroundSoft,
+                borderColor: theme.border,
+                minHeight: 120,
+                marginTop: 12,
+              },
+            ]}
+          >
+            <TextInput
+              value={reportContent}
+              onChangeText={setReportContent}
+              placeholder="Что было сделано за день"
+              placeholderTextColor={theme.textMuted}
+              multiline
+              style={[
+                styles.input,
+                { color: theme.text, minHeight: 96, textAlignVertical: 'top' },
+              ]}
+            />
+          </View>
+
+          <View style={styles.reportGrid}>
+            <View style={styles.reportField}>
+              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Доход</Text>
+              <View style={[styles.smallInputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                <TextInput
+                  value={reportIncome}
+                  onChangeText={setReportIncome}
+                  placeholder="0"
+                  placeholderTextColor={theme.textMuted}
+                  keyboardType="numeric"
+                  style={[styles.smallInput, { color: theme.text }]}
+                />
+              </View>
+            </View>
+
+            <View style={styles.reportField}>
+              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Расход</Text>
+              <View style={[styles.smallInputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                <TextInput
+                  value={reportExpense}
+                  onChangeText={setReportExpense}
+                  placeholder="0"
+                  placeholderTextColor={theme.textMuted}
+                  keyboardType="numeric"
+                  style={[styles.smallInput, { color: theme.text }]}
+                />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.reportGrid}>
+            <View style={styles.reportField}>
+              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Новых заявок</Text>
+              <View style={[styles.smallInputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                <TextInput
+                  value={reportLeads}
+                  onChangeText={setReportLeads}
+                  placeholder="0"
+                  placeholderTextColor={theme.textMuted}
+                  keyboardType="numeric"
+                  style={[styles.smallInput, { color: theme.text }]}
+                />
+              </View>
+            </View>
+
+            <View style={styles.reportField}>
+              <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Закрыто сделок</Text>
+              <View style={[styles.smallInputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                <TextInput
+                  value={reportDeals}
+                  onChangeText={setReportDeals}
+                  placeholder="0"
+                  placeholderTextColor={theme.textMuted}
+                  keyboardType="numeric"
+                  style={[styles.smallInput, { color: theme.text }]}
+                />
+              </View>
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.reportSummary,
+              { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+            ]}
+          >
+            <Text style={[styles.reportSummaryTitle, { color: theme.text }]}>
+              Итого за день
+            </Text>
+            <Text style={[styles.reportSummaryValue, { color: reportNet >= 0 ? theme.success : theme.red }]}>
+              {reportNet.toFixed(2)}
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={saveTodayReport}
+            style={[styles.smallAction, { backgroundColor: theme.blue }]}
+          >
+            {reportSaving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.smallActionText}>
+                {todayReport?.id ? 'Обновить отчёт' : 'Сохранить отчёт'}
+              </Text>
+            )}
+          </Pressable>
+
+          {todayReport?.updated_at ? (
+            <Text style={[styles.helperText, { color: theme.textSecondary }]}>
+              Последнее обновление: {formatDate(todayReport.updated_at)}
+            </Text>
+          ) : null}
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -420,7 +705,7 @@ export default function WorkdayScreen() {
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Text style={[styles.cardTitle, { color: theme.text }]}>Общие заметки</Text>
           <Text style={[styles.cardSub, { color: theme.textSecondary }]}>
-            У общих заметок теперь всегда видно имя автора.
+            У общих заметок всегда видно имя автора.
           </Text>
 
           <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border, minHeight: 92 }]}>
@@ -447,9 +732,7 @@ export default function WorkdayScreen() {
                   key={note.id}
                   style={[styles.noteCard, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}
                 >
-                  <Text style={[styles.noteAuthor, { color: theme.blue }]}>
-                    {note.authorName}
-                  </Text>
+                  <Text style={[styles.noteAuthor, { color: theme.blue }]}>{note.authorName}</Text>
                   <Text style={[styles.noteText, { color: theme.text }]}>{note.text}</Text>
                   <Text style={[styles.noteMeta, { color: theme.textSecondary }]}>
                     {formatDate(note.createdAt)}
@@ -513,13 +796,19 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: '900' },
   container: { padding: 20, paddingBottom: 120, gap: 14 },
+
   hero: { borderWidth: 1, borderRadius: 24, padding: 18 },
   heroTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   heroTitle: { fontSize: 18, fontWeight: '900' },
   heroSub: { marginTop: 6, fontSize: 13, fontWeight: '600' },
-  statusPill: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, alignSelf: 'flex-start' },
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+  },
   statusPillText: { fontSize: 11, fontWeight: '900' },
-  actionRow: { marginTop: 16 },
+  actionColumn: { marginTop: 16, gap: 10 },
   mainAction: {
     minHeight: 54,
     borderRadius: 18,
@@ -527,16 +816,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
+    paddingHorizontal: 14,
   },
-  mainActionText: { color: '#fff', fontWeight: '900', fontSize: 15 },
+  mainActionText: { color: '#fff', fontWeight: '900', fontSize: 15, textAlign: 'center' },
+
   kpiRow: { flexDirection: 'row', gap: 10 },
   kpiCard: { flex: 1, borderWidth: 1, borderRadius: 20, padding: 14 },
   kpiValue: { fontSize: 20, fontWeight: '900' },
   kpiLabel: { marginTop: 6, fontSize: 12, fontWeight: '700' },
+
   card: { borderWidth: 1, borderRadius: 24, padding: 16 },
   cardTitle: { fontSize: 16, fontWeight: '900' },
   cardSub: { marginTop: 6, fontSize: 12, fontWeight: '600' },
+  helperText: { marginTop: 10, fontSize: 12, fontWeight: '600' },
   emptyText: { marginTop: 12, fontSize: 14, fontWeight: '600' },
+
   shiftRow: {
     paddingVertical: 14,
     borderBottomWidth: 1,
@@ -549,16 +843,50 @@ const styles = StyleSheet.create({
   badge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
   badgeText: { fontSize: 11, fontWeight: '900' },
   hoursText: { marginTop: 8, fontSize: 13, fontWeight: '900', textAlign: 'right' },
-  inputWrap: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 12, marginTop: 12 },
+
+  inputWrap: {
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 12,
+  },
   input: { fontSize: 15, fontWeight: '600' },
+
+  reportGrid: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  reportField: { flex: 1 },
+  fieldLabel: { fontSize: 12, fontWeight: '800', marginBottom: 6 },
+  smallInputWrap: {
+    borderWidth: 1,
+    borderRadius: 16,
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  smallInput: { fontSize: 15, fontWeight: '700' },
+
+  reportSummary: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  reportSummaryTitle: { fontSize: 14, fontWeight: '800' },
+  reportSummaryValue: { fontSize: 18, fontWeight: '900' },
+
   smallAction: {
     marginTop: 12,
     minHeight: 48,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 14,
   },
-  smallActionText: { color: '#fff', fontSize: 14, fontWeight: '900' },
+  smallActionText: { color: '#fff', fontSize: 14, fontWeight: '900', textAlign: 'center' },
+
   noteCard: { borderWidth: 1, borderRadius: 18, padding: 14 },
   noteAuthor: { fontSize: 12, fontWeight: '900', marginBottom: 6 },
   noteText: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
