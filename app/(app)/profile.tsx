@@ -55,6 +55,40 @@ function flattenError(data: any): string {
   return 'Не удалось обновить профиль.';
 }
 
+function extFromMime(mime?: string | null) {
+  if (!mime) return 'jpg';
+  if (mime.includes('png')) return 'png';
+  if (mime.includes('webp')) return 'webp';
+  if (mime.includes('heic')) return 'heic';
+  if (mime.includes('heif')) return 'heif';
+  return 'jpg';
+}
+
+function filenameFromAsset(asset: any) {
+  if (asset?.fileName) return asset.fileName;
+
+  const uri = String(asset?.uri || '');
+  const lastPart = uri.split('/').pop() || '';
+  if (lastPart && lastPart.includes('.')) return lastPart;
+
+  const ext = extFromMime(asset?.mimeType);
+  return `avatar_${Date.now()}.${ext}`;
+}
+
+function mimeFromAsset(asset: any) {
+  if (asset?.mimeType) return asset.mimeType;
+
+  const fileName = String(asset?.fileName || '').toLowerCase();
+  const uri = String(asset?.uri || '').toLowerCase();
+  const source = `${fileName} ${uri}`;
+
+  if (source.includes('.png')) return 'image/png';
+  if (source.includes('.webp')) return 'image/webp';
+  if (source.includes('.heic')) return 'image/heic';
+  if (source.includes('.heif')) return 'image/heif';
+  return 'image/jpeg';
+}
+
 // ─── quick nav items ───────────────────────────────────────────────────────────
 
 type NavItem = {
@@ -66,15 +100,15 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Учет времени',   route: '/(app)/workday',         icon: 'time-outline',            color: '#3B82F6' },
-  { label: 'Задачи',         route: '/(app)/tasks',            icon: 'checkmark-circle-outline', color: '#10B981' },
-  { label: 'База знаний',    route: '/(app)/knowledge-base',   icon: 'library-outline',          color: '#8B5CF6' },
-  { label: 'CRM',            route: '/(app)/crm',              icon: 'people-outline',            color: '#F59E0B' },
-  { label: 'Каталог вузов',  route: '/(app)/catalog',          icon: 'school-outline',            color: '#06B6D4' },
-  { label: 'Команда',        route: '/(app)/admin-staff',      icon: 'business-outline',          color: '#EF4444', adminOnly: true },
-  { label: 'Платежи',        route: '/(app)/admin-payments',   icon: 'card-outline',              color: '#F97316', adminOnly: true },
-  { label: 'Документы',      route: '/(app)/documents',        icon: 'document-text-outline',     color: '#6366F1', adminOnly: true },
-  { label: 'Отчёты',         route: '/(app)/admin-reports',    icon: 'bar-chart-outline',         color: '#14B8A6', adminOnly: true },
+  { label: 'Учет времени', route: '/(app)/workday', icon: 'time-outline', color: '#3B82F6' },
+  { label: 'Задачи', route: '/(app)/tasks', icon: 'checkmark-circle-outline', color: '#10B981' },
+  { label: 'База знаний', route: '/(app)/knowledge-base', icon: 'library-outline', color: '#8B5CF6' },
+  { label: 'CRM', route: '/(app)/crm', icon: 'people-outline', color: '#F59E0B' },
+  { label: 'Каталог вузов', route: '/(app)/catalog', icon: 'school-outline', color: '#06B6D4' },
+  { label: 'Команда', route: '/(app)/admin-staff', icon: 'business-outline', color: '#EF4444', adminOnly: true },
+  { label: 'Платежи', route: '/(app)/admin-payments', icon: 'card-outline', color: '#F97316', adminOnly: true },
+  { label: 'Документы', route: '/(app)/documents', icon: 'document-text-outline', color: '#6366F1', adminOnly: true },
+  { label: 'Отчёты', route: '/(app)/admin-reports', icon: 'bar-chart-outline', color: '#14B8A6', adminOnly: true },
 ];
 
 // ─── sub-components ────────────────────────────────────────────────────────────
@@ -191,17 +225,16 @@ export default function ProfileScreen() {
     }).start();
   }, []);
 
-  // ── form state ──
-  const [firstName, setFirstName]           = useState('');
-  const [lastName, setLastName]             = useState('');
-  const [middleName, setMiddleName]         = useState('');
-  const [dob, setDob]                       = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [middleName, setMiddleName] = useState('');
+  const [dob, setDob] = useState('');
   const [socialContacts, setSocialContacts] = useState('');
   const [jobDescription, setJobDescription] = useState('');
-  const [avatarAsset, setAvatarAsset]       = useState<any>(null);
+  const [avatarAsset, setAvatarAsset] = useState<any>(null);
 
-  const [saving, setSaving]       = useState(false);
-  const [syncing, setSyncing]     = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
@@ -214,50 +247,60 @@ export default function ProfileScreen() {
     setJobDescription((user as any).job_description || '');
   }, [user]);
 
-  // ── avatar picker ──
   const handlePickAvatar = async () => {
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) {
       Alert.alert('Нет доступа', 'Разреши доступ к галерее.');
       return;
     }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.85,
+      quality: 0.9,
     });
+
     if (!result.canceled && result.assets?.[0]) {
-      setAvatarAsset(result.assets[0]);
+      const picked = result.assets[0];
+
+      if (!picked.uri) {
+        Alert.alert('Ошибка', 'Не удалось прочитать выбранный файл.');
+        return;
+      }
+
+      setAvatarAsset(picked);
     }
   };
 
-  // ── save profile ──
   const handleSave = async () => {
     setSaving(true);
     try {
-      // 1. Save text fields
       await apiClient.patch('users/users/me/', {
-        first_name:      firstName.trim(),
-        last_name:       lastName.trim(),
-        middle_name:     middleName.trim(),
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        middle_name: middleName.trim(),
         social_contacts: socialContacts.trim(),
         job_description: jobDescription.trim(),
-        dob:             dob.trim() || null,
+        dob: dob.trim() || null,
       });
 
-      // 2. Upload avatar separately with multipart
       if (avatarAsset?.uri) {
         const fd = new FormData();
+
+        const fileName = filenameFromAsset(avatarAsset);
+        const mimeType = mimeFromAsset(avatarAsset);
+
         fd.append('avatar', {
-          uri:  avatarAsset.uri,
-          type: avatarAsset.mimeType || 'image/jpeg',
-          name: avatarAsset.fileName || `avatar_${Date.now()}.jpg`,
+          uri: avatarAsset.uri,
+          type: mimeType,
+          name: fileName,
         } as any);
 
-        await apiClient.patch('users/users/me/', fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        // ВАЖНО:
+        // не задаём Content-Type вручную,
+        // чтобы axios/react-native сам поставил multipart boundary
+        await apiClient.patch('users/users/me/', fd);
       }
 
       await reload();
@@ -270,7 +313,6 @@ export default function ProfileScreen() {
     }
   };
 
-  // ── sync cache ──
   const handleSync = async () => {
     setSyncing(true);
     try {
@@ -284,7 +326,6 @@ export default function ProfileScreen() {
     }
   };
 
-  // ── logout — clears tokens, navigates to login ──
   const handleLogout = async () => {
     Alert.alert('Выход', 'Подтвердить выход из аккаунта?', [
       { text: 'Отмена', style: 'cancel' },
@@ -294,7 +335,6 @@ export default function ProfileScreen() {
         onPress: async () => {
           setLoggingOut(true);
           try {
-            // Best-effort server logout
             try {
               const { getToken } = await import('../../src/utils/storage');
               const refresh = await getToken('refresh_token');
@@ -302,7 +342,6 @@ export default function ProfileScreen() {
                 await apiClient.post('auth/logout/', { refresh });
               }
             } catch {}
-            // Always clear local session
             await clearSession();
           } finally {
             setLoggingOut(false);
@@ -313,7 +352,6 @@ export default function ProfileScreen() {
     ]);
   };
 
-  // ── nav items filtered by role ──
   const navItems = useMemo(
     () => NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin),
     [isAdmin],
@@ -321,11 +359,10 @@ export default function ProfileScreen() {
 
   const avatarUri = avatarAsset?.uri || (user as any)?.avatar || null;
 
-  // ── salary helpers ──
   const sal = user?.managersalary;
-  const fixed   = Number(sal?.fixed_salary || 0);
+  const fixed = Number(sal?.fixed_salary || 0);
   const balance = Number(sal?.current_balance || 0);
-  const plan    = Number(sal?.monthly_plan || 0);
+  const plan = Number(sal?.monthly_plan || 0);
   const revenue = Number(sal?.current_month_revenue || 0);
   const progress = plan > 0 ? Math.min(Math.round((revenue / plan) * 100), 100) : 0;
 
@@ -337,9 +374,7 @@ export default function ProfileScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ── HERO ─────────────────────────────────────────────────────── */}
           <View style={[styles.hero, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            {/* Avatar */}
             <Pressable onPress={handlePickAvatar} style={styles.avatarOuter}>
               <View style={[styles.avatarRing, { borderColor: theme.blue + '40' }]}>
                 {avatarUri ? (
@@ -368,11 +403,9 @@ export default function ProfileScreen() {
               </View>
             )}
 
-            {/* Name & meta */}
             <Text style={[styles.heroName, { color: theme.text }]}>{fullNameOf(user)}</Text>
             <Text style={[styles.heroEmail, { color: theme.textSecondary }]}>{user?.email}</Text>
 
-            {/* Badges */}
             <View style={styles.heroBadges}>
               <View
                 style={[
@@ -422,10 +455,8 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* ── ФИНАНСЫ ──────────────────────────────────────────────────── */}
           <SectionTitle label="Финансы и план" theme={theme} />
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            {/* Progress bar */}
             <View style={styles.planRow}>
               <Text style={[styles.planLabel, { color: theme.text }]}>Выполнение плана</Text>
               <Text style={[styles.planPercent, { color: theme.blue }]}>{progress}%</Text>
@@ -478,7 +509,6 @@ export default function ProfileScreen() {
             />
           </View>
 
-          {/* ── БЫСТРАЯ НАВИГАЦИЯ ─────────────────────────────────────────── */}
           <SectionTitle label="Быстрая навигация" theme={theme} />
           <View style={[styles.navGrid, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             {navItems.map((item, index) => {
@@ -515,12 +545,11 @@ export default function ProfileScreen() {
             })}
           </View>
 
-          {/* ── РЕДАКТИРОВАНИЕ ───────────────────────────────────────────── */}
           <SectionTitle label="Редактирование профиля" theme={theme} />
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Field label="Имя"        value={firstName}      onChange={setFirstName}      theme={theme} />
-            <Field label="Фамилия"    value={lastName}       onChange={setLastName}       theme={theme} />
-            <Field label="Отчество"   value={middleName}     onChange={setMiddleName}     theme={theme} />
+            <Field label="Имя" value={firstName} onChange={setFirstName} theme={theme} />
+            <Field label="Фамилия" value={lastName} onChange={setLastName} theme={theme} />
+            <Field label="Отчество" value={middleName} onChange={setMiddleName} theme={theme} />
             <Field
               label="Дата рождения"
               value={dob}
@@ -561,7 +590,6 @@ export default function ProfileScreen() {
             </Pressable>
           </View>
 
-          {/* ── НАСТРОЙКИ ────────────────────────────────────────────────── */}
           <SectionTitle label="Настройки" theme={theme} />
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={styles.settingRow}>
@@ -583,7 +611,6 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* ── СИСТЕМНЫЕ КНОПКИ ─────────────────────────────────────────── */}
           <SectionTitle label="Система" theme={theme} />
           <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Pressable
@@ -631,8 +658,6 @@ export default function ProfileScreen() {
   );
 }
 
-// ─── styles ────────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   scroll: {
     paddingHorizontal: 18,
@@ -640,8 +665,6 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
     gap: 0,
   },
-
-  // Hero
   hero: {
     borderWidth: 1,
     borderRadius: 28,
@@ -708,8 +731,6 @@ const styles = StyleSheet.create({
   },
   badgeText: { fontSize: 12, fontWeight: '800' },
   statusDot: { width: 7, height: 7, borderRadius: 999 },
-
-  // Section title
   sectionTitle: {
     fontSize: 11,
     fontWeight: '900',
@@ -719,8 +740,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     marginTop: 4,
   },
-
-  // Card
   card: {
     borderWidth: 1,
     borderRadius: 24,
@@ -728,8 +747,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     overflow: 'hidden',
   },
-
-  // Finance stats
   planRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -757,8 +774,6 @@ const styles = StyleSheet.create({
   },
   statLabel: { flex: 1, fontSize: 14, fontWeight: '700' },
   statValue: { fontSize: 14, fontWeight: '900' },
-
-  // Nav grid
   navGrid: {
     borderWidth: 1,
     borderRadius: 24,
@@ -781,8 +796,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   navLabel: { flex: 1, fontSize: 13, fontWeight: '800' },
-
-  // Form fields
   fieldWrap: { marginBottom: 14 },
   fieldLabel: {
     fontSize: 11,
@@ -808,8 +821,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '900' },
-
-  // Settings
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -824,8 +835,6 @@ const styles = StyleSheet.create({
   },
   settingTitle: { fontSize: 15, fontWeight: '800' },
   settingSub: { marginTop: 2, fontSize: 12, fontWeight: '600' },
-
-  // Sys rows
   sysRow: {
     flexDirection: 'row',
     alignItems: 'center',

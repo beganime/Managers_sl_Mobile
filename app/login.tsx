@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 
 import ManagerSLBrand from '../components/branding/ManagerSLBrand';
+import { useCurrentUser } from '../hooks/useCurrentUser';
 import { loginRequest } from '../src/api/apiClient';
 import { useTheme } from '../src/context/ThemeContext';
 
@@ -24,11 +25,40 @@ function isValidEmail(value: string) {
 export default function LoginScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { user, reload } = useCurrentUser();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [bootRedirecting, setBootRedirecting] = useState(false);
+
+  // Если пользователь уже есть в памяти — не держим его на логине
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      const redirectIfAuthorized = async () => {
+        if (!user) return;
+
+        try {
+          if (!active) return;
+          setBootRedirecting(true);
+          router.replace('/(app)');
+        } finally {
+          if (active) {
+            setBootRedirecting(false);
+          }
+        }
+      };
+
+      redirectIfAuthorized();
+
+      return () => {
+        active = false;
+      };
+    }, [router, user])
+  );
 
   const emailError = useMemo(() => {
     if (!email.trim()) return '';
@@ -46,7 +76,8 @@ export default function LoginScreen() {
     !!password &&
     !emailError &&
     !passwordError &&
-    !loading;
+    !loading &&
+    !bootRedirecting;
 
   const submit = async () => {
     if (!email.trim() || !password) {
@@ -62,6 +93,15 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await loginRequest(email.trim(), password);
+
+      // Важно: после логина принудительно обновляем current user,
+      // чтобы приложение сразу увидело авторизацию без перезапуска
+      try {
+        await reload();
+      } catch (reloadError) {
+        console.log('reload after login failed', reloadError);
+      }
+
       router.replace('/(app)');
     } catch (error: any) {
       const message =
@@ -106,7 +146,15 @@ export default function LoginScreen() {
           </Text>
 
           <View style={styles.form}>
-            <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: emailError ? theme.red : theme.border }]}>
+            <View
+              style={[
+                styles.inputWrap,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: emailError ? theme.red : theme.border,
+                },
+              ]}
+            >
               <Text style={[styles.label, { color: theme.textSecondary }]}>Email</Text>
               <TextInput
                 value={email}
@@ -118,10 +166,20 @@ export default function LoginScreen() {
                 placeholderTextColor={theme.textMuted}
                 style={[styles.input, { color: theme.text }]}
               />
-              {!!emailError && <Text style={[styles.errorText, { color: theme.red }]}>{emailError}</Text>}
+              {!!emailError && (
+                <Text style={[styles.errorText, { color: theme.red }]}>{emailError}</Text>
+              )}
             </View>
 
-            <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: passwordError ? theme.red : theme.border }]}>
+            <View
+              style={[
+                styles.inputWrap,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: passwordError ? theme.red : theme.border,
+                },
+              ]}
+            >
               <View style={styles.passwordHead}>
                 <Text style={[styles.label, { color: theme.textSecondary }]}>Пароль</Text>
                 <Pressable onPress={() => setPasswordVisible((v) => !v)}>
@@ -139,7 +197,9 @@ export default function LoginScreen() {
                 placeholderTextColor={theme.textMuted}
                 style={[styles.input, { color: theme.text }]}
               />
-              {!!passwordError && <Text style={[styles.errorText, { color: theme.red }]}>{passwordError}</Text>}
+              {!!passwordError && (
+                <Text style={[styles.errorText, { color: theme.red }]}>{passwordError}</Text>
+              )}
             </View>
 
             <Pressable
@@ -156,7 +216,7 @@ export default function LoginScreen() {
                 end={{ x: 1, y: 1 }}
                 style={styles.button}
               >
-                {loading ? (
+                {loading || bootRedirecting ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.buttonText}>Войти</Text>
