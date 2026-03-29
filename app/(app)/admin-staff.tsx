@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    KeyboardAvoidingView,
     Modal,
+    Platform,
     Pressable,
     RefreshControl,
     ScrollView,
@@ -267,11 +269,14 @@ export default function AdminStaffScreen() {
             tintColor={theme.blue}
           />
         }
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.head}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.title, { color: theme.text }]}>Сотрудники</Text>
-            <Text style={[styles.sub, { color: theme.textMuted }]}>Добавление, редактирование и привязка к офису</Text>
+            <Text style={[styles.sub, { color: theme.textMuted }]}>
+              Добавление, редактирование и привязка к офису
+            </Text>
           </View>
 
           <Pressable style={[styles.primaryBtn, { backgroundColor: theme.blue }]} onPress={openCreate}>
@@ -291,22 +296,32 @@ export default function AdminStaffScreen() {
 
         <View style={[styles.infoCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Text style={[styles.infoTitle, { color: theme.text }]}>Офисы в системе</Text>
-          <Text style={[styles.infoSub, { color: theme.textMuted }]}>Сейчас доступно {offices.length} офис(ов)</Text>
+          <Text style={[styles.infoSub, { color: theme.textMuted }]}>
+            Сейчас доступно {offices.length} офис(ов)
+          </Text>
         </View>
 
         <View style={[styles.list, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           {filtered.length === 0 ? (
             <Text style={[styles.empty, { color: theme.textMuted }]}>Сотрудники не найдены.</Text>
           ) : (
-            filtered.map((item) => {
+            filtered.map((item, index) => {
               const role = (item.role as StaffRole) || (item.is_superuser ? 'admin' : 'manager');
+              const isLast = index === filtered.length - 1;
 
               return (
                 <Pressable
                   key={String(item.id)}
                   onPress={() => openEdit(item)}
                   onLongPress={() => removeStaff(item)}
-                  style={[styles.row, { borderBottomColor: theme.divider }]}> 
+                  style={[
+                    styles.row,
+                    {
+                      borderBottomColor: theme.divider,
+                      borderBottomWidth: isLast ? 0 : 1,
+                    },
+                  ]}
+                >
                   <View style={{ flex: 1, paddingRight: 12 }}>
                     <Text style={[styles.rowTitle, { color: theme.text }]}>
                       {[item.first_name, item.last_name].filter(Boolean).join(' ') || item.email}
@@ -315,7 +330,8 @@ export default function AdminStaffScreen() {
                       {item.email} · {item.office?.city || 'Офис не выбран'}
                     </Text>
                     <Text style={[styles.rowMeta, { color: theme.textMuted }]}>
-                      Оклад: {money(item.managersalary?.fixed_salary)} · План: {money(item.managersalary?.monthly_plan)}
+                      Оклад: {money(item.managersalary?.fixed_salary)} · План:{' '}
+                      {money(item.managersalary?.monthly_plan)}
                     </Text>
                   </View>
 
@@ -325,14 +341,16 @@ export default function AdminStaffScreen() {
                       {
                         backgroundColor: role === 'admin' ? theme.redSoft : theme.blueSoft,
                       },
-                    ]}>
+                    ]}
+                  >
                     <Text
                       style={[
                         styles.roleText,
                         {
                           color: role === 'admin' ? theme.red : theme.blue,
                         },
-                      ]}>
+                      ]}
+                    >
                       {role === 'admin' ? 'ADMIN' : 'MANAGER'}
                     </Text>
                   </View>
@@ -342,131 +360,182 @@ export default function AdminStaffScreen() {
           )}
         </View>
 
-        <Text style={[styles.tip, { color: theme.textMuted }]}>Нажми на сотрудника, чтобы изменить. Зажми строку, чтобы удалить.</Text>
+        <Text style={[styles.tip, { color: theme.textMuted }]}>
+          Нажми на сотрудника, чтобы изменить. Зажми строку, чтобы удалить.
+        </Text>
       </ScrollView>
 
       <Modal transparent visible={modalOpen} animationType="fade" onRequestClose={closeModal}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeModal} />
+
           <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>
-              {form.id ? 'Редактировать сотрудника' : 'Новый сотрудник'}
-            </Text>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.modalScrollContent}
+            >
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
+                {form.id ? 'Редактировать сотрудника' : 'Новый сотрудник'}
+              </Text>
 
-            <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}> 
-              <TextInput
-                value={form.email}
-                onChangeText={(value) => setForm((prev) => ({ ...prev, email: value }))}
-                placeholder="Email"
-                placeholderTextColor={theme.textMuted}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                style={[styles.input, { color: theme.text }]}
-              />
-            </View>
+              <View
+                style={[
+                  styles.inputWrap,
+                  { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                ]}
+              >
+                <TextInput
+                  value={form.email}
+                  onChangeText={(value) => setForm((prev) => ({ ...prev, email: value }))}
+                  placeholder="Email"
+                  placeholderTextColor={theme.textMuted}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  style={[styles.input, { color: theme.text }]}
+                />
+              </View>
 
-            <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}> 
-              <TextInput
-                value={form.first_name}
-                onChangeText={(value) => setForm((prev) => ({ ...prev, first_name: value }))}
-                placeholder="Имя"
-                placeholderTextColor={theme.textMuted}
-                style={[styles.input, { color: theme.text }]}
-              />
-            </View>
+              <View
+                style={[
+                  styles.inputWrap,
+                  { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                ]}
+              >
+                <TextInput
+                  value={form.first_name}
+                  onChangeText={(value) => setForm((prev) => ({ ...prev, first_name: value }))}
+                  placeholder="Имя"
+                  placeholderTextColor={theme.textMuted}
+                  style={[styles.input, { color: theme.text }]}
+                />
+              </View>
 
-            <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}> 
-              <TextInput
-                value={form.last_name}
-                onChangeText={(value) => setForm((prev) => ({ ...prev, last_name: value }))}
-                placeholder="Фамилия"
-                placeholderTextColor={theme.textMuted}
-                style={[styles.input, { color: theme.text }]}
-              />
-            </View>
+              <View
+                style={[
+                  styles.inputWrap,
+                  { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                ]}
+              >
+                <TextInput
+                  value={form.last_name}
+                  onChangeText={(value) => setForm((prev) => ({ ...prev, last_name: value }))}
+                  placeholder="Фамилия"
+                  placeholderTextColor={theme.textMuted}
+                  style={[styles.input, { color: theme.text }]}
+                />
+              </View>
 
-            <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}> 
-              <TextInput
-                value={form.password}
-                onChangeText={(value) => setForm((prev) => ({ ...prev, password: value }))}
-                placeholder={form.id ? 'Новый пароль (необязательно)' : 'Пароль'}
-                placeholderTextColor={theme.textMuted}
-                secureTextEntry
-                style={[styles.input, { color: theme.text }]}
-              />
-            </View>
+              <View
+                style={[
+                  styles.inputWrap,
+                  { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                ]}
+              >
+                <TextInput
+                  value={form.password}
+                  onChangeText={(value) => setForm((prev) => ({ ...prev, password: value }))}
+                  placeholder={form.id ? 'Новый пароль (необязательно)' : 'Пароль'}
+                  placeholderTextColor={theme.textMuted}
+                  secureTextEntry
+                  style={[styles.input, { color: theme.text }]}
+                />
+              </View>
 
-            <Text style={[styles.modalSection, { color: theme.text }]}>Роль</Text>
-            <View style={styles.roleRow}>
-              {(['manager', 'admin'] as StaffRole[]).map((role) => {
-                const active = form.role === role;
-                return (
-                  <Pressable
-                    key={role}
-                    onPress={() => setForm((prev) => ({ ...prev, role }))}
-                    style={[
-                      styles.roleChip,
-                      {
-                        backgroundColor: active ? theme.blueSoft : theme.backgroundSoft,
-                        borderColor: active ? theme.blue : theme.border,
-                      },
-                    ]}>
-                    <Text style={[styles.roleChipText, { color: active ? theme.blue : theme.text }]}>
-                      {role === 'admin' ? 'Админ' : 'Менеджер'}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <Text style={[styles.modalSection, { color: theme.text }]}>Офис</Text>
-            {offices.length === 0 ? (
-              <Text style={[styles.officeEmpty, { color: theme.textMuted }]}>В системе пока нет офисов.</Text>
-            ) : (
-              <View style={styles.officeWrap}>
-                {offices.map((office) => {
-                  const active = form.office_id === office.id;
-                  const title = office.city || `Офис #${office.id}`;
-                  const subtitle = office.address || 'Адрес не указан';
+              <Text style={[styles.modalSection, { color: theme.text }]}>Роль</Text>
+              <View style={styles.roleRow}>
+                {(['manager', 'admin'] as StaffRole[]).map((role) => {
+                  const active = form.role === role;
 
                   return (
                     <Pressable
-                      key={office.id}
-                      onPress={() => setForm((prev) => ({ ...prev, office_id: office.id }))}
+                      key={role}
+                      onPress={() => setForm((prev) => ({ ...prev, role }))}
                       style={[
-                        styles.officeChip,
+                        styles.roleChip,
                         {
                           backgroundColor: active ? theme.blueSoft : theme.backgroundSoft,
                           borderColor: active ? theme.blue : theme.border,
                         },
-                      ]}>
-                      <Text style={[styles.officeChipTitle, { color: active ? theme.blue : theme.text }]}>{title}</Text>
-                      <Text style={[styles.officeChipSub, { color: theme.textMuted }]} numberOfLines={2}>
-                        {subtitle}
+                      ]}
+                    >
+                      <Text style={[styles.roleChipText, { color: active ? theme.blue : theme.text }]}>
+                        {role === 'admin' ? 'Админ' : 'Менеджер'}
                       </Text>
                     </Pressable>
                   );
                 })}
               </View>
-            )}
 
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={closeModal}
-                style={[styles.modalBtn, { backgroundColor: theme.backgroundSoft }]}>
-                <Text style={[styles.modalBtnText, { color: theme.text }]}>Отмена</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={submit}
-                disabled={saving}
-                style={[styles.modalBtn, { backgroundColor: theme.blue, opacity: saving ? 0.7 : 1 }]}>
-                <Text style={[styles.modalBtnText, { color: '#fff' }]}>
-                  {saving ? 'Сохраняю...' : 'Сохранить'}
+              <Text style={[styles.modalSection, { color: theme.text }]}>Офис</Text>
+              {offices.length === 0 ? (
+                <Text style={[styles.officeEmpty, { color: theme.textMuted }]}>
+                  В системе пока нет офисов.
                 </Text>
-              </Pressable>
-            </View>
+              ) : (
+                <View style={styles.officeWrap}>
+                  {offices.map((office) => {
+                    const active = form.office_id === office.id;
+                    const title = office.city || `Офис #${office.id}`;
+                    const subtitle = office.address || 'Адрес не указан';
+
+                    return (
+                      <Pressable
+                        key={office.id}
+                        onPress={() => setForm((prev) => ({ ...prev, office_id: office.id }))}
+                        style={[
+                          styles.officeChip,
+                          {
+                            backgroundColor: active ? theme.blueSoft : theme.backgroundSoft,
+                            borderColor: active ? theme.blue : theme.border,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.officeChipTitle, { color: active ? theme.blue : theme.text }]}>
+                          {title}
+                        </Text>
+                        <Text
+                          style={[styles.officeChipSub, { color: theme.textMuted }]}
+                          numberOfLines={2}
+                        >
+                          {subtitle}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+
+              <View style={styles.modalActions}>
+                <Pressable
+                  onPress={closeModal}
+                  style={[styles.modalBtn, { backgroundColor: theme.backgroundSoft }]}
+                >
+                  <Text style={[styles.modalBtnText, { color: theme.text }]}>Отмена</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={submit}
+                  disabled={saving}
+                  style={[
+                    styles.modalBtn,
+                    {
+                      backgroundColor: theme.blue,
+                      opacity: saving ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.modalBtnText, { color: '#fff' }]}>
+                    {saving ? 'Сохраняю...' : 'Сохранить'}
+                  </Text>
+                </Pressable>
+              </View>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </ScreenWrapper>
   );
@@ -547,7 +616,6 @@ const styles = StyleSheet.create({
   row: {
     paddingHorizontal: 16,
     paddingVertical: 15,
-    borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -583,13 +651,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(8,18,28,0.35)',
     justifyContent: 'center',
-    padding: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
   },
   modalCard: {
     borderWidth: 1,
     borderRadius: 24,
-    padding: 18,
-    maxHeight: '86%',
+    paddingTop: 18,
+    paddingHorizontal: 18,
+    paddingBottom: 10,
+    maxHeight: '92%',
+  },
+  modalScrollContent: {
+    paddingBottom: 12,
   },
   modalTitle: {
     fontSize: 20,
@@ -658,6 +732,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginTop: 18,
+    marginBottom: 4,
   },
   modalBtn: {
     flex: 1,

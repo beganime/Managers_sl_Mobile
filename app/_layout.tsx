@@ -1,74 +1,71 @@
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { useEffect, useState } from 'react';
-import AnimatedSplash from '../components/AnimatedSplash';
-import { STORAGE_KEYS } from '../src/config/app';
-import { ThemeProvider } from '../src/context/ThemeContext';
-import { getToken } from '../src/utils/storage';
+import { Stack, usePathname, useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 
-function RootNavigator() {
-  const [isReady, setIsReady] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
+import { useCurrentUser } from '../hooks/useCurrentUser';
+import { useTheme } from '../src/context/ThemeContext';
 
-  const segments = useSegments();
+export default function RootLayout() {
   const router = useRouter();
+  const pathname = usePathname();
+  const { theme } = useTheme();
+  const { user, reload } = useCurrentUser();
+
+  const [booting, setBooting] = useState(true);
+
+  const isAuthRoute = useMemo(() => {
+    return pathname === '/login' || pathname === '/';
+  }, [pathname]);
 
   useEffect(() => {
     let mounted = true;
 
-    (async () => {
+    const bootstrap = async () => {
       try {
-        const token = await getToken(STORAGE_KEYS.accessToken);
-        if (!mounted) return;
-        setIsAuthenticated(Boolean(token));
+        await reload();
       } catch (e) {
-        if (!mounted) return;
-        setIsAuthenticated(false);
+        console.log('root layout reload failed', e);
       } finally {
-        if (mounted) setIsReady(true);
+        if (mounted) setBooting(false);
       }
-    })();
+    };
+
+    bootstrap();
 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [reload]);
 
   useEffect(() => {
-    if (!isReady || showSplash) return;
+    if (booting) return;
 
-    const firstSegment = segments[0];
-    const inApp = firstSegment === '(app)';
-    const inLogin = firstSegment === 'login';
+    const isLoggedIn = !!user?.id;
 
-    if (!isAuthenticated && !inLogin) {
-      router.replace('/login');
+    if (isLoggedIn && isAuthRoute) {
+      router.replace('/(app)');
       return;
     }
 
-    if (isAuthenticated && !inApp) {
-      router.replace('/(app)');
+    if (!isLoggedIn && !isAuthRoute) {
+      router.replace('/login');
     }
-  }, [isAuthenticated, isReady, showSplash, segments, router]);
+  }, [booting, user, isAuthRoute, router]);
 
-  if (showSplash) {
-    return <AnimatedSplash onAnimationFinish={() => setShowSplash(false)} />;
+  if (booting) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: theme.background,
+        }}
+      >
+        <ActivityIndicator size="large" color={theme.blue} />
+      </View>
+    );
   }
 
-  if (!isReady) return null;
-
-  return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="login" />
-      <Stack.Screen name="(app)" />
-    </Stack>
-  );
-}
-
-export default function RootLayout() {
-  return (
-    <ThemeProvider>
-      <RootNavigator />
-    </ThemeProvider>
-  );
+  return <Stack screenOptions={{ headerShown: false }} />;
 }

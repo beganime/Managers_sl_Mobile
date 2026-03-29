@@ -154,11 +154,6 @@ function TopCard({
           <Text style={[styles.topPlaceText, { color: accent }]}>#{place}</Text>
         </View>
 
-        {place === 1 ? (
-          <View style={[styles.topLeaderChip, { backgroundColor: theme.redSoft || '#FFE7E7' }]}>
-            <Text style={[styles.topLeaderChipText, { color: theme.red }]}>ЛИДЕР</Text>
-          </View>
-        ) : null}
       </View>
 
       <View style={styles.topAvatarWrap}>

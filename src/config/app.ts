@@ -3,7 +3,7 @@ export const APP_CONFIG = {
   companyName: "Students Life",
   domain: 'https://manager-sl.ru',
   apiBaseUrl: 'https://manager-sl.ru/api/',
-  supportEmail: 'support@manager-sl.ru',
+  supportEmail: 'begenchyagmurow2008@gmail.com',
 };
 
 export const STORAGE_KEYS = {

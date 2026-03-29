@@ -74,7 +74,7 @@ export async function ensureWorkdayRemindersScheduled() {
 
   const morningId = await scheduleDailyReminder(
     'Напоминание',
-    'Не забудьте отметиться о приходе в школе.',
+    'Не забудьте отметиться о приходе на работу.',
     8,
     45
   );

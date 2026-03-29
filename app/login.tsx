@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -31,32 +32,12 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [bootRedirecting, setBootRedirecting] = useState(false);
 
-  // Если пользователь уже есть в памяти — не держим его на логине
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-
-      const redirectIfAuthorized = async () => {
-        if (!user) return;
-
-        try {
-          if (!active) return;
-          setBootRedirecting(true);
-          router.replace('/(app)');
-        } finally {
-          if (active) {
-            setBootRedirecting(false);
-          }
-        }
-      };
-
-      redirectIfAuthorized();
-
-      return () => {
-        active = false;
-      };
+      if (user?.id) {
+        router.replace('/(app)');
+      }
     }, [router, user])
   );
 
@@ -76,8 +57,7 @@ export default function LoginScreen() {
     !!password &&
     !emailError &&
     !passwordError &&
-    !loading &&
-    !bootRedirecting;
+    !loading;
 
   const submit = async () => {
     if (!email.trim() || !password) {
@@ -93,21 +73,13 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await loginRequest(email.trim(), password);
-
-      // Важно: после логина принудительно обновляем current user,
-      // чтобы приложение сразу увидело авторизацию без перезапуска
-      try {
-        await reload();
-      } catch (reloadError) {
-        console.log('reload after login failed', reloadError);
-      }
-
+      await reload();
       router.replace('/(app)');
     } catch (error: any) {
       const message =
         error?.response?.data?.detail ||
         error?.response?.data?.non_field_errors?.[0] ||
-        'Не удалось войти. Если это web-режим, сначала исправь CORS на сервере.';
+        'Не удалось войти.';
       Alert.alert('Ошибка входа', message);
     } finally {
       setLoading(false);
@@ -115,175 +87,320 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: theme.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       <LinearGradient
         colors={theme.gradientMain as [string, string, ...string[]]}
         style={StyleSheet.absoluteFillObject}
       />
 
-      <View style={[styles.orbBlue, { backgroundColor: theme.blue }]} />
-      <View style={[styles.orbRed, { backgroundColor: theme.red }]} />
+      <View
+        style={[
+          styles.topAccent,
+          {
+            borderColor: theme.border,
+            backgroundColor: theme.glassStrong,
+          },
+        ]}
+      >
+        <LinearGradient
+          colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.02)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </View>
 
-      <View style={styles.content}>
-        <ManagerSLBrand />
-
-        <View
-          style={[
-            styles.card,
-            {
-              backgroundColor: theme.glassStrong,
-              borderColor: theme.border,
-              shadowColor: theme.shadow,
-            },
-          ]}
+      <KeyboardAvoidingView
+        style={styles.keyboard}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
         >
-          <Text style={[styles.cardTitle, { color: theme.text }]}>Вход в систему</Text>
-          <Text style={[styles.cardSub, { color: theme.textSecondary }]}>
-            Надёжный доступ для менеджеров и администраторов
-          </Text>
-
-          <View style={styles.form}>
-            <View
-              style={[
-                styles.inputWrap,
-                {
-                  backgroundColor: theme.surface,
-                  borderColor: emailError ? theme.red : theme.border,
-                },
-              ]}
-            >
-              <Text style={[styles.label, { color: theme.textSecondary }]}>Email</Text>
-              <TextInput
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="email-address"
-                placeholder="manager@studentslife.com"
-                placeholderTextColor={theme.textMuted}
-                style={[styles.input, { color: theme.text }]}
-              />
-              {!!emailError && (
-                <Text style={[styles.errorText, { color: theme.red }]}>{emailError}</Text>
-              )}
+          <View style={styles.content}>
+            <View style={styles.brandWrap}>
+              <ManagerSLBrand />
             </View>
 
             <View
               style={[
-                styles.inputWrap,
+                styles.card,
                 {
-                  backgroundColor: theme.surface,
-                  borderColor: passwordError ? theme.red : theme.border,
+                  backgroundColor: theme.glassStrong,
+                  borderColor: theme.border,
+                  shadowColor: theme.shadow,
                 },
               ]}
             >
-              <View style={styles.passwordHead}>
-                <Text style={[styles.label, { color: theme.textSecondary }]}>Пароль</Text>
-                <Pressable onPress={() => setPasswordVisible((v) => !v)}>
-                  <Text style={[styles.toggleText, { color: theme.blue }]}>
-                    {passwordVisible ? 'Скрыть' : 'Показать'}
+              <View style={styles.cardHeader}>
+                <View
+                  style={[
+                    styles.badge,
+                    {
+                      backgroundColor: theme.backgroundSoft,
+                      borderColor: theme.border,
+                    },
+                  ]}
+                >
+                  <View style={[styles.badgeDot, { backgroundColor: theme.blue }]} />
+                  <Text style={[styles.badgeText, { color: theme.textSecondary }]}>
+                    Secure login
                   </Text>
-                </Pressable>
+                </View>
               </View>
 
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!passwordVisible}
-                placeholder="Введите пароль"
-                placeholderTextColor={theme.textMuted}
-                style={[styles.input, { color: theme.text }]}
-              />
-              {!!passwordError && (
-                <Text style={[styles.errorText, { color: theme.red }]}>{passwordError}</Text>
-              )}
-            </View>
+              <Text style={[styles.cardTitle, { color: theme.text }]}>Вход в систему</Text>
+              <Text style={[styles.cardSub, { color: theme.textSecondary }]}>
+                Авторизация для менеджеров и администраторов
+              </Text>
 
-            <Pressable
-              onPress={submit}
-              disabled={!canSubmit}
-              style={({ pressed }) => [
-                styles.buttonShell,
-                { opacity: !canSubmit ? 0.55 : pressed ? 0.9 : 1 },
-              ]}
-            >
-              <LinearGradient
-                colors={['#B71D17', '#D93B2C', '#F05A3C']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.button}
+              <View
+                style={[
+                  styles.heroPanel,
+                  {
+                    backgroundColor: theme.backgroundSoft,
+                    borderColor: theme.border,
+                  },
+                ]}
               >
-                {loading || bootRedirecting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Войти</Text>
-                )}
-              </LinearGradient>
-            </Pressable>
+                <View style={styles.heroRow}>
+                  <View style={[styles.heroIconBox, { backgroundColor: theme.blueSoft }]}>
+                    <Text style={[styles.heroIcon, { color: theme.blue }]}>✦</Text>
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.heroTitle, { color: theme.text }]}>ManagerSL Access</Text>
+                    <Text style={[styles.heroText, { color: theme.textSecondary }]}>
+                      Быстрый вход, аккуратный интерфейс и удобная работа на телефоне
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.form}>
+                <View
+                  style={[
+                    styles.inputWrap,
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: emailError ? theme.red : theme.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.label, { color: theme.textSecondary }]}>Email</Text>
+
+                  <TextInput
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    placeholder="manager@studentslife.com"
+                    placeholderTextColor={theme.textMuted}
+                    style={[styles.input, { color: theme.text }]}
+                    returnKeyType="next"
+                  />
+
+                  {!!emailError && (
+                    <Text style={[styles.errorText, { color: theme.red }]}>{emailError}</Text>
+                  )}
+                </View>
+
+                <View
+                  style={[
+                    styles.inputWrap,
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: passwordError ? theme.red : theme.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.passwordHead}>
+                    <Text style={[styles.label, { color: theme.textSecondary }]}>Пароль</Text>
+
+                    <Pressable
+                      onPress={() => setPasswordVisible((v) => !v)}
+                      style={({ pressed }) => [
+                        styles.togglePill,
+                        {
+                          backgroundColor: theme.backgroundSoft,
+                          borderColor: theme.border,
+                          opacity: pressed ? 0.85 : 1,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.toggleText, { color: theme.blue }]}>
+                        {passwordVisible ? 'Скрыть' : 'Показать'}
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  <TextInput
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!passwordVisible}
+                    placeholder="Введите пароль"
+                    placeholderTextColor={theme.textMuted}
+                    style={[styles.input, { color: theme.text }]}
+                    returnKeyType="done"
+                    onSubmitEditing={submit}
+                  />
+
+                  {!!passwordError && (
+                    <Text style={[styles.errorText, { color: theme.red }]}>{passwordError}</Text>
+                  )}
+                </View>
+
+                <Pressable
+                  onPress={submit}
+                  disabled={!canSubmit}
+                  style={({ pressed }) => [
+                    styles.buttonShell,
+                    {
+                      opacity: !canSubmit ? 0.55 : pressed ? 0.94 : 1,
+                      transform: [{ scale: pressed ? 0.995 : 1 }],
+                    },
+                  ]}
+                >
+                  <LinearGradient
+                    colors={['#A71E17', '#CF3527', '#F05A3C']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.button}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.buttonText}>Войти</Text>
+                    )}
+                  </LinearGradient>
+                </Pressable>
+              </View>
+            </View>
           </View>
-        </View>
-      </View>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  orbBlue: {
-    position: 'absolute',
-    width: 320,
-    height: 320,
-    borderRadius: 999,
-    top: 20,
-    right: -120,
-    opacity: 0.08,
+  container: {
+    flex: 1,
   },
-  orbRed: {
+  keyboard: {
+    flex: 1,
+  },
+  topAccent: {
     position: 'absolute',
-    width: 420,
-    height: 420,
-    borderRadius: 999,
-    bottom: -80,
-    left: -140,
-    opacity: 0.08,
+    top: 70,
+    left: 24,
+    right: 24,
+    height: 120,
+    borderRadius: 32,
+    borderWidth: 1,
+    opacity: 0.55,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingVertical: 28,
   },
   content: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 22,
+    paddingHorizontal: 20,
+  },
+  brandWrap: {
+    alignItems: 'center',
+    marginBottom: 18,
   },
   card: {
     borderWidth: 1,
-    borderRadius: 28,
+    borderRadius: 30,
     padding: 22,
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.14,
-    shadowRadius: 28,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.16,
+    shadowRadius: 30,
+    elevation: 12,
+  },
+  cardHeader: {
+    marginBottom: 14,
+  },
+  badge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  badgeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   cardTitle: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '900',
-    letterSpacing: -0.6,
+    letterSpacing: -0.7,
   },
   cardSub: {
-    marginTop: 6,
+    marginTop: 8,
     fontSize: 14,
     fontWeight: '600',
-    lineHeight: 20,
+    lineHeight: 21,
+  },
+  heroPanel: {
+    marginTop: 18,
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 14,
+  },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  heroIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroIcon: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  heroTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  heroText: {
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
   },
   form: {
-    marginTop: 22,
+    marginTop: 20,
     gap: 14,
   },
   inputWrap: {
     borderWidth: 1,
-    borderRadius: 20,
+    borderRadius: 22,
     paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingVertical: 14,
   },
   label: {
     fontSize: 12,
@@ -292,12 +409,21 @@ const styles = StyleSheet.create({
   },
   input: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+    paddingVertical: 2,
   },
   passwordHead: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 8,
+  },
+  togglePill: {
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
   },
   toggleText: {
     fontSize: 12,
@@ -309,20 +435,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   buttonShell: {
-    marginTop: 4,
-    borderRadius: 20,
+    marginTop: 6,
+    borderRadius: 22,
     overflow: 'hidden',
+    shadowColor: '#B71D17',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 22,
+    elevation: 8,
   },
   button: {
-    paddingVertical: 17,
+    paddingVertical: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
+    borderRadius: 22,
   },
   buttonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '900',
-    letterSpacing: 0.2,
+    letterSpacing: 0.25,
   },
 });
