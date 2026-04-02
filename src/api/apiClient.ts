@@ -7,13 +7,17 @@ const apiClient = axios.create({
   baseURL: BASE_URL,
   timeout: 20000,
   headers: {
-    'Content-Type': 'application/json',
+    Accept: 'application/json',
   },
 });
 
 function normalizePath(path: string) {
   if (!path) return '';
   return path.startsWith('/') ? path.slice(1) : path;
+}
+
+function isFormDataPayload(data: any) {
+  return typeof FormData !== 'undefined' && data instanceof FormData;
 }
 
 export function extractList(payload: any): any[] {
@@ -89,9 +93,17 @@ apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
     const token = await getToken('access_token');
 
+    config.headers = config.headers || {};
+
     if (token) {
-      config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    if (isFormDataPayload(config.data)) {
+      delete config.headers['Content-Type'];
+      delete config.headers['content-type'];
+    } else if (!config.headers['Content-Type'] && !config.headers['content-type']) {
+      config.headers['Content-Type'] = 'application/json';
     }
 
     return config;
@@ -109,7 +121,6 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       const requestUrl = originalRequest.url || '';
 
-      // чтобы не уйти в цикл, не рефрешим если уже auth/login или auth/refresh
       if (requestUrl.includes('auth/login/') || requestUrl.includes('auth/refresh/')) {
         await deleteToken('access_token');
         await deleteToken('refresh_token');
@@ -140,6 +151,13 @@ apiClient.interceptors.response.use(
 
         originalRequest.headers = originalRequest.headers || {};
         originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+
+        if (isFormDataPayload(originalRequest.data)) {
+          delete originalRequest.headers['Content-Type'];
+          delete originalRequest.headers['content-type'];
+        } else if (!originalRequest.headers['Content-Type'] && !originalRequest.headers['content-type']) {
+          originalRequest.headers['Content-Type'] = 'application/json';
+        }
 
         return apiClient(originalRequest);
       } catch (refreshError) {

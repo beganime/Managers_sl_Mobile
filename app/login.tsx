@@ -93,23 +93,6 @@ export default function LoginScreen() {
         style={StyleSheet.absoluteFillObject}
       />
 
-      <View
-        style={[
-          styles.topAccent,
-          {
-            borderColor: theme.border,
-            backgroundColor: theme.glassStrong,
-          },
-        ]}
-      >
-        <LinearGradient
-          colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.02)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-        />
-      </View>
-
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -289,22 +272,8 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  keyboard: {
-    flex: 1,
-  },
-  topAccent: {
-    position: 'absolute',
-    top: 70,
-    left: 24,
-    right: 24,
-    height: 120,
-    borderRadius: 32,
-    borderWidth: 1,
-    opacity: 0.55,
-  },
+  container: { flex: 1 },
+  keyboard: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
@@ -438,11 +407,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     borderRadius: 22,
     overflow: 'hidden',
-    shadowColor: '#B71D17',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.2,
-    shadowRadius: 22,
-    elevation: 8,
   },
   button: {
     paddingVertical: 18,

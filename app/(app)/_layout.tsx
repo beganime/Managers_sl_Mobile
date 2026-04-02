@@ -8,8 +8,8 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useTheme } from '../../src/context/ThemeContext';
 import { ensureWorkdayRemindersScheduled } from '../../src/notifications/workdayReminders';
 
-const TAB_HEIGHT = Platform.OS === 'ios' ? 86 : 74;
-const TAB_BOTTOM = Platform.OS === 'ios' ? 18 : 12;
+const TAB_HEIGHT = Platform.OS === 'ios' ? 86 : 72;
+const TAB_BOTTOM = Platform.OS === 'ios' ? 18 : 10;
 
 export default function AppTabsLayout() {
   const { user } = useCurrentUser();
@@ -17,6 +17,7 @@ export default function AppTabsLayout() {
 
   const isAdmin = !!user && (user.is_superuser || user.is_staff || user.role === 'admin');
   const dark = themeMode === 'dark';
+  const useBlur = Platform.OS === 'ios';
 
   useEffect(() => {
     ensureWorkdayRemindersScheduled();
@@ -26,7 +27,12 @@ export default function AppTabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        lazy: true,
+        freezeOnBlur: false,
         tabBarHideOnKeyboard: true,
+        sceneStyle: {
+          backgroundColor: theme.background,
+        },
         tabBarActiveTintColor: dark ? '#FFFFFF' : theme.text,
         tabBarInactiveTintColor: theme.textMuted,
         tabBarLabelPosition: 'below-icon',
@@ -37,40 +43,61 @@ export default function AppTabsLayout() {
           bottom: TAB_BOTTOM,
           height: TAB_HEIGHT,
           borderRadius: 28,
-          backgroundColor: 'transparent',
+          backgroundColor: useBlur
+            ? 'transparent'
+            : dark
+            ? 'rgba(15,23,35,0.98)'
+            : 'rgba(255,255,255,0.98)',
           borderTopWidth: 0,
           elevation: 0,
           shadowColor: theme.shadow,
           shadowOffset: { width: 0, height: 10 },
-          shadowOpacity: dark ? 0.28 : 0.12,
+          shadowOpacity: dark ? 0.22 : 0.1,
           shadowRadius: 20,
-          overflow: 'hidden',
+          borderWidth: useBlur ? 0 : 1,
+          borderColor: useBlur ? 'transparent' : theme.border,
         },
-        tabBarBackground: () => (
-          <View style={StyleSheet.absoluteFillObject}>
-            <BlurView
-              intensity={dark ? 45 : 90}
-              tint={dark ? 'dark' : 'light'}
-              style={StyleSheet.absoluteFillObject}
-            />
+        tabBarBackground: () =>
+          useBlur ? (
+            <View style={StyleSheet.absoluteFillObject}>
+              <BlurView
+                intensity={dark ? 45 : 80}
+                tint={dark ? 'dark' : 'light'}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <View
+                style={[
+                  StyleSheet.absoluteFillObject,
+                  styles.tabShell,
+                  {
+                    backgroundColor: dark ? 'rgba(15,23,35,0.82)' : 'rgba(255,255,255,0.82)',
+                    borderColor: theme.border,
+                  },
+                ]}
+              />
+              <View
+                style={[
+                  styles.topHairline,
+                  {
+                    backgroundColor: dark
+                      ? 'rgba(255,255,255,0.08)'
+                      : 'rgba(255,255,255,0.7)',
+                  },
+                ]}
+              />
+            </View>
+          ) : (
             <View
               style={[
                 StyleSheet.absoluteFillObject,
-                styles.tabShell,
+                styles.androidTabBg,
                 {
-                  backgroundColor: dark ? 'rgba(15,23,35,0.82)' : 'rgba(255,255,255,0.82)',
+                  backgroundColor: dark ? 'rgba(15,23,35,0.98)' : 'rgba(255,255,255,0.98)',
                   borderColor: theme.border,
                 },
               ]}
             />
-            <View
-              style={[
-                styles.topHairline,
-                { backgroundColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.7)' },
-              ]}
-            />
-          </View>
-        ),
+          ),
         tabBarItemStyle: {
           paddingTop: 7,
           paddingBottom: Platform.OS === 'ios' ? 11 : 10,
@@ -185,5 +212,9 @@ const styles = StyleSheet.create({
     top: 0,
     height: 1,
     borderRadius: 999,
+  },
+  androidTabBg: {
+    borderRadius: 28,
+    borderWidth: 1,
   },
 });

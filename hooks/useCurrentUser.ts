@@ -1,34 +1,28 @@
 import { useCallback, useEffect, useState } from 'react';
 import apiClient from '../src/api/apiClient';
-import { getToken, saveToken } from '../src/utils/storage';
+import { clearSession, getToken, saveToken } from '../src/utils/storage';
 
 export interface CurrentUser {
   id: number;
   email: string;
-
   first_name: string;
   last_name: string;
   middle_name?: string | null;
   full_name?: string | null;
-
   role?: 'admin' | 'manager' | string;
   is_superuser: boolean;
   is_staff: boolean;
-
   avatar?: string | null;
   work_status?: string | null;
   is_effective?: boolean;
-
   dob?: string | null;
   social_contacts?: string | null;
   job_description?: string | null;
-
   office?: {
     id: number;
     city?: string | null;
     address?: string | null;
   } | null;
-
   managersalary?: {
     monthly_plan?: number | null;
     current_month_revenue?: number | null;
@@ -44,22 +38,50 @@ export function useCurrentUser() {
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
-    try {
-      const cached = await getToken('cache_my_profile');
+    setLoading(true);
 
-      if (cached) {
+    try {
+      const accessToken = await getToken('access_token');
+      const cachedProfile = await getToken('cache_my_profile');
+
+      if (!accessToken) {
+        setUser(null);
+
+        if (cachedProfile) {
+          await clearSession();
+        }
+
+        return;
+      }
+
+      if (cachedProfile) {
         try {
-          setUser(JSON.parse(cached));
+          setUser(JSON.parse(cachedProfile));
         } catch {
-          // ignore bad cache
+          setUser(null);
         }
       }
 
       const response = await apiClient.get('users/users/me/');
       setUser(response.data);
       await saveToken('cache_my_profile', JSON.stringify(response.data));
-    } catch {
-      // оффлайн — остаёмся на кэше
+    } catch (error: any) {
+      if (error?.response?.status === 401) {
+        await clearSession();
+        setUser(null);
+      } else {
+        const cachedProfile = await getToken('cache_my_profile');
+
+        if (cachedProfile) {
+          try {
+            setUser(JSON.parse(cachedProfile));
+          } catch {
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -69,5 +91,9 @@ export function useCurrentUser() {
     reload();
   }, [reload]);
 
-  return { user, loading, reload };
+  return {
+    user,
+    loading,
+    reload,
+  };
 }

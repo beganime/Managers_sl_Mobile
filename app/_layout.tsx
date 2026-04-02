@@ -3,9 +3,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
 import { useCurrentUser } from '../hooks/useCurrentUser';
-import { useTheme } from '../src/context/ThemeContext';
+import { ThemeProvider, useTheme } from '../src/context/ThemeContext';
 
-export default function RootLayout() {
+function RootNavigator() {
   const router = useRouter();
   const pathname = usePathname();
   const { theme } = useTheme();
@@ -68,4 +68,12 @@ export default function RootLayout() {
   }
 
   return <Stack screenOptions={{ headerShown: false }} />;
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <RootNavigator />
+    </ThemeProvider>
+  );
 }

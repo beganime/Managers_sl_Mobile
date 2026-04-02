@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ResizeMode, Video } from 'expo-av';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
@@ -15,7 +16,6 @@ import {
     TextInput,
     View,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
 
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
@@ -397,6 +397,21 @@ export default function KnowledgeBaseScreen() {
   const copySnippet = async (item: Snippet) => {
     await Clipboard.setStringAsync(stripHtml(item.content));
     Alert.alert('Скопировано', `"${item.title}" скопировано в буфер обмена.`);
+  };
+
+  const openVideoInBrowser = async (video?: VideoItem | null) => {
+    const url = String(video?.youtube_url || '').trim();
+
+    if (!url) {
+      Alert.alert('Видео', 'У этого материала нет ссылки YouTube.');
+      return;
+    }
+
+    try {
+      await WebBrowser.openBrowserAsync(url);
+    } catch {
+      Alert.alert('Ошибка', 'Не удалось открыть видео.');
+    }
   };
 
   const openVideo = (video: VideoItem) => {
@@ -999,19 +1014,17 @@ export default function KnowledgeBaseScreen() {
             )}
 
             {activeVideoMeta ? (
-              <View
-                style={[
-                  activeVideoMeta.isShort ? styles.shortPlayerWrap : styles.widePlayerWrap,
-                  { backgroundColor: '#000' },
-                ]}
-              >
-                <WebView
-                  source={{ uri: activeVideoMeta.embedUrl }}
-                  allowsFullscreenVideo
-                  mediaPlaybackRequiresUserAction={false}
-                  javaScriptEnabled
-                  style={{ flex: 1, backgroundColor: '#000' }}
-                />
+              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.cardText, { color: theme.textSecondary }]}> 
+                  YouTube и Shorts будут открываться через встроенный браузер приложения. Так стабильнее на телефоне и без чёрного экрана.
+                </Text>
+
+                <Pressable
+                  onPress={() => openVideoInBrowser(activeVideo)}
+                  style={[styles.submitBtn, { backgroundColor: theme.blue, marginTop: 14 }]}
+                >
+                  <Text style={styles.submitBtnText}>Открыть видео</Text>
+                </Pressable>
               </View>
             ) : activeVideo?.video_file ? (
               <Video
