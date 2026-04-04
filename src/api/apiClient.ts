@@ -1,13 +1,15 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosError, AxiosRequestConfig } from 'axios';
+
 import { deleteToken, getToken, saveToken } from '../utils/storage';
 
-const BASE_URL = 'https://manager-sl.ru/api/';
+export const BASE_URL = 'https://manager-sl.ru/api/';
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
   timeout: 20000,
   headers: {
     Accept: 'application/json',
+    'Content-Type': 'application/json',
   },
 });
 
@@ -16,8 +18,36 @@ function normalizePath(path: string) {
   return path.startsWith('/') ? path.slice(1) : path;
 }
 
-function isFormDataPayload(data: any) {
+function isFormDataPayload(data: unknown) {
   return typeof FormData !== 'undefined' && data instanceof FormData;
+}
+
+function stripJsonContentType(config: AxiosRequestConfig) {
+  if (!config.headers) return;
+
+  const headers: any = config.headers;
+
+  if (typeof headers.delete === 'function') {
+    headers.delete('Content-Type');
+    headers.delete('content-type');
+    return;
+  }
+
+  delete headers['Content-Type'];
+  delete headers['content-type'];
+}
+
+async function persistUserCacheFromResponse(payload: any) {
+  if (payload && typeof payload === 'object') {
+    if (payload.user) {
+      await saveToken('cache_my_profile', JSON.stringify(payload.user));
+      return;
+    }
+
+    if (payload.id && payload.email) {
+      await saveToken('cache_my_profile', JSON.stringify(payload));
+    }
+  }
 }
 
 export function extractList(payload: any): any[] {
@@ -44,9 +74,7 @@ export async function fetchAllPages(path: string, limit = 100) {
 
     if (typeof data?.next === 'string' && data.next.length > 0) {
       const cleanBase = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
-      nextUrl = data.next.startsWith(cleanBase)
-        ? data.next.replace(cleanBase, '')
-        : data.next;
+      nextUrl = data.next.startsWith(cleanBase) ? data.next.replace(cleanBase, '') : data.next;
     } else {
       nextUrl = null;
     }
@@ -56,21 +84,32 @@ export async function fetchAllPages(path: string, limit = 100) {
 }
 
 export async function loginRequest(email: string, password: string) {
-  const response = await apiClient.post('auth/login/', { email, password });
+  try {
+    const response = await apiClient.post('auth/login/', { email, password });
 
-  if (response.data?.access) {
-    await saveToken('access_token', response.data.access);
+    if (response.data?.access) {
+      await saveToken('access_token', response.data.access);
+    }
+
+    if (response.data?.refresh) {
+      await saveToken('refresh_token', response.data.refresh);
+    }
+
+    await persistUserCacheFromResponse(response.data);
+    return response.data;
+  } catch {
+    const fallback = await apiClient.post('token/', { email, password });
+
+    if (fallback.data?.access) {
+      await saveToken('access_token', fallback.data.access);
+    }
+
+    if (fallback.data?.refresh) {
+      await saveToken('refresh_token', fallback.data.refresh);
+    }
+
+    return fallback.data;
   }
-
-  if (response.data?.refresh) {
-    await saveToken('refresh_token', response.data.refresh);
-  }
-
-  if (response.data?.user) {
-    await saveToken('cache_my_profile', JSON.stringify(response.data.user));
-  }
-
-  return response.data;
 }
 
 export async function logoutRequest() {
@@ -81,7 +120,7 @@ export async function logoutRequest() {
       await apiClient.post('auth/logout/', { refresh });
     }
   } catch {
-    // игнорируем ошибку logout, локально всё равно чистим токены
+    // даже если logout API не ответил, локальную сессию всё равно чистим
   } finally {
     await deleteToken('access_token');
     await deleteToken('refresh_token');
@@ -89,21 +128,64 @@ export async function logoutRequest() {
   }
 }
 
+export async function getMyProfile() {
+  const response = await apiClient.get('users/users/me/');
+  await persistUserCacheFromResponse(response.data);
+  return response.data;
+}
+
+export async function updateMyProfile(payload: Record<string, any>) {
+  const response = await apiClient.patch('users/users/me/', payload);
+  await persistUserCacheFromResponse(response.data);
+  return response.data;
+}
+
+export async function uploadMyAvatar(file: {
+  uri: string;
+  name?: string;
+  type?: string;
+}) {
+  const fd = new FormData();
+
+  fd.append(
+    'avatar',
+    {
+      uri: file.uri,
+      name: file.name || 'avatar.jpg',
+      type: file.type || 'image/jpeg',
+    } as any
+  );
+
+  const response = await apiClient.patch('users/users/me/', fd, {
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+
+  await persistUserCacheFromResponse(response.data);
+  return response.data;
+}
+
+export async function removeMyAvatar() {
+  const response = await apiClient.patch('users/users/me/', {
+    remove_avatar: true,
+  });
+  await persistUserCacheFromResponse(response.data);
+  return response.data;
+}
+
 apiClient.interceptors.request.use(
-  async (config: InternalAxiosRequestConfig) => {
+  async (config) => {
     const token = await getToken('access_token');
 
     config.headers = config.headers || {};
 
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      (config.headers as any).Authorization = `Bearer ${token}`;
     }
 
     if (isFormDataPayload(config.data)) {
-      delete config.headers['Content-Type'];
-      delete config.headers['content-type'];
-    } else if (!config.headers['Content-Type'] && !config.headers['content-type']) {
-      config.headers['Content-Type'] = 'application/json';
+      stripJsonContentType(config);
     }
 
     return config;
@@ -112,22 +194,14 @@ apiClient.interceptors.request.use(
 );
 
 apiClient.interceptors.response.use(
-  (response) => response,
-  async (error: AxiosError) => {
-    const originalRequest = error.config as
-      | (InternalAxiosRequestConfig & { _retry?: boolean })
-      | undefined;
+  async (response) => {
+    await persistUserCacheFromResponse(response.data);
+    return response;
+  },
+  async (error: AxiosError & { config?: any }) => {
+    const originalRequest = error.config;
 
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
-      const requestUrl = originalRequest.url || '';
-
-      if (requestUrl.includes('auth/login/') || requestUrl.includes('auth/refresh/')) {
-        await deleteToken('access_token');
-        await deleteToken('refresh_token');
-        await deleteToken('cache_my_profile');
-        return Promise.reject(error);
-      }
-
+    if (error?.response?.status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
 
       try {
@@ -137,11 +211,18 @@ apiClient.interceptors.response.use(
           throw new Error('No refresh token');
         }
 
-        const refreshResponse = await axios.post(`${BASE_URL}auth/refresh/`, {
-          refresh: refreshToken,
-        });
+        let refreshResponse;
+        try {
+          refreshResponse = await axios.post(`${BASE_URL}auth/refresh/`, {
+            refresh: refreshToken,
+          });
+        } catch {
+          refreshResponse = await axios.post(`${BASE_URL}token/refresh/`, {
+            refresh: refreshToken,
+          });
+        }
 
-        const newAccess = refreshResponse.data?.access;
+        const newAccess = (refreshResponse as any).data?.access;
 
         if (!newAccess) {
           throw new Error('No new access token');
@@ -153,10 +234,13 @@ apiClient.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${newAccess}`;
 
         if (isFormDataPayload(originalRequest.data)) {
-          delete originalRequest.headers['Content-Type'];
-          delete originalRequest.headers['content-type'];
-        } else if (!originalRequest.headers['Content-Type'] && !originalRequest.headers['content-type']) {
-          originalRequest.headers['Content-Type'] = 'application/json';
+          if (typeof originalRequest.headers.delete === 'function') {
+            originalRequest.headers.delete('Content-Type');
+            originalRequest.headers.delete('content-type');
+          } else {
+            delete originalRequest.headers['Content-Type'];
+            delete originalRequest.headers['content-type'];
+          }
         }
 
         return apiClient(originalRequest);

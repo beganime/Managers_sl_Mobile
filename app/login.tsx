@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -26,20 +26,18 @@ function isValidEmail(value: string) {
 export default function LoginScreen() {
   const router = useRouter();
   const { theme } = useTheme();
-  const { user, reload } = useCurrentUser();
+  const { user, hydrated, loading: sessionLoading, reload } = useCurrentUser();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (user?.id) {
-        router.replace('/(app)');
-      }
-    }, [router, user])
-  );
+  useEffect(() => {
+    if (hydrated && user?.id) {
+      router.replace('/(app)');
+    }
+  }, [hydrated, router, user?.id]);
 
   const emailError = useMemo(() => {
     if (!email.trim()) return '';
@@ -53,11 +51,13 @@ export default function LoginScreen() {
   }, [password]);
 
   const canSubmit =
+    hydrated &&
+    !sessionLoading &&
     !!email.trim() &&
     !!password &&
     !emailError &&
     !passwordError &&
-    !loading;
+    !submitting;
 
   const submit = async () => {
     if (!email.trim() || !password) {
@@ -70,19 +70,33 @@ export default function LoginScreen() {
       return;
     }
 
-    setLoading(true);
+    setSubmitting(true);
+
     try {
-      await loginRequest(email.trim(), password);
-      await reload();
+      const normalizedEmail = email.trim().toLowerCase();
+
+      await loginRequest(normalizedEmail, password);
+
+      const freshUser = await reload({ preferCache: true });
+
+      if (!freshUser?.id) {
+        Alert.alert(
+          'Вход выполнен не до конца',
+          'Токен получен, но профиль не загрузился. Повтори вход ещё раз.'
+        );
+        return;
+      }
+
       router.replace('/(app)');
     } catch (error: any) {
       const message =
         error?.response?.data?.detail ||
         error?.response?.data?.non_field_errors?.[0] ||
+        error?.response?.data?.email?.[0] ||
         'Не удалось войти.';
       Alert.alert('Ошибка входа', message);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -137,6 +151,7 @@ export default function LoginScreen() {
               </View>
 
               <Text style={[styles.cardTitle, { color: theme.text }]}>Вход в систему</Text>
+
               <Text style={[styles.cardSub, { color: theme.textSecondary }]}>
                 Авторизация для менеджеров и администраторов
               </Text>
@@ -156,7 +171,9 @@ export default function LoginScreen() {
                   </View>
 
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.heroTitle, { color: theme.text }]}>ManagerSL Access</Text>
+                    <Text style={[styles.heroTitle, { color: theme.text }]}>
+                      ManagerSL Access
+                    </Text>
                     <Text style={[styles.heroText, { color: theme.textSecondary }]}>
                       Быстрый вход, аккуратный интерфейс и удобная работа на телефоне
                     </Text>
@@ -186,6 +203,7 @@ export default function LoginScreen() {
                     placeholderTextColor={theme.textMuted}
                     style={[styles.input, { color: theme.text }]}
                     returnKeyType="next"
+                    editable={!submitting}
                   />
 
                   {!!emailError && (
@@ -231,10 +249,13 @@ export default function LoginScreen() {
                     style={[styles.input, { color: theme.text }]}
                     returnKeyType="done"
                     onSubmitEditing={submit}
+                    editable={!submitting}
                   />
 
                   {!!passwordError && (
-                    <Text style={[styles.errorText, { color: theme.red }]}>{passwordError}</Text>
+                    <Text style={[styles.errorText, { color: theme.red }]}>
+                      {passwordError}
+                    </Text>
                   )}
                 </View>
 
@@ -255,7 +276,7 @@ export default function LoginScreen() {
                     end={{ x: 1, y: 1 }}
                     style={styles.button}
                   >
-                    {loading ? (
+                    {submitting ? (
                       <ActivityIndicator color="#fff" />
                     ) : (
                       <Text style={styles.buttonText}>Войти</Text>

@@ -1,12 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,212 +17,156 @@ import {
 
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
-import apiClient from '../../src/api/apiClient';
+import {
+  logoutRequest,
+  removeMyAvatar,
+  updateMyProfile,
+  uploadMyAvatar,
+} from '../../src/api/apiClient';
 import { preloadAppData } from '../../src/bootstrap/preloadAppData';
 import { useTheme } from '../../src/context/ThemeContext';
-import { clearSession } from '../../src/utils/storage';
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
 
 function fullNameOf(user: any) {
   return (
     user?.full_name ||
-    [user?.first_name, user?.last_name].filter(Boolean).join(' ') ||
+    [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim() ||
     user?.email ||
-    'Пользователь'
+    'Профиль'
   );
 }
 
 function initialsOf(user: any) {
   const full = fullNameOf(user);
-  return full
-    .split(' ')
-    .slice(0, 2)
-    .map((x: string) => x[0]?.toUpperCase())
-    .join('');
+  const parts = String(full).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'U';
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return `${parts[0].slice(0, 1)}${parts[1].slice(0, 1)}`.toUpperCase();
 }
 
-function flattenError(data: any): string {
-  if (!data) return 'Не удалось обновить профиль.';
-  if (typeof data === 'string') return data;
-  if (Array.isArray(data)) return data.map(String).join('\n');
-  if (typeof data === 'object') {
-    return Object.entries(data)
-      .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
-      .join('\n');
+function flattenError(payload: any): string {
+  if (!payload) return 'Неизвестная ошибка';
+
+  if (typeof payload === 'string') return payload;
+  if (Array.isArray(payload)) return payload.map(flattenError).join('\n');
+
+  if (typeof payload === 'object') {
+    if (typeof payload.detail === 'string') return payload.detail;
+
+    const chunks: string[] = [];
+    Object.entries(payload).forEach(([key, value]) => {
+      const text = flattenError(value);
+      if (text) chunks.push(`${key}: ${text}`);
+    });
+
+    return chunks.join('\n') || 'Ошибка запроса';
   }
-  return 'Не удалось обновить профиль.';
+
+  return 'Ошибка запроса';
 }
 
-function extFromMime(mime?: string | null) {
-  if (!mime) return 'jpg';
-  if (mime.includes('png')) return 'png';
-  if (mime.includes('webp')) return 'webp';
-  if (mime.includes('heic')) return 'heic';
-  if (mime.includes('heif')) return 'heif';
-  return 'jpg';
+function filenameFromAsset(asset: ImagePicker.ImagePickerAsset) {
+  const direct = asset.fileName?.trim();
+  if (direct) return direct;
+
+  const raw = asset.uri.split('/').pop() || 'avatar.jpg';
+  return raw.includes('.') ? raw : `${raw}.jpg`;
 }
 
-function filenameFromAsset(asset: any) {
-  if (asset?.fileName) return asset.fileName;
+function mimeFromAsset(asset: ImagePicker.ImagePickerAsset) {
+  if (asset.mimeType) return asset.mimeType;
 
-  const uri = String(asset?.uri || '');
-  const lastPart = uri.split('/').pop() || '';
-  if (lastPart && lastPart.includes('.')) return lastPart;
+  const lower = asset.uri.toLowerCase();
 
-  const ext = extFromMime(asset?.mimeType);
-  return `avatar_${Date.now()}.${ext}`;
-}
-
-function mimeFromAsset(asset: any) {
-  if (asset?.mimeType) return asset.mimeType;
-
-  const fileName = String(asset?.fileName || '').toLowerCase();
-  const uri = String(asset?.uri || '').toLowerCase();
-  const source = `${fileName} ${uri}`;
-
-  if (source.includes('.png')) return 'image/png';
-  if (source.includes('.webp')) return 'image/webp';
-  if (source.includes('.heic')) return 'image/heic';
-  if (source.includes('.heif')) return 'image/heif';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.heic')) return 'image/heic';
   return 'image/jpeg';
 }
 
-// ─── quick nav items ───────────────────────────────────────────────────────────
-
-type NavItem = {
-  label: string;
-  route: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
-  adminOnly?: boolean;
-};
-
-const NAV_ITEMS: NavItem[] = [
-  { label: 'Учет времени', route: '/(app)/workday', icon: 'time-outline', color: '#3B82F6' },
-  { label: 'Задачи', route: '/(app)/tasks', icon: 'checkmark-circle-outline', color: '#10B981' },
-  { label: 'База знаний', route: '/(app)/knowledge-base', icon: 'library-outline', color: '#8B5CF6' },
-  { label: 'CRM', route: '/(app)/crm', icon: 'people-outline', color: '#F59E0B' },
-  { label: 'Каталог вузов', route: '/(app)/catalog', icon: 'school-outline', color: '#06B6D4' },
-  { label: 'Команда', route: '/(app)/admin-staff', icon: 'business-outline', color: '#EF4444', adminOnly: true },
-  { label: 'Платежи', route: '/(app)/admin-payments', icon: 'card-outline', color: '#F97316', adminOnly: true },
-  { label: 'Документы', route: '/(app)/documents', icon: 'document-text-outline', color: '#6366F1', adminOnly: true },
-  { label: 'Отчёты', route: '/(app)/admin-reports', icon: 'bar-chart-outline', color: '#14B8A6', adminOnly: true },
-];
-
-// ─── sub-components ────────────────────────────────────────────────────────────
-
-function SectionTitle({ label, theme }: { label: string; theme: any }) {
-  return (
-    <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{label}</Text>
-  );
-}
-
-function Field({
-  label,
+function StatCard({
+  title,
   value,
-  onChange,
-  placeholder,
-  multiline = false,
-  keyboardType = 'default' as any,
-  secure = false,
+  hint,
   theme,
+  accent = false,
 }: {
-  label: string;
+  title: string;
   value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  multiline?: boolean;
-  keyboardType?: any;
-  secure?: boolean;
+  hint?: string;
   theme: any;
-}) {
-  return (
-    <View style={styles.fieldWrap}>
-      <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>{label}</Text>
-      <View
-        style={[
-          styles.fieldInput,
-          {
-            backgroundColor: theme.backgroundSoft,
-            borderColor: theme.border,
-            minHeight: multiline ? 96 : 52,
-          },
-        ]}
-      >
-        <TextInput
-          value={value}
-          onChangeText={onChange}
-          placeholder={placeholder || label}
-          placeholderTextColor={theme.textMuted}
-          multiline={multiline}
-          keyboardType={keyboardType}
-          secureTextEntry={secure}
-          style={[
-            styles.fieldText,
-            {
-              color: theme.text,
-              minHeight: multiline ? 72 : 24,
-              textAlignVertical: multiline ? 'top' : 'center',
-            },
-          ]}
-        />
-      </View>
-    </View>
-  );
-}
-
-function StatRow({
-  icon,
-  label,
-  value,
-  color,
-  theme,
-  last = false,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: string;
-  color: string;
-  theme: any;
-  last?: boolean;
+  accent?: boolean;
 }) {
   return (
     <View
       style={[
-        styles.statRow,
-        !last && { borderBottomWidth: 1, borderBottomColor: theme.divider },
+        styles.statCard,
+        {
+          backgroundColor: accent ? theme.blueSoft : theme.card,
+          borderColor: theme.border,
+          shadowColor: theme.shadow,
+        },
       ]}
     >
-      <View style={[styles.statIconWrap, { backgroundColor: color + '1A' }]}>
-        <Ionicons name={icon} size={18} color={color} />
-      </View>
-      <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{label}</Text>
+      <Text style={[styles.statTitle, { color: theme.textSecondary }]}>{title}</Text>
       <Text style={[styles.statValue, { color: theme.text }]}>{value}</Text>
+      {!!hint && <Text style={[styles.statHint, { color: theme.textMuted }]}>{hint}</Text>}
     </View>
   );
 }
 
-// ─── main screen ───────────────────────────────────────────────────────────────
+function ProfileField({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  theme,
+  multiline = false,
+  keyboardType,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder?: string;
+  theme: any;
+  multiline?: boolean;
+  keyboardType?: 'default' | 'email-address' | 'numeric';
+}) {
+  return (
+    <View
+      style={[
+        styles.fieldWrap,
+        {
+          backgroundColor: theme.card,
+          borderColor: theme.border,
+        },
+      ]}
+    >
+      <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>{label}</Text>
+
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={theme.textMuted}
+        style={[
+          styles.fieldInput,
+          {
+            color: theme.text,
+            minHeight: multiline ? 96 : 24,
+            textAlignVertical: multiline ? 'top' : 'center',
+          },
+        ]}
+        multiline={multiline}
+        keyboardType={keyboardType}
+      />
+    </View>
+  );
+}
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { theme, themeMode, setTheme } = useTheme();
   const { user, reload } = useCurrentUser();
-
-  const isAdmin = useMemo(
-    () => Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin'),
-    [user],
-  );
-
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
-  }, []);
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -231,26 +174,47 @@ export default function ProfileScreen() {
   const [dob, setDob] = useState('');
   const [socialContacts, setSocialContacts] = useState('');
   const [jobDescription, setJobDescription] = useState('');
-  const [avatarAsset, setAvatarAsset] = useState<any>(null);
+
+  const [avatarAsset, setAvatarAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [removeAvatarPending, setRemoveAvatarPending] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
+  const isAdmin = useMemo(
+    () => Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin'),
+    [user]
+  );
+
   useEffect(() => {
-    if (!user) return;
-    setFirstName(user.first_name || '');
-    setLastName(user.last_name || '');
-    setMiddleName((user as any).middle_name || '');
-    setDob(user.dob || '');
-    setSocialContacts((user as any).social_contacts || '');
-    setJobDescription((user as any).job_description || '');
+    setFirstName(user?.first_name || '');
+    setLastName(user?.last_name || '');
+    setMiddleName((user as any)?.middle_name || '');
+    setDob(user?.dob || '');
+    setSocialContacts((user as any)?.social_contacts || '');
+    setJobDescription((user as any)?.job_description || '');
   }, [user]);
 
+  const sal = user?.managersalary;
+  const fixed = Number(sal?.fixed_salary || 0);
+  const balance = Number(sal?.current_balance || 0);
+  const plan = Number(sal?.monthly_plan || 0);
+  const revenue = Number(sal?.current_month_revenue || 0);
+  const progress = plan > 0 ? Math.min(Math.round((revenue / plan) * 100), 100) : 0;
+
+  const avatarUri =
+    avatarAsset?.uri ||
+    (removeAvatarPending ? null : (user as any)?.avatar_url || (user as any)?.avatar || null);
+
+  const managedOffice = (user as any)?.access_profile?.managed_office;
+  const canViewOfficeDashboard = Boolean((user as any)?.access_profile?.can_view_office_dashboard);
+
   const handlePickAvatar = async () => {
-    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!granted) {
-      Alert.alert('Нет доступа', 'Разреши доступ к галерее.');
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert('Нет доступа', 'Разреши приложению доступ к галерее.');
       return;
     }
 
@@ -258,25 +222,37 @@ export default function ProfileScreen() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.9,
+      quality: 0.85,
+      selectionLimit: 1,
     });
 
-    if (!result.canceled && result.assets?.[0]) {
-      const picked = result.assets[0];
+    if (result.canceled || !result.assets?.length) return;
 
-      if (!picked.uri) {
-        Alert.alert('Ошибка', 'Не удалось прочитать выбранный файл.');
-        return;
-      }
+    setAvatarAsset(result.assets[0]);
+    setRemoveAvatarPending(false);
+  };
 
-      setAvatarAsset(picked);
-    }
+  const handleRemoveAvatar = async () => {
+    if (!avatarUri) return;
+
+    Alert.alert('Удалить фото?', 'Аватар будет убран из профиля.', [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Удалить',
+        style: 'destructive',
+        onPress: () => {
+          setAvatarAsset(null);
+          setRemoveAvatarPending(true);
+        },
+      },
+    ]);
   };
 
   const handleSave = async () => {
     setSaving(true);
+
     try {
-      await apiClient.patch('users/users/me/', {
+      await updateMyProfile({
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         middle_name: middleName.trim(),
@@ -285,29 +261,25 @@ export default function ProfileScreen() {
         dob: dob.trim() || null,
       });
 
-      if (avatarAsset?.uri) {
-        const fd = new FormData();
-
-        const fileName = filenameFromAsset(avatarAsset);
-        const mimeType = mimeFromAsset(avatarAsset);
-
-        fd.append('avatar', {
-          uri: avatarAsset.uri,
-          type: mimeType,
-          name: fileName,
-        } as any);
-
-        // ВАЖНО:
-        // не задаём Content-Type вручную,
-        // чтобы axios/react-native сам поставил multipart boundary
-        await apiClient.patch('users/users/me/', fd);
+      if (removeAvatarPending) {
+        await removeMyAvatar();
       }
 
-      await reload();
+      if (avatarAsset?.uri) {
+        await uploadMyAvatar({
+          uri: avatarAsset.uri,
+          name: filenameFromAsset(avatarAsset),
+          type: mimeFromAsset(avatarAsset),
+        });
+      }
+
+      await reload({ preferCache: true, silent: true });
       setAvatarAsset(null);
+      setRemoveAvatarPending(false);
+
       Alert.alert('Готово', 'Профиль успешно обновлён.');
     } catch (err: any) {
-      Alert.alert('Ошибка', flattenError(err?.response?.data));
+      Alert.alert('Ошибка', flattenError(err?.response?.data || err?.message));
     } finally {
       setSaving(false);
     }
@@ -315,9 +287,10 @@ export default function ProfileScreen() {
 
   const handleSync = async () => {
     setSyncing(true);
+
     try {
       await preloadAppData();
-      await reload();
+      await reload({ preferCache: true, silent: true });
       Alert.alert('Готово', 'Кэш приложения обновлён.');
     } catch {
       Alert.alert('Ошибка', 'Не удалось обновить кэш.');
@@ -335,14 +308,7 @@ export default function ProfileScreen() {
         onPress: async () => {
           setLoggingOut(true);
           try {
-            try {
-              const { getToken } = await import('../../src/utils/storage');
-              const refresh = await getToken('refresh_token');
-              if (refresh) {
-                await apiClient.post('auth/logout/', { refresh });
-              }
-            } catch {}
-            await clearSession();
+            await logoutRequest();
           } finally {
             setLoggingOut(false);
             router.replace('/login');
@@ -352,493 +318,563 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const navItems = useMemo(
-    () => NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin),
-    [isAdmin],
-  );
-
-  const avatarUri = avatarAsset?.uri || (user as any)?.avatar || null;
-
-  const sal = user?.managersalary;
-  const fixed = Number(sal?.fixed_salary || 0);
-  const balance = Number(sal?.current_balance || 0);
-  const plan = Number(sal?.monthly_plan || 0);
-  const revenue = Number(sal?.current_month_revenue || 0);
-  const progress = plan > 0 ? Math.min(Math.round((revenue / plan) * 100), 100) : 0;
+  if (!user) {
+    return (
+      <ScreenWrapper>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={theme.blue} />
+        </View>
+      </ScreenWrapper>
+    );
+  }
 
   return (
     <ScreenWrapper>
-      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View
+          style={[
+            styles.hero,
+            {
+              backgroundColor: theme.card,
+              borderColor: theme.border,
+              shadowColor: theme.shadow,
+            },
+          ]}
         >
-          <View style={[styles.hero, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Pressable onPress={handlePickAvatar} style={styles.avatarOuter}>
-              <View style={[styles.avatarRing, { borderColor: theme.blue + '40' }]}>
-                {avatarUri ? (
-                  <Image
-                    source={{ uri: avatarUri }}
-                    style={styles.avatarImage}
-                    contentFit="cover"
-                  />
-                ) : (
-                  <View style={[styles.avatarFallback, { backgroundColor: theme.blue }]}>
-                    <Text style={styles.avatarInitials}>{initialsOf(user)}</Text>
-                  </View>
-                )}
-              </View>
-              <View style={[styles.cameraBtn, { backgroundColor: theme.blue }]}>
-                <Ionicons name="camera" size={13} color="#fff" />
-              </View>
-            </Pressable>
+          <Pressable onPress={handlePickAvatar} style={styles.avatarOuter}>
+            <View style={[styles.avatarRing, { borderColor: `${theme.blue}35` }]}>
+              {avatarUri ? (
+                <Image source={{ uri: avatarUri }} style={styles.avatarImage} resizeMode="cover" />
+              ) : (
+                <View style={[styles.avatarFallback, { backgroundColor: theme.blue }]}>
+                  <Text style={styles.avatarInitials}>{initialsOf(user)}</Text>
+                </View>
+              )}
+            </View>
 
-            {avatarAsset && (
-              <View style={[styles.avatarHint, { backgroundColor: theme.blueSoft }]}>
-                <Ionicons name="checkmark-circle" size={14} color={theme.blue} />
-                <Text style={[styles.avatarHintText, { color: theme.blue }]}>
-                  Новое фото выбрано — сохраните профиль
+            <View style={[styles.cameraBtn, { backgroundColor: theme.blue }]}>
+              <Ionicons name="camera" size={16} color="#fff" />
+            </View>
+          </Pressable>
+
+          <Text style={[styles.heroName, { color: theme.text }]}>{fullNameOf(user)}</Text>
+          <Text style={[styles.heroEmail, { color: theme.textSecondary }]}>{user.email}</Text>
+
+          <View style={styles.roleRow}>
+            <View
+              style={[
+                styles.roleBadge,
+                {
+                  backgroundColor: theme.backgroundSoft,
+                  borderColor: theme.border,
+                },
+              ]}
+            >
+              <Ionicons
+                name={isAdmin ? 'shield-checkmark-outline' : 'person-outline'}
+                size={14}
+                color={theme.blue}
+              />
+              <Text style={[styles.roleBadgeText, { color: theme.text }]}>
+                {isAdmin ? 'Администратор' : 'Менеджер'}
+              </Text>
+            </View>
+
+            {!!user?.office?.city && (
+              <View
+                style={[
+                  styles.roleBadge,
+                  {
+                    backgroundColor: theme.backgroundSoft,
+                    borderColor: theme.border,
+                  },
+                ]}
+              >
+                <Ionicons name="business-outline" size={14} color={theme.blue} />
+                <Text style={[styles.roleBadgeText, { color: theme.text }]}>
+                  {user.office.city}
                 </Text>
               </View>
             )}
-
-            <Text style={[styles.heroName, { color: theme.text }]}>{fullNameOf(user)}</Text>
-            <Text style={[styles.heroEmail, { color: theme.textSecondary }]}>{user?.email}</Text>
-
-            <View style={styles.heroBadges}>
-              <View
-                style={[
-                  styles.badge,
-                  { backgroundColor: isAdmin ? theme.redSoft : theme.blueSoft },
-                ]}
-              >
-                <Ionicons
-                  name={isAdmin ? 'shield-checkmark' : 'person'}
-                  size={12}
-                  color={isAdmin ? theme.red : theme.blue}
-                />
-                <Text style={[styles.badgeText, { color: isAdmin ? theme.red : theme.blue }]}>
-                  {isAdmin ? 'Администратор' : 'Менеджер'}
-                </Text>
-              </View>
-
-              {user?.office?.city ? (
-                <View style={[styles.badge, { backgroundColor: theme.backgroundSoft }]}>
-                  <Ionicons name="location-outline" size={12} color={theme.textSecondary} />
-                  <Text style={[styles.badgeText, { color: theme.textSecondary }]}>
-                    {user.office.city}
-                  </Text>
-                </View>
-              ) : null}
-
-              {(user as any)?.work_status ? (
-                <View style={[styles.badge, { backgroundColor: theme.backgroundSoft }]}>
-                  <View
-                    style={[
-                      styles.statusDot,
-                      {
-                        backgroundColor:
-                          (user as any).work_status === 'working' ? theme.success : theme.warning,
-                      },
-                    ]}
-                  />
-                  <Text style={[styles.badgeText, { color: theme.textSecondary }]}>
-                    {(user as any).work_status === 'working'
-                      ? 'Работаю'
-                      : (user as any).work_status === 'vacation'
-                      ? 'Отпуск'
-                      : 'Больничный'}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
           </View>
 
-          <SectionTitle label="Финансы и план" theme={theme} />
-          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <View style={styles.planRow}>
-              <Text style={[styles.planLabel, { color: theme.text }]}>Выполнение плана</Text>
-              <Text style={[styles.planPercent, { color: theme.blue }]}>{progress}%</Text>
+          <View style={styles.avatarActions}>
+            <Pressable
+              onPress={handlePickAvatar}
+              style={[
+                styles.secondaryBtn,
+                {
+                  backgroundColor: theme.backgroundSoft,
+                  borderColor: theme.border,
+                },
+              ]}
+            >
+              <Ionicons name="image-outline" size={16} color={theme.blue} />
+              <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Выбрать фото</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={handleRemoveAvatar}
+              style={[
+                styles.secondaryBtn,
+                {
+                  backgroundColor: theme.backgroundSoft,
+                  borderColor: theme.border,
+                  opacity: avatarUri ? 1 : 0.55,
+                },
+              ]}
+              disabled={!avatarUri}
+            >
+              <Ionicons name="trash-outline" size={16} color={theme.red} />
+              <Text style={[styles.secondaryBtnText, { color: theme.red }]}>Убрать</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.statsGrid}>
+          <StatCard
+            title="Баланс"
+            value={`$${balance.toLocaleString('ru-RU')}`}
+            hint="Текущий баланс"
+            theme={theme}
+            accent
+          />
+          <StatCard
+            title="Фикс"
+            value={`$${fixed.toLocaleString('ru-RU')}`}
+            hint="Фиксированная часть"
+            theme={theme}
+          />
+          <StatCard
+            title="План"
+            value={`$${plan.toLocaleString('ru-RU')}`}
+            hint="План на месяц"
+            theme={theme}
+          />
+          <StatCard
+            title="Выручка"
+            value={`$${revenue.toLocaleString('ru-RU')}`}
+            hint={`Выполнение ${progress}%`}
+            theme={theme}
+          />
+        </View>
+
+        {(managedOffice || canViewOfficeDashboard) && (
+          <View
+            style={[
+              styles.officeCard,
+              {
+                backgroundColor: theme.card,
+                borderColor: theme.border,
+                shadowColor: theme.shadow,
+              },
+            ]}
+          >
+            <View style={styles.sectionHead}>
+              <View style={[styles.sectionIcon, { backgroundColor: theme.blueSoft }]}>
+                <Ionicons name="analytics-outline" size={18} color={theme.blue} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Офисный доступ</Text>
+                <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
+                  Спец-доступ менеджера
+                </Text>
+              </View>
             </View>
-            <View style={[styles.progressBg, { backgroundColor: theme.backgroundSoft }]}>
-              <View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: `${progress}%` as any,
-                    backgroundColor: progress >= 100 ? theme.success : theme.blue,
-                  },
-                ]}
-              />
-            </View>
-            <Text style={[styles.planSub, { color: theme.textSecondary }]}>
-              ${revenue.toLocaleString('ru-RU')} из ${plan.toLocaleString('ru-RU')}
+
+            <Text style={[styles.officeLine, { color: theme.textSecondary }]}>
+              Видеть баланс офиса: {canViewOfficeDashboard ? 'Да' : 'Нет'}
             </Text>
 
-            <View style={[styles.divider, { backgroundColor: theme.divider }]} />
+            {!!managedOffice?.city && (
+              <Text style={[styles.officeLine, { color: theme.textSecondary }]}>
+                Назначенный офис: {managedOffice.city}
+              </Text>
+            )}
 
-            <StatRow
-              icon="cash-outline"
-              label="Фиксированный оклад"
-              value={`$${fixed.toLocaleString('ru-RU')}`}
-              color="#10B981"
-              theme={theme}
-            />
-            <StatRow
-              icon="gift-outline"
-              label="Бонусный баланс"
-              value={`$${balance.toLocaleString('ru-RU')}`}
-              color="#F59E0B"
-              theme={theme}
-            />
-            <StatRow
-              icon="trending-up-outline"
-              label="Выручка за месяц"
-              value={`$${revenue.toLocaleString('ru-RU')}`}
-              color="#3B82F6"
-              theme={theme}
-            />
-            <StatRow
-              icon="trophy-outline"
-              label="План месяца"
-              value={`$${plan.toLocaleString('ru-RU')}`}
-              color="#8B5CF6"
-              theme={theme}
-              last
-            />
+            {!!managedOffice?.address && (
+              <Text style={[styles.officeLine, { color: theme.textSecondary }]}>
+                Адрес: {managedOffice.address}
+              </Text>
+            )}
+          </View>
+        )}
+
+        <ProfileField
+          label="Имя"
+          value={firstName}
+          onChangeText={setFirstName}
+          placeholder="Введите имя"
+          theme={theme}
+        />
+
+        <ProfileField
+          label="Фамилия"
+          value={lastName}
+          onChangeText={setLastName}
+          placeholder="Введите фамилию"
+          theme={theme}
+        />
+
+        <ProfileField
+          label="Отчество"
+          value={middleName}
+          onChangeText={setMiddleName}
+          placeholder="Введите отчество"
+          theme={theme}
+        />
+
+        <ProfileField
+          label="Дата рождения"
+          value={dob}
+          onChangeText={setDob}
+          placeholder="YYYY-MM-DD"
+          theme={theme}
+        />
+
+        <ProfileField
+          label="Контакты"
+          value={socialContacts}
+          onChangeText={setSocialContacts}
+          placeholder="@telegram / телефон / instagram"
+          theme={theme}
+          multiline
+        />
+
+        <ProfileField
+          label="Описание / должность"
+          value={jobDescription}
+          onChangeText={setJobDescription}
+          placeholder="Чем занимается сотрудник"
+          theme={theme}
+          multiline
+        />
+
+        <View
+          style={[
+            styles.themeCard,
+            {
+              backgroundColor: theme.card,
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          <View>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Тёмная тема</Text>
+            <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
+              Переключение внешнего вида приложения
+            </Text>
           </View>
 
-          <SectionTitle label="Быстрая навигация" theme={theme} />
-          <View style={[styles.navGrid, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            {navItems.map((item, index) => {
-              const isLast = index === navItems.length - 1;
-              const isLastRow = navItems.length % 2 !== 0 && index === navItems.length - 1;
-              return (
-                <Pressable
-                  key={item.route}
-                  onPress={() => router.push(item.route as any)}
-                  style={({ pressed }) => [
-                    styles.navItem,
-                    {
-                      borderBottomColor: theme.divider,
-                      borderRightColor: theme.divider,
-                      borderBottomWidth: isLast || (navItems.length % 2 === 0 && index >= navItems.length - 2) ? 0 : 1,
-                      borderRightWidth: index % 2 === 0 && !isLastRow ? 1 : 0,
-                      opacity: pressed ? 0.7 : 1,
-                      width: isLastRow ? '100%' : '50%',
-                    },
-                  ]}
-                >
-                  <View style={[styles.navIconWrap, { backgroundColor: item.color + '18' }]}>
-                    <Ionicons name={item.icon} size={20} color={item.color} />
-                  </View>
-                  <Text style={[styles.navLabel, { color: theme.text }]}>{item.label}</Text>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={14}
-                    color={theme.textMuted}
-                    style={{ marginTop: 2 }}
-                  />
-                </Pressable>
-              );
-            })}
-          </View>
+          <Switch
+            value={themeMode === 'dark'}
+            onValueChange={(value) => setTheme(value ? 'dark' : 'light')}
+          />
+        </View>
 
-          <SectionTitle label="Редактирование профиля" theme={theme} />
-          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Field label="Имя" value={firstName} onChange={setFirstName} theme={theme} />
-            <Field label="Фамилия" value={lastName} onChange={setLastName} theme={theme} />
-            <Field label="Отчество" value={middleName} onChange={setMiddleName} theme={theme} />
-            <Field
-              label="Дата рождения"
-              value={dob}
-              onChange={setDob}
-              placeholder="YYYY-MM-DD"
-              keyboardType="numbers-and-punctuation"
-              theme={theme}
-            />
-            <Field
-              label="Контакты (Telegram / WhatsApp)"
-              value={socialContacts}
-              onChange={setSocialContacts}
-              placeholder="@username или номер"
-              theme={theme}
-            />
-            <Field
-              label="Описание должности"
-              value={jobDescription}
-              onChange={setJobDescription}
-              placeholder="Чем занимаетесь"
-              multiline
-              theme={theme}
-            />
+        <Pressable
+          onPress={handleSave}
+          disabled={saving}
+          style={[
+            styles.primaryBtn,
+            {
+              backgroundColor: theme.blue,
+              opacity: saving ? 0.7 : 1,
+            },
+          ]}
+        >
+          {saving ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="save-outline" size={18} color="#fff" />
+              <Text style={styles.primaryBtnText}>Сохранить профиль</Text>
+            </>
+          )}
+        </Pressable>
 
-            <Pressable
-              onPress={handleSave}
-              disabled={saving}
-              style={[styles.saveBtn, { backgroundColor: theme.blue, opacity: saving ? 0.7 : 1 }]}
-            >
-              {saving ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-                  <Text style={styles.saveBtnText}>Сохранить изменения</Text>
-                </>
-              )}
-            </Pressable>
-          </View>
+        <Pressable
+          onPress={handleSync}
+          disabled={syncing}
+          style={[
+            styles.secondaryLargeBtn,
+            {
+              backgroundColor: theme.backgroundSoft,
+              borderColor: theme.border,
+              opacity: syncing ? 0.7 : 1,
+            },
+          ]}
+        >
+          {syncing ? (
+            <ActivityIndicator color={theme.blue} />
+          ) : (
+            <>
+              <Ionicons name="sync-outline" size={18} color={theme.blue} />
+              <Text style={[styles.secondaryLargeBtnText, { color: theme.text }]}>
+                Обновить кэш
+              </Text>
+            </>
+          )}
+        </Pressable>
 
-          <SectionTitle label="Настройки" theme={theme} />
-          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <View style={styles.settingRow}>
-              <View style={[styles.settingIconWrap, { backgroundColor: '#6366F11A' }]}>
-                <Ionicons name="moon-outline" size={18} color="#6366F1" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.settingTitle, { color: theme.text }]}>Тёмная тема</Text>
-                <Text style={[styles.settingSub, { color: theme.textSecondary }]}>
-                  Переключение между светлой и тёмной темой
-                </Text>
-              </View>
-              <Switch
-                value={themeMode === 'dark'}
-                onValueChange={(v) => setTheme(v ? 'dark' : 'light')}
-                trackColor={{ false: theme.border, true: theme.blue }}
-                thumbColor="#fff"
-              />
-            </View>
-          </View>
+        <Pressable
+          onPress={handleLogout}
+          disabled={loggingOut}
+          style={[
+            styles.secondaryLargeBtn,
+            {
+              backgroundColor: theme.card,
+              borderColor: theme.border,
+              opacity: loggingOut ? 0.7 : 1,
+            },
+          ]}
+        >
+          {loggingOut ? (
+            <ActivityIndicator color={theme.red} />
+          ) : (
+            <>
+              <Ionicons name="log-out-outline" size={18} color={theme.red} />
+              <Text style={[styles.secondaryLargeBtnText, { color: theme.red }]}>Выйти</Text>
+            </>
+          )}
+        </Pressable>
 
-          <SectionTitle label="Система" theme={theme} />
-          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Pressable
-              onPress={handleSync}
-              style={[styles.sysRow, { borderBottomWidth: 1, borderBottomColor: theme.divider }]}
-            >
-              <View style={[styles.settingIconWrap, { backgroundColor: '#3B82F61A' }]}>
-                {syncing ? (
-                  <ActivityIndicator size="small" color="#3B82F6" />
-                ) : (
-                  <Ionicons name="sync-outline" size={18} color="#3B82F6" />
-                )}
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.settingTitle, { color: theme.text }]}>Обновить кэш</Text>
-                <Text style={[styles.settingSub, { color: theme.textSecondary }]}>
-                  Загрузить актуальные данные с сервера
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-            </Pressable>
-
-            <Pressable onPress={handleLogout} style={styles.sysRow}>
-              <View style={[styles.settingIconWrap, { backgroundColor: theme.redSoft }]}>
-                {loggingOut ? (
-                  <ActivityIndicator size="small" color={theme.red} />
-                ) : (
-                  <Ionicons name="log-out-outline" size={18} color={theme.red} />
-                )}
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.settingTitle, { color: theme.red }]}>Выйти из аккаунта</Text>
-                <Text style={[styles.settingSub, { color: theme.textSecondary }]}>
-                  Токен будет удалён с устройства
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-            </Pressable>
-          </View>
-
-          <View style={{ height: 40 }} />
-        </ScrollView>
-      </Animated.View>
+        <View style={{ height: 28 }} />
+      </ScrollView>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   scroll: {
     paddingHorizontal: 18,
-    paddingTop: 12,
-    paddingBottom: 120,
-    gap: 0,
+    paddingTop: 16,
+    paddingBottom: 100,
+    gap: 14,
   },
   hero: {
     borderWidth: 1,
     borderRadius: 28,
-    padding: 24,
+    padding: 20,
     alignItems: 'center',
-    marginBottom: 20,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 5,
   },
-  avatarOuter: { position: 'relative', marginBottom: 14 },
+  avatarOuter: {
+    position: 'relative',
+    marginBottom: 14,
+  },
   avatarRing: {
-    width: 96,
-    height: 96,
-    borderRadius: 28,
+    width: 108,
+    height: 108,
+    borderRadius: 999,
     borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  avatarImage: { width: '100%', height: '100%' },
+  avatarImage: {
+    width: 102,
+    height: 102,
+    borderRadius: 999,
+  },
   avatarFallback: {
-    width: '100%',
-    height: '100%',
+    width: 102,
+    height: 102,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitials: { color: '#fff', fontSize: 30, fontWeight: '900' },
+  avatarInitials: {
+    color: '#fff',
+    fontSize: 32,
+    fontWeight: '900',
+  },
   cameraBtn: {
     position: 'absolute',
-    right: -4,
-    bottom: -4,
-    width: 28,
-    height: 28,
-    borderRadius: 999,
+    right: 0,
+    bottom: 0,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
   },
-  avatarHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    marginBottom: 10,
-  },
-  avatarHintText: { fontSize: 12, fontWeight: '700' },
-  heroName: { fontSize: 22, fontWeight: '900', textAlign: 'center' },
-  heroEmail: { marginTop: 4, fontSize: 13, fontWeight: '600', textAlign: 'center' },
-  heroBadges: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 14,
-    justifyContent: 'center',
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 999,
-  },
-  badgeText: { fontSize: 12, fontWeight: '800' },
-  statusDot: { width: 7, height: 7, borderRadius: 999 },
-  sectionTitle: {
-    fontSize: 11,
+  heroName: {
+    fontSize: 24,
     fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-    marginBottom: 10,
-    marginLeft: 4,
-    marginTop: 4,
+    textAlign: 'center',
   },
-  card: {
-    borderWidth: 1,
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 20,
-    overflow: 'hidden',
+  heroEmail: {
+    marginTop: 6,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
   },
-  planRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  planLabel: { fontSize: 15, fontWeight: '800' },
-  planPercent: { fontSize: 15, fontWeight: '900' },
-  progressBg: { height: 8, borderRadius: 999, overflow: 'hidden' },
-  progressFill: { height: 8, borderRadius: 999 },
-  planSub: { marginTop: 6, fontSize: 12, fontWeight: '600' },
-  divider: { height: 1, marginVertical: 14 },
-  statRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 13,
-    gap: 12,
-  },
-  statIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statLabel: { flex: 1, fontSize: 14, fontWeight: '700' },
-  statValue: { fontSize: 14, fontWeight: '900' },
-  navGrid: {
-    borderWidth: 1,
-    borderRadius: 24,
-    overflow: 'hidden',
+  roleRow: {
+    marginTop: 14,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 20,
+    gap: 10,
+    justifyContent: 'center',
   },
-  navItem: {
+  roleBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    gap: 7,
+  },
+  roleBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  avatarActions: {
+    width: '100%',
+    marginTop: 16,
+    flexDirection: 'row',
     gap: 10,
   },
-  navIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+  secondaryBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  secondaryBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  statsGrid: {
+    gap: 12,
+  },
+  statCard: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 16,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  statTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  statValue: {
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  statHint: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  officeCard: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 16,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    gap: 10,
+  },
+  sectionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  navLabel: { flex: 1, fontSize: 13, fontWeight: '800' },
-  fieldWrap: { marginBottom: 14 },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  sectionSub: {
+    marginTop: 3,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  officeLine: {
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  fieldWrap: {
+    borderWidth: 1,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
   fieldLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
     marginBottom: 8,
   },
   fieldInput: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  themeCard: {
     borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  fieldText: { fontSize: 15, fontWeight: '600' },
-  saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderRadius: 18,
+    borderRadius: 22,
+    paddingHorizontal: 16,
     paddingVertical: 16,
-    marginTop: 4,
-  },
-  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '900' },
-  settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
+    gap: 14,
   },
-  settingIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+  primaryBtn: {
+    borderRadius: 22,
+    paddingVertical: 18,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  settingTitle: { fontSize: 15, fontWeight: '800' },
-  settingSub: { marginTop: 2, fontSize: 12, fontWeight: '600' },
-  sysRow: {
     flexDirection: 'row',
+    gap: 10,
+  },
+  primaryBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  secondaryLargeBtn: {
+    borderWidth: 1,
+    borderRadius: 22,
+    paddingVertical: 18,
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 14,
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  secondaryLargeBtnText: {
+    fontSize: 15,
+    fontWeight: '900',
   },
 });

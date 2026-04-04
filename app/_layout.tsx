@@ -1,46 +1,27 @@
-import { Stack, usePathname, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import { Stack, usePathname, useRootNavigationState, useRouter } from 'expo-router';
+import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
-import { useCurrentUser } from '../hooks/useCurrentUser';
+import { CurrentUserProvider, useCurrentUser } from '../hooks/useCurrentUser';
 import { ThemeProvider, useTheme } from '../src/context/ThemeContext';
 
 function RootNavigator() {
   const router = useRouter();
   const pathname = usePathname();
-  const { theme } = useTheme();
-  const { user, reload } = useCurrentUser();
+  const navigationState = useRootNavigationState();
 
-  const [booting, setBooting] = useState(true);
+  const { theme } = useTheme();
+  const { user, hydrated } = useCurrentUser();
 
   const isAuthRoute = useMemo(() => {
-    return pathname === '/login' || pathname === '/';
+    return pathname === '/' || pathname === '/login';
   }, [pathname]);
 
   useEffect(() => {
-    let mounted = true;
+    if (!navigationState?.key) return;
+    if (!hydrated) return;
 
-    const bootstrap = async () => {
-      try {
-        await reload();
-      } catch (e) {
-        console.log('root layout reload failed', e);
-      } finally {
-        if (mounted) setBooting(false);
-      }
-    };
-
-    bootstrap();
-
-    return () => {
-      mounted = false;
-    };
-  }, [reload]);
-
-  useEffect(() => {
-    if (booting) return;
-
-    const isLoggedIn = !!user?.id;
+    const isLoggedIn = Boolean(user?.id);
 
     if (isLoggedIn && isAuthRoute) {
       router.replace('/(app)');
@@ -50,9 +31,9 @@ function RootNavigator() {
     if (!isLoggedIn && !isAuthRoute) {
       router.replace('/login');
     }
-  }, [booting, user, isAuthRoute, router]);
+  }, [hydrated, isAuthRoute, navigationState?.key, router, user?.id]);
 
-  if (booting) {
+  if (!navigationState?.key || !hydrated) {
     return (
       <View
         style={{
@@ -73,7 +54,9 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <ThemeProvider>
-      <RootNavigator />
+      <CurrentUserProvider>
+        <RootNavigator />
+      </CurrentUserProvider>
     </ThemeProvider>
   );
 }

@@ -1,24 +1,48 @@
-// app/(app)/create-document.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 
 import ScreenWrapper from '../../components/ScreenWrapper';
 import apiClient, { fetchAllPages } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
+
+type TemplateField = {
+  key: string;
+  label?: string;
+  is_required?: boolean;
+  field_type?: 'text' | 'textarea' | 'numeric' | 'date';
+};
+
+type TemplateItem = {
+  id: number;
+  title?: string;
+  name?: string;
+  description?: string;
+  fields_config?: TemplateField[] | string | null;
+};
+
+type DealItem = {
+  id: number;
+  deal_type?: string;
+  total_to_pay_usd?: number | string | null;
+  client_data?: {
+    full_name?: string;
+  };
+  client_name?: string;
+};
 
 function flattenServerError(data: any): string {
   if (!data) return 'Не удалось создать документ.';
@@ -41,12 +65,10 @@ export default function CreateDocumentScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [generating, setGenerating] = useState(false);
 
-  const [templates, setTemplates] = useState<any[]>([]);
-  const [deals, setDeals] = useState<any[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
-  const [selectedDealId, setSelectedDealId] = useState<string>(
-    params.dealId ? String(params.dealId) : ''
-  );
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
+  const [deals, setDeals] = useState<DealItem[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null);
+  const [selectedDealId, setSelectedDealId] = useState(params.dealId ? String(params.dealId) : '');
   const [formData, setFormData] = useState<Record<string, string>>({});
 
   const loadData = async () => {
@@ -56,15 +78,18 @@ export default function CreateDocumentScreen() {
         fetchAllPages('analytics/deals/').catch(() => []),
       ]);
 
-      setTemplates(tplData || []);
-      setDeals(dealData || []);
+      const safeTemplates = (tplData || []) as TemplateItem[];
+      const safeDeals = (dealData || []) as DealItem[];
 
-      if ((tplData || []).length > 0) {
-        setSelectedTemplate((prev: any) => prev || tplData[0]);
+      setTemplates(safeTemplates);
+      setDeals(safeDeals);
+
+      if (safeTemplates.length > 0) {
+        setSelectedTemplate((prev) => prev || safeTemplates[0]);
       }
 
-      if (!params.dealId && (dealData || []).length > 0) {
-        setSelectedDealId((prev) => prev || String(dealData[0].id));
+      if (!params.dealId && safeDeals.length > 0) {
+        setSelectedDealId((prev) => prev || String(safeDeals[0].id));
       }
     } catch (error) {
       console.error('Ошибка загрузки данных для документа', error);
@@ -76,7 +101,7 @@ export default function CreateDocumentScreen() {
   };
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, []);
 
   const selectedDeal = useMemo(
@@ -85,7 +110,8 @@ export default function CreateDocumentScreen() {
   );
 
   const fields = useMemo(() => {
-    if (!selectedTemplate || !selectedTemplate.fields_config) return [];
+    if (!selectedTemplate?.fields_config) return [];
+
     try {
       return Array.isArray(selectedTemplate.fields_config)
         ? selectedTemplate.fields_config
@@ -130,19 +156,25 @@ export default function CreateDocumentScreen() {
         selectedDeal?.client_name ||
         '';
 
+      const templateTitle =
+        selectedTemplate.title ||
+        selectedTemplate.name ||
+        `Шаблон #${selectedTemplate.id}`;
+
       if (clientTitle) {
-        payload.title = `${selectedTemplate.title} — ${clientTitle}`;
+        payload.title = `${templateTitle} — ${clientTitle}`;
+      } else {
+        payload.title = templateTitle;
       }
 
       const res = await apiClient.post('documents/generated/', payload);
-
       const createdDoc = res.data;
 
       Alert.alert(
         'Готово',
-        createdDoc?.status === 'generated'
-          ? 'Документ сгенерирован и отправлен на одобрение администратору.'
-          : 'Документ создан.',
+        createdDoc?.status === 'approved'
+          ? 'Документ уже одобрен.'
+          : 'Документ создан и отправлен на проверку администратору.',
         [
           {
             text: 'К документам',
@@ -169,95 +201,89 @@ export default function CreateDocumentScreen() {
 
   return (
     <ScreenWrapper>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={[
-            styles.backBtn,
-            { backgroundColor: theme.surface, borderColor: theme.border },
-          ]}
-        >
-          <Ionicons name="arrow-back" size={22} color={theme.text} />
-        </Pressable>
-
-        <Text style={[styles.title, { color: theme.text }]}>Создать документ</Text>
-
-        <View style={{ width: 44 }} />
-      </View>
-
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <View style={styles.header}>
+          <Pressable
+            onPress={() => router.back()}
+            style={[
+              styles.backBtn,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+              },
+            ]}
+          >
+            <Ionicons name="chevron-back" size={18} color={theme.text} />
+          </Pressable>
+
+          <Text style={[styles.title, { color: theme.text }]}>Создать документ</Text>
+
+          <View style={{ width: 44 }} />
+        </View>
+
         <ScrollView
           contentContainerStyle={styles.container}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {
+            setRefreshing(true);
+            void loadData();
+          }} tintColor={theme.blue} />}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                loadData();
-              }}
-              tintColor={theme.blue}
-            />
-          }
         >
           <View
             style={[
               styles.card,
-              { backgroundColor: theme.surface, borderColor: theme.border },
+              {
+                backgroundColor: theme.card,
+                borderColor: theme.border,
+              },
             ]}
           >
-            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-              1. Шаблон
-            </Text>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>1. Шаблон</Text>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.chipsRow}>
-                {templates.map((tpl) => {
-                  const active = selectedTemplate?.id === tpl.id;
-                  return (
-                    <Pressable
-                      key={tpl.id}
-                      onPress={() => {
-                        setSelectedTemplate(tpl);
-                        setFormData({});
-                      }}
-                      style={[
-                        styles.chip,
-                        {
-                          backgroundColor: active ? theme.blue : theme.surface,
-                          borderColor: active ? theme.blue : theme.border,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name={active ? 'document-text' : 'document-text-outline'}
-                        size={16}
-                        color={active ? '#fff' : theme.textSecondary}
-                        style={{ marginRight: 6 }}
-                      />
-                      <Text
-                        style={{
-                          color: active ? '#fff' : theme.text,
-                          fontWeight: '900',
-                        }}
-                      >
-                        {tpl.title}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipsRow}
+            >
+              {templates.map((tpl) => {
+                const active = selectedTemplate?.id === tpl.id;
+                const label = tpl.title || tpl.name || `Шаблон #${tpl.id}`;
+
+                return (
+                  <Pressable
+                    key={tpl.id}
+                    onPress={() => {
+                      setSelectedTemplate(tpl);
+                      setFormData({});
+                    }}
+                    style={[
+                      styles.chip,
+                      {
+                        backgroundColor: active ? theme.blue : theme.surface,
+                        borderColor: active ? theme.blue : theme.border,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '800' }}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </ScrollView>
 
             {selectedTemplate?.description ? (
               <View
                 style={[
                   styles.noteCard,
-                  { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                  {
+                    backgroundColor: theme.backgroundSoft,
+                    borderColor: theme.border,
+                  },
                 ]}
               >
                 <Text style={[styles.noteText, { color: theme.textSecondary }]}>
@@ -270,57 +296,60 @@ export default function CreateDocumentScreen() {
           <View
             style={[
               styles.card,
-              { backgroundColor: theme.surface, borderColor: theme.border },
+              {
+                backgroundColor: theme.card,
+                borderColor: theme.border,
+              },
             ]}
           >
-            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-              2. Сделка
-            </Text>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>2. Сделка</Text>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.chipsRow}>
-                {deals.map((deal) => {
-                  const active = String(selectedDealId) === String(deal.id);
-                  const dealLabel =
-                    deal.client_data?.full_name ||
-                    deal.client_name ||
-                    `Сделка #${deal.id}`;
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipsRow}
+            >
+              {deals.map((deal) => {
+                const active = String(selectedDealId) === String(deal.id);
+                const dealLabel =
+                  deal.client_data?.full_name ||
+                  deal.client_name ||
+                  `Сделка #${deal.id}`;
 
-                  return (
-                    <Pressable
-                      key={deal.id}
-                      onPress={() => setSelectedDealId(String(deal.id))}
-                      style={[
-                        styles.chip,
-                        {
-                          backgroundColor: active ? theme.blue : theme.surface,
-                          borderColor: active ? theme.blue : theme.border,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={{
-                          color: active ? '#fff' : theme.text,
-                          fontWeight: '900',
-                        }}
-                      >
-                        {dealLabel}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+                return (
+                  <Pressable
+                    key={deal.id}
+                    onPress={() => setSelectedDealId(String(deal.id))}
+                    style={[
+                      styles.chip,
+                      {
+                        backgroundColor: active ? theme.blue : theme.surface,
+                        borderColor: active ? theme.blue : theme.border,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '800' }}>
+                      {dealLabel}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </ScrollView>
 
             {selectedDeal ? (
               <View
                 style={[
                   styles.noteCard,
-                  { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                  {
+                    backgroundColor: theme.backgroundSoft,
+                    borderColor: theme.border,
+                  },
                 ]}
               >
                 <Text style={[styles.noteStrong, { color: theme.text }]}>
-                  {selectedDeal.client_data?.full_name || selectedDeal.client_name || `Сделка #${selectedDeal.id}`}
+                  {selectedDeal.client_data?.full_name ||
+                    selectedDeal.client_name ||
+                    `Сделка #${selectedDeal.id}`}
                 </Text>
                 <Text style={[styles.noteText, { color: theme.textSecondary }]}>
                   #{selectedDeal.id} · {selectedDeal.deal_type || 'deal'} · $
@@ -337,20 +366,21 @@ export default function CreateDocumentScreen() {
           <View
             style={[
               styles.card,
-              { backgroundColor: theme.surface, borderColor: theme.border },
+              {
+                backgroundColor: theme.card,
+                borderColor: theme.border,
+              },
             ]}
           >
-            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-              3. Поля шаблона
-            </Text>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>3. Поля шаблона</Text>
 
             {fields.length === 0 ? (
               <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
                 Для этого шаблона нет динамических полей. Можно создать документ сразу.
               </Text>
             ) : (
-              fields.map((field: any, index: number) => (
-                <View key={`${field.key}-${index}`} style={{ marginBottom: 14 }}>
+              fields.map((field, index) => (
+                <View key={`${field.key}-${index}`} style={{ marginBottom: 12 }}>
                   <Text style={[styles.label, { color: theme.textSecondary }]}>
                     {field.label || field.key}
                     {field.is_required ? ' *' : ''}
@@ -360,14 +390,13 @@ export default function CreateDocumentScreen() {
                     style={[
                       styles.inputWrap,
                       {
-                        backgroundColor: theme.backgroundSoft,
                         borderColor: theme.border,
-                        minHeight: field.field_type === 'textarea' ? 96 : 56,
+                        backgroundColor: theme.surface,
                       },
                     ]}
                   >
                     <TextInput
-                      value={formData[field.key] || ''}
+                      value={String(formData[field.key] || '')}
                       onChangeText={(val) => setField(field.key, val)}
                       placeholder={`Введите ${String(field.label || field.key).toLowerCase()}`}
                       placeholderTextColor={theme.textMuted}
@@ -378,8 +407,7 @@ export default function CreateDocumentScreen() {
                         {
                           color: theme.text,
                           minHeight: field.field_type === 'textarea' ? 72 : 24,
-                          textAlignVertical:
-                            field.field_type === 'textarea' ? 'top' : 'center',
+                          textAlignVertical: field.field_type === 'textarea' ? 'top' : 'center',
                         },
                       ]}
                     />
@@ -391,24 +419,30 @@ export default function CreateDocumentScreen() {
             <Pressable
               onPress={handleGenerate}
               disabled={generating}
-              style={[styles.submitBtn, { backgroundColor: theme.blue }]}
+              style={[
+                styles.submitBtn,
+                {
+                  backgroundColor: theme.blue,
+                  opacity: generating ? 0.75 : 1,
+                },
+              ]}
             >
               {generating ? (
                 <ActivityIndicator color="#fff" />
               ) : (
                 <>
-                  <Ionicons name="document-text" size={18} color="#fff" />
+                  <Ionicons name="document-text-outline" size={18} color="#fff" />
                   <Text style={styles.submitBtnText}>Сгенерировать документ</Text>
                 </>
               )}
             </Pressable>
 
-            <Text style={[styles.hint, { color: theme.textSecondary }]}>
-              После генерации документ попадает на проверку. Скачивание доступно только после одобрения администратором.
+            <Text style={[styles.hint, { color: theme.textMuted }]}>
+              После генерации документ попадает на проверку.
+              {'\n'}
+              Скачивание доступно только после одобрения администратором.
             </Text>
           </View>
-
-          <View style={{ height: 60 }} />
         </ScrollView>
       </KeyboardAvoidingView>
     </ScreenWrapper>
@@ -416,7 +450,11 @@ export default function CreateDocumentScreen() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -432,9 +470,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  title: { fontSize: 22, fontWeight: '900' },
-  container: { padding: 20, paddingBottom: 120, gap: 14 },
-  card: { borderWidth: 1, borderRadius: 24, padding: 16 },
+  title: {
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  container: {
+    padding: 20,
+    paddingBottom: 120,
+    gap: 14,
+  },
+  card: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 16,
+  },
   sectionTitle: {
     fontSize: 12,
     fontWeight: '900',
@@ -442,7 +491,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 12,
   },
-  chipsRow: { flexDirection: 'row', gap: 8, paddingRight: 16 },
+  chipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 16,
+  },
   chip: {
     borderWidth: 1,
     borderRadius: 999,
@@ -498,7 +551,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  submitBtnText: { color: '#fff', fontSize: 15, fontWeight: '900' },
+  submitBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '900',
+  },
   hint: {
     marginTop: 12,
     fontSize: 12,
