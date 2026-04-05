@@ -1,180 +1,149 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from 'react-native';
 
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
-import apiClient, { extractList, fetchAllPages } from '../../src/api/apiClient';
+import apiClient, { fetchAllPages } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
 
-function revenueOf(user: any) {
-  const raw =
-    user?.revenue ??
-    user?.managersalary?.current_month_revenue ??
-    0;
+type LeaderItem = {
+  id: number;
+  first_name?: string;
+  last_name?: string;
+  full_name?: string;
+  email?: string;
+  office_name?: string;
+  revenue?: number | string;
+  avatar_url?: string | null;
+  office?: {
+    id?: number;
+    city?: string;
+  } | null;
+  managersalary?: {
+    current_month_revenue?: number | string;
+  } | null;
+  access_profile?: {
+    can_be_in_leaderboard?: boolean;
+  } | null;
+};
 
-  const parsed = parseFloat(String(raw));
-  return Number.isFinite(parsed) ? parsed : 0;
+const SOFT_TEXT = '#2F2A45';
+const SOFT_TEXT_SECONDARY = '#6E668B';
+const SOFT_ACCENT = '#7B61FF';
+
+function toRevenue(item: LeaderItem) {
+  const value = item?.revenue ?? item?.managersalary?.current_month_revenue ?? 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
 }
 
-function fullNameOf(user: any) {
-  return (
-    user?.full_name ||
-    [user?.first_name, user?.last_name].filter(Boolean).join(' ') ||
-    user?.email ||
-    'Сотрудник'
-  );
+function fullName(item: LeaderItem) {
+  const explicit = item.full_name?.trim();
+  if (explicit) return explicit;
+
+  const first = item.first_name || '';
+  const last = item.last_name || '';
+  const joined = `${first} ${last}`.trim();
+
+  return joined || item.email || `Сотрудник #${item.id}`;
 }
 
-function officeOf(user: any) {
-  return (
-    user?.office?.city ||
-    user?.office_name ||
-    'Без офиса'
-  );
+function officeLabel(item: LeaderItem) {
+  return item.office_name || item.office?.city || 'Без офиса';
 }
 
-function avatarOf(user: any) {
-  return user?.avatar_url || user?.avatar || null;
+function avatarOf(item: LeaderItem) {
+  return item.avatar_url || null;
 }
 
-function money(v: number) {
-  return `$${Math.round(v || 0).toLocaleString('ru-RU')}`;
+function money(value: number) {
+  return `$${value.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}`;
 }
 
-function initialsOf(user: any) {
-  const full = fullNameOf(user).trim();
-  if (!full) return '?';
+function officeGradient(name: string): [string, string] {
+  const gradients: [string, string][] = [
+    ['#FFF2F5', '#F7F1FF'],
+    ['#EEF4FF', '#F6F0FF'],
+    ['#F8F2FF', '#EEF6FF'],
+    ['#FFF5F7', '#F2F0FF'],
+    ['#EFF7FF', '#F7F1FF'],
+    ['#FFF7F1', '#F4F1FF'],
+    ['#F3F8FF', '#F2FBF7'],
+    ['#FFF1F7', '#EEF4FF'],
+    ['#F7F1FF', '#FFF7FC'],
+    ['#EEF7FF', '#F6F2FF'],
+  ];
 
-  const parts = full.split(/\s+/).filter(Boolean);
-  return parts.slice(0, 2).map((x) => x[0]?.toUpperCase()).join('') || '?';
-}
+  const source = String(name || 'Без офиса');
+  let hash = 0;
 
-function crownColor(place: 1 | 2 | 3) {
-  if (place === 1) return '#D4AF37';
-  if (place === 2) return '#C0C0C0';
-  return '#CD7F32';
-}
-
-function medalBg(place: 1 | 2 | 3) {
-  if (place === 1) return '#FFF7DA';
-  if (place === 2) return '#F3F4F6';
-  return '#FBE9DD';
-}
-
-function rankAccent(place: number, theme: any) {
-  if (place === 1) return '#D4AF37';
-  if (place === 2) return '#98A2B3';
-  if (place === 3) return '#CD7F32';
-  return theme.blue;
-}
-
-function Avatar({
-  user,
-  size = 56,
-  theme,
-}: {
-  user: any;
-  size?: number;
-  theme: any;
-}) {
-  const uri = avatarOf(user);
-
-  if (uri) {
-    return (
-      <Image
-        source={{ uri }}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: theme.backgroundSoft,
-        }}
-      />
-    );
+  for (let i = 0; i < source.length; i += 1) {
+    hash = (hash + source.charCodeAt(i) * (i + 1)) % gradients.length;
   }
 
-  return (
-    <View
-      style={[
-        styles.avatarFallback,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: theme.blueSoft || '#EAF1FF',
-          borderColor: theme.border,
-        },
-      ]}
-    >
-      <Text style={[styles.avatarFallbackText, { color: theme.blue }]}>
-        {initialsOf(user)}
-      </Text>
-    </View>
-  );
+  return gradients[hash];
 }
 
-function TopCard({
-  user,
+function initialsFromName(name: string) {
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'U';
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return `${parts[0].slice(0, 1)}${parts[1].slice(0, 1)}`.toUpperCase();
+}
+
+function PodiumCard({
+  item,
   place,
-  theme,
 }: {
-  user: any;
+  item: LeaderItem & { _rank: number; _revenue: number; _office: string; _name: string };
   place: 1 | 2 | 3;
-  theme: any;
 }) {
-  const accent = crownColor(place);
+  const gradient = officeGradient(item._office);
 
   return (
-    <View
-      style={[
-        styles.topCard,
-        {
-          backgroundColor: theme.surface,
-          borderColor: theme.border,
-        },
-      ]}
+    <LinearGradient
+      colors={gradient}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[styles.podiumCard, place === 1 && styles.podiumFirst]}
     >
-      <View style={styles.topHeaderRow}>
-        <View
-          style={[
-            styles.topPlaceBadge,
-            { backgroundColor: medalBg(place), borderColor: theme.border },
-          ]}
-        >
-          <MaterialCommunityIcons name="crown" size={22} color={accent} />
-          <Text style={[styles.topPlaceText, { color: accent }]}>#{place}</Text>
+      <View style={styles.podiumTop}>
+        <Text style={styles.podiumPlace}>#{place}</Text>
+
+        <View style={styles.officePillSoft}>
+          <Text style={styles.officePillSoftText} numberOfLines={1}>
+            {item._office}
+          </Text>
         </View>
-
       </View>
 
-      <View style={styles.topAvatarWrap}>
-        <Avatar user={user} size={74} theme={theme} />
-      </View>
+      {avatarOf(item) ? (
+        <Image source={{ uri: avatarOf(item)! }} style={styles.podiumAvatar} />
+      ) : (
+        <View style={styles.podiumAvatarFallback}>
+          <Text style={styles.podiumAvatarText}>{initialsFromName(item._name)}</Text>
+        </View>
+      )}
 
-      <Text style={[styles.topName, { color: theme.text }]} numberOfLines={1}>
-        {fullNameOf(user)}
+      <Text style={styles.podiumName} numberOfLines={2}>
+        {item._name}
       </Text>
 
-      <Text style={[styles.topOffice, { color: theme.textSecondary }]} numberOfLines={1}>
-        {officeOf(user)}
-      </Text>
-
-      <View style={[styles.topRevenueBox, { backgroundColor: theme.backgroundSoft }]}>
-        <Text style={[styles.topRevenueLabel, { color: theme.textSecondary }]}>Выручка</Text>
-        <Text style={[styles.topRevenueValue, { color: theme.success }]}>
-          {money(revenueOf(user))}
-        </Text>
-      </View>
-    </View>
+      <Text style={styles.podiumRevenue}>{money(item._revenue)}</Text>
+    </LinearGradient>
   );
 }
 
@@ -182,49 +151,49 @@ export default function LeaderboardScreen() {
   const { theme } = useTheme();
   const { user: currentUser } = useCurrentUser();
 
+  const isAdmin = Boolean(
+    currentUser?.is_superuser || currentUser?.is_staff || currentUser?.role === 'admin'
+  );
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [leaders, setLeaders] = useState<any[]>([]);
+
+  const [leaders, setLeaders] = useState<LeaderItem[]>([]);
+  const [allUsers, setAllUsers] = useState<LeaderItem[]>([]);
+  const [manageMode, setManageMode] = useState(false);
+  const [savingUserId, setSavingUserId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
-      let ranked: any[] = [];
+      let ranked: LeaderItem[] = [];
 
       try {
         const response = await apiClient.get('gamification/leaderboard/');
-        ranked = extractList(response.data);
-      } catch (e) {
-        console.log('Leaderboard API fallback', e);
+        ranked = Array.isArray(response.data?.results)
+          ? response.data.results
+          : Array.isArray(response.data)
+          ? response.data
+          : [];
+      } catch {
         ranked = [];
       }
 
-      if (!ranked.length) {
-        const users = await fetchAllPages('users/users/');
-        ranked = users
-          .map((u: any) => ({
-            ...u,
-            revenue: revenueOf(u),
-            office_name: officeOf(u),
-            avatar_url: avatarOf(u),
-            full_name: fullNameOf(u),
-          }))
-          .sort((a: any, b: any) => revenueOf(b) - revenueOf(a));
+      let usersList: LeaderItem[] = [];
+      try {
+        usersList = (await fetchAllPages('users/users/')) as LeaderItem[];
+      } catch {
+        usersList = [];
       }
 
-      ranked = ranked
-        .map((item: any) => ({
-          ...item,
-          revenue: revenueOf(item),
-          office_name: officeOf(item),
-          avatar_url: avatarOf(item),
-          full_name: fullNameOf(item),
-        }))
-        .sort((a: any, b: any) => revenueOf(b) - revenueOf(a));
+      if (!ranked.length && usersList.length) {
+        ranked = [...usersList].sort((a, b) => toRevenue(b) - toRevenue(a));
+      }
 
       setLeaders(ranked);
-    } catch (e) {
-      console.log('Leaderboard load error', e);
+      setAllUsers(usersList);
+    } catch {
       setLeaders([]);
+      setAllUsers([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -232,36 +201,110 @@ export default function LeaderboardScreen() {
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
-  const enriched = useMemo(
-    () =>
-      leaders.map((item, index) => ({
+  const onRefresh = () => {
+    setRefreshing(true);
+    void load();
+  };
+
+  const visibleRanked = useMemo(() => {
+    const base = leaders.length ? leaders : allUsers;
+
+    return [...base]
+      .filter((item) => item?.access_profile?.can_be_in_leaderboard !== false)
+      .map((item) => ({
+        ...item,
+        _revenue: toRevenue(item),
+        _office: officeLabel(item),
+        _name: fullName(item),
+      }))
+      .sort((a, b) => b._revenue - a._revenue)
+      .map((item, index) => ({
         ...item,
         _rank: index + 1,
-        _revenue: revenueOf(item),
-        _office: officeOf(item),
-        _avatar: avatarOf(item),
-        _fullName: fullNameOf(item),
-      })),
-    [leaders]
-  );
+      }));
+  }, [leaders, allUsers]);
 
-  const podiumOrder = useMemo(() => {
-    const first = enriched[0];
-    const second = enriched[1];
-    const third = enriched[2];
+  const podium = useMemo(() => {
+    const first = visibleRanked[0];
+    const second = visibleRanked[1];
+    const third = visibleRanked[2];
 
     return [
       second ? { ...second, _podiumPlace: 2 as 2 } : null,
       first ? { ...first, _podiumPlace: 1 as 1 } : null,
       third ? { ...third, _podiumPlace: 3 as 3 } : null,
     ].filter(Boolean) as Array<any>;
-  }, [enriched]);
+  }, [visibleRanked]);
 
-  const rest = enriched.slice(3);
-  const myRow = enriched.find((item) => item.id === currentUser?.id);
+  const myRow = useMemo(() => {
+    return visibleRanked.find((item) => item.id === currentUser?.id) || null;
+  }, [visibleRanked, currentUser?.id]);
+
+  const rankingUsersForAdmin = useMemo(() => {
+    const list = allUsers.length ? allUsers : leaders;
+
+    return [...list]
+      .map((item) => ({
+        ...item,
+        _revenue: toRevenue(item),
+        _office: officeLabel(item),
+        _name: fullName(item),
+        _visible: item?.access_profile?.can_be_in_leaderboard !== false,
+      }))
+      .sort((a, b) => b._revenue - a._revenue);
+  }, [allUsers, leaders]);
+
+  const toggleVisibility = async (item: any) => {
+    if (!isAdmin) return;
+
+    const nextValue = !item._visible;
+    setSavingUserId(item.id);
+
+    try {
+      await apiClient.patch(`users/users/${item.id}/access_profile/`, {
+        can_be_in_leaderboard: nextValue,
+      });
+
+      setAllUsers((prev) =>
+        prev.map((u) =>
+          u.id === item.id
+            ? {
+                ...u,
+                access_profile: {
+                  ...(u.access_profile || {}),
+                  can_be_in_leaderboard: nextValue,
+                },
+              }
+            : u
+        )
+      );
+
+      setLeaders((prev) =>
+        prev.map((u) =>
+          u.id === item.id
+            ? {
+                ...u,
+                access_profile: {
+                  ...(u.access_profile || {}),
+                  can_be_in_leaderboard: nextValue,
+                },
+              }
+            : u
+        )
+      );
+    } catch (error: any) {
+      Alert.alert(
+        'Не удалось изменить видимость',
+        error?.response?.data?.detail ||
+          'На backend пока нет route users/users/:id/access_profile/ или он ещё не обновлён.'
+      );
+    } finally {
+      setSavingUserId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -278,434 +321,450 @@ export default function LeaderboardScreen() {
       <ScrollView
         contentContainerStyle={styles.container}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              load();
-            }}
-            tintColor={theme.blue}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.blue} />
         }
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.hero}>
-          <Text style={[styles.title, { color: theme.text }]}>Рейтинг команды</Text>
-          <Text style={[styles.sub, { color: theme.textSecondary }]}>
-            Текущий рейтинг сотрудников по выручке за месяц
-          </Text>
-        </View>
-
-        {myRow ? (
-          <View
-            style={[
-              styles.meCard,
-              { backgroundColor: theme.surface, borderColor: theme.border },
-            ]}
-          >
-            <View style={styles.meLeft}>
-              <Avatar user={myRow} size={56} theme={theme} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.meCaption, { color: theme.textSecondary }]}>
-                  Мой результат
-                </Text>
-                <Text style={[styles.meName, { color: theme.text }]} numberOfLines={1}>
-                  {myRow._fullName}
-                </Text>
-                <Text style={[styles.meOffice, { color: theme.textSecondary }]} numberOfLines={1}>
-                  {myRow._office}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.meRight}>
-              <Text style={[styles.meRank, { color: theme.blue }]}>#{myRow._rank}</Text>
-              <Text style={[styles.meRevenue, { color: theme.success }]}>
-                {money(myRow._revenue)}
-              </Text>
-            </View>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.title, { color: theme.text }]}>Рейтинг</Text>
+            <Text style={[styles.sub, { color: theme.textSecondary }]}>
+              Мягкие цвета по офисам и управление видимостью
+            </Text>
           </View>
-        ) : null}
 
-        {podiumOrder.length ? (
-          <View style={styles.podiumRow}>
-            {podiumOrder.map((user) => (
-              <View
-                key={String(user.id)}
+          {isAdmin && (
+            <Pressable
+              onPress={() => setManageMode((v) => !v)}
+              style={[
+                styles.manageBtn,
+                {
+                  backgroundColor: manageMode ? theme.blue : theme.card,
+                  borderColor: manageMode ? theme.blue : theme.border,
+                },
+              ]}
+            >
+              <Ionicons
+                name={manageMode ? 'settings' : 'settings-outline'}
+                size={16}
+                color={manageMode ? '#fff' : theme.text}
+              />
+              <Text
                 style={[
-                  styles.podiumCol,
-                  user._podiumPlace === 1
-                    ? styles.podiumColCenter
-                    : styles.podiumColSide,
+                  styles.manageBtnText,
+                  { color: manageMode ? '#fff' : theme.text },
                 ]}
               >
-                <TopCard
-                  user={user}
-                  place={user._podiumPlace}
-                  theme={theme}
-                />
-              </View>
-            ))}
-          </View>
-        ) : null}
-
-        <View
-          style={[
-            styles.sectionCard,
-            { backgroundColor: theme.surface, borderColor: theme.border },
-          ]}
-        >
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Общий рейтинг</Text>
-            <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
-              Все сотрудники
-            </Text>
-          </View>
-
-          {enriched.length === 0 ? (
-            <Text style={[styles.emptyList, { color: theme.textSecondary }]}>
-              Данных рейтинга пока нет.
-            </Text>
-          ) : (
-            enriched.map((user, index) => {
-              const isTop3 = user._rank <= 3;
-              const accent = rankAccent(user._rank, theme);
-              const isMe = currentUser?.id === user.id;
-
-              return (
-                <View
-                  key={user.id || `leader-${index}`}
-                  style={[
-                    styles.row,
-                    {
-                      borderBottomColor: theme.divider,
-                      backgroundColor: isMe ? theme.backgroundSoft : 'transparent',
-                    },
-                  ]}
-                >
-                  <View style={styles.rowLeft}>
-                    <View
-                      style={[
-                        styles.rankCircle,
-                        {
-                          backgroundColor: isTop3 ? medalBg(user._rank as 1 | 2 | 3) : theme.backgroundSoft,
-                          borderColor: theme.border,
-                        },
-                      ]}
-                    >
-                      {isTop3 ? (
-                        <MaterialCommunityIcons
-                          name="crown"
-                          size={18}
-                          color={accent}
-                        />
-                      ) : (
-                        <Text style={[styles.rankCircleText, { color: theme.text }]}>
-                          {user._rank}
-                        </Text>
-                      )}
-                    </View>
-
-                    <Avatar user={user} size={48} theme={theme} />
-
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={1}>
-                        {user._fullName}
-                      </Text>
-                      <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                        {user._office}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.rowRight}>
-                    <Text style={[styles.rowRank, { color: accent }]}>#{user._rank}</Text>
-                    <Text style={[styles.rowValue, { color: theme.success }]}>
-                      {money(user._revenue)}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })
+                {manageMode ? 'Управление' : 'Настроить'}
+              </Text>
+            </Pressable>
           )}
         </View>
 
-        {rest.length > 0 ? (
-          <View style={{ height: 8 }} />
-        ) : null}
+        {podium.length > 0 && (
+          <View style={styles.podiumRow}>
+            {podium.map((item) => (
+              <PodiumCard key={`podium-${item.id}`} item={item} place={item._podiumPlace} />
+            ))}
+          </View>
+        )}
+
+        {myRow && (
+          <LinearGradient
+            colors={officeGradient(myRow._office)}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.meCard}
+          >
+            <Text style={styles.meLabel}>Моё место</Text>
+
+            <View style={styles.meRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.meRank}>#{myRow._rank}</Text>
+                <Text style={styles.meName} numberOfLines={1}>
+                  {myRow._name}
+                </Text>
+              </View>
+
+              <Text style={styles.meRevenue}>{money(myRow._revenue)}</Text>
+            </View>
+          </LinearGradient>
+        )}
+
+        <View
+          style={[
+            styles.tableWrap,
+            {
+              backgroundColor: theme.card,
+              borderColor: theme.border,
+              shadowColor: theme.shadow,
+            },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Таблица рейтинга</Text>
+
+          {visibleRanked.length === 0 ? (
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+              В рейтинге пока никого нет.
+            </Text>
+          ) : (
+            [...visibleRanked]
+              .sort((a, b) => a._rank - b._rank)
+              .map((item) => {
+                const gradient = officeGradient(item._office);
+                const isMe = item.id === currentUser?.id;
+
+                return (
+                  <LinearGradient
+                    key={`row-${item.id}`}
+                    colors={gradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.rowGradient, isMe && styles.rowGradientMe]}
+                  >
+                    <View style={styles.rankCell}>
+                      <Text style={styles.rankText}>#{item._rank}</Text>
+                    </View>
+
+                    {avatarOf(item) ? (
+                      <Image source={{ uri: avatarOf(item)! }} style={styles.rowAvatar} />
+                    ) : (
+                      <View style={styles.rowAvatarFallback}>
+                        <Text style={styles.rowAvatarText}>
+                          {initialsFromName(item._name)}
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowName} numberOfLines={1}>
+                        {item._name}
+                      </Text>
+
+                      <View style={styles.officePillSoftSmall}>
+                        <Text style={styles.officePillSoftText}>{item._office}</Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.rowRevenue}>{money(item._revenue)}</Text>
+                  </LinearGradient>
+                );
+              })
+          )}
+        </View>
+
+        {isAdmin && manageMode && (
+          <View
+            style={[
+              styles.tableWrap,
+              {
+                backgroundColor: theme.card,
+                borderColor: theme.border,
+                shadowColor: theme.shadow,
+              },
+            ]}
+          >
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>
+              Кого показывать в рейтинге
+            </Text>
+
+            {rankingUsersForAdmin.length === 0 ? (
+              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                Сотрудники не загружены.
+              </Text>
+            ) : (
+              rankingUsersForAdmin.map((item) => {
+                const gradient = officeGradient(item._office);
+                const saving = savingUserId === item.id;
+
+                return (
+                  <LinearGradient
+                    key={`manage-${item.id}`}
+                    colors={gradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.manageRow}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.manageName}>{item._name}</Text>
+                      <Text style={styles.manageMeta}>
+                        {item._office} · {money(item._revenue)}
+                      </Text>
+                    </View>
+
+                    {saving ? (
+                      <ActivityIndicator color={SOFT_ACCENT} />
+                    ) : (
+                      <Switch
+                        value={item._visible}
+                        onValueChange={() => toggleVisibility(item)}
+                      />
+                    )}
+                  </LinearGradient>
+                );
+              })
+            )}
+          </View>
+        )}
       </ScrollView>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   container: {
-    padding: 20,
+    paddingHorizontal: 18,
+    paddingTop: 16,
     paddingBottom: 120,
+    gap: 14,
   },
-
-  hero: {
-    marginBottom: 2,
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
   },
-
   title: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '900',
   },
-
   sub: {
     marginTop: 6,
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
+    lineHeight: 19,
   },
-
-  meCard: {
-    marginTop: 18,
+  manageBtn: {
     borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  manageBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  podiumRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-end',
+  },
+  podiumCard: {
+    flex: 1,
     borderRadius: 24,
-    padding: 16,
+    padding: 14,
+    minHeight: 190,
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.10)',
+  },
+  podiumFirst: {
+    minHeight: 220,
+  },
+  podiumTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-
-  meLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-    paddingRight: 12,
-  },
-
-  meRight: {
-    alignItems: 'flex-end',
-  },
-
-  meCaption: {
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-
-  meName: {
-    marginTop: 5,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-
-  meOffice: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  meRank: {
+  podiumPlace: {
+    color: SOFT_TEXT,
     fontSize: 22,
     fontWeight: '900',
   },
-
-  meRevenue: {
-    marginTop: 4,
-    fontSize: 14,
-    fontWeight: '900',
-  },
-
-  podiumRow: {
-    marginTop: 18,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-
-  podiumCol: {
-    flex: 1,
-  },
-
-  podiumColCenter: {
-    marginBottom: 0,
-  },
-
-  podiumColSide: {
-    marginBottom: 12,
-  },
-
-  topCard: {
-    borderWidth: 1,
-    borderRadius: 26,
-    padding: 16,
-    alignItems: 'center',
-  },
-
-  topHeaderRow: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-
-  topPlaceBadge: {
-    minHeight: 36,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-
-  topPlaceText: {
-    fontSize: 14,
-    fontWeight: '900',
-  },
-
-  topLeaderChip: {
+  officePillSoft: {
+    maxWidth: 128,
+    backgroundColor: 'rgba(255,255,255,0.78)',
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.08)',
   },
-
-  topLeaderChipText: {
-    fontSize: 10,
-    fontWeight: '900',
+  officePillSoftSmall: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    backgroundColor: 'rgba(255,255,255,0.82)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.08)',
   },
-
-  topAvatarWrap: {
-    marginTop: 16,
-  },
-
-  topName: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-
-  topOffice: {
-    marginTop: 5,
-    fontSize: 12,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-
-  topRevenueBox: {
-    marginTop: 14,
-    width: '100%',
-    borderRadius: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-  },
-
-  topRevenueLabel: {
+  officePillSoftText: {
+    color: SOFT_TEXT_SECONDARY,
     fontSize: 11,
     fontWeight: '800',
-    textTransform: 'uppercase',
   },
-
-  topRevenueValue: {
-    marginTop: 6,
-    fontSize: 18,
-    fontWeight: '900',
+  podiumAvatar: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignSelf: 'center',
   },
-
-  sectionCard: {
-    marginTop: 20,
+  podiumAvatarFallback: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(123,97,255,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderRadius: 24,
-    overflow: 'hidden',
+    borderColor: 'rgba(123,97,255,0.08)',
   },
-
-  sectionHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-  },
-
-  sectionTitle: {
-    fontSize: 18,
+  podiumAvatarText: {
+    color: SOFT_TEXT,
+    fontSize: 22,
     fontWeight: '900',
   },
-
-  sectionSub: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '600',
+  podiumName: {
+    color: SOFT_TEXT,
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'center',
+    lineHeight: 20,
   },
-
-  row: {
-    minHeight: 82,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 1,
+  podiumRevenue: {
+    color: SOFT_ACCENT,
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  meCard: {
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.10)',
+  },
+  meLabel: {
+    color: SOFT_TEXT_SECONDARY,
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  meRow: {
+    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
   },
-
-  rowLeft: {
+  meRank: {
+    color: SOFT_TEXT,
+    fontSize: 28,
+    fontWeight: '900',
+  },
+  meName: {
+    marginTop: 4,
+    color: SOFT_TEXT,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  meRevenue: {
+    color: SOFT_ACCENT,
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  tableWrap: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 16,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 12,
+  },
+  emptyText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  rowGradient: {
+    borderRadius: 20,
+    padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    flex: 1,
-    paddingRight: 12,
-  },
-
-  rowRight: {
-    alignItems: 'flex-end',
-  },
-
-  rankCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    gap: 10,
+    marginBottom: 10,
     borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.08)',
+  },
+  rowGradientMe: {
+    borderWidth: 2,
+    borderColor: 'rgba(123,97,255,0.18)',
+  },
+  rankCell: {
+    width: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  rankCircleText: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
-
-  rowTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-  },
-
-  rowMeta: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  rowRank: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
-
-  rowValue: {
-    marginTop: 4,
-    fontSize: 14,
-    fontWeight: '900',
-  },
-
-  avatarFallback: {
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  avatarFallbackText: {
+  rankText: {
+    color: SOFT_TEXT,
     fontSize: 18,
     fontWeight: '900',
   },
-
-  emptyList: {
-    padding: 18,
-    fontSize: 14,
+  rowAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  rowAvatarFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(123,97,255,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.08)',
+  },
+  rowAvatarText: {
+    color: SOFT_TEXT,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  rowName: {
+    color: SOFT_TEXT,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  rowRevenue: {
+    color: SOFT_ACCENT,
+    fontSize: 16,
+    fontWeight: '900',
+    marginLeft: 8,
+  },
+  manageRow: {
+    borderRadius: 20,
+    padding: 14,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.08)',
+  },
+  manageName: {
+    color: SOFT_TEXT,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  manageMeta: {
+    marginTop: 4,
+    color: SOFT_TEXT_SECONDARY,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

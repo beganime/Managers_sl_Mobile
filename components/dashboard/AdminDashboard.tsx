@@ -2,13 +2,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 import { CurrentUser } from '../../hooks/useCurrentUser';
@@ -21,39 +21,49 @@ interface Props {
   onRefresh: () => void;
 }
 
-type OfficeItem = {
-  id: number;
-  city?: string;
-  address?: string;
-  monthly_revenue?: number | string;
-  employee_count?: number;
-};
-
-type UserItem = {
-  id: number;
-  role?: string;
-  office?: {
-    id?: number;
-    city?: string;
-    address?: string;
-  } | null;
-};
-
 type PaymentItem = {
   id: number;
-  deal?: number;
-  manager?: number;
+  deal?: number | string | null;
+  manager?: number | null;
+  method?: string;
+  amount?: number | string;
   amount_usd?: number | string;
   net_income_usd?: number | string;
-  method?: string;
   is_confirmed?: boolean;
+  manager_data?: {
+    office?: {
+      city?: string;
+    } | null;
+  } | null;
 };
 
 type ExpenseItem = {
   id: number;
-  manager?: number | null;
   title?: string;
+  amount?: number | string;
   amount_usd?: number | string;
+  date?: string;
+  manager?: number | null;
+  manager_data?: {
+    office?: {
+      city?: string;
+    } | null;
+  } | null;
+};
+
+type CashflowItem = {
+  id: number;
+  office?: number | null;
+  office_name?: string;
+  created_by_name?: string | null;
+  entry_type?: 'income' | 'expense' | string;
+  title?: string;
+  category?: string;
+  comment?: string;
+  amount?: number | string;
+  amount_usd?: number | string;
+  entry_date?: string;
+  is_confirmed?: boolean;
 };
 
 type DocumentItem = {
@@ -62,74 +72,113 @@ type DocumentItem = {
   status?: string;
 };
 
-type OfficeCard = {
+type DailyReportItem = {
   id: number;
-  title: string;
-  address: string;
-  income: number;
-  expense: number;
-  employees: number;
+  employee?: number;
+  employee_name?: string;
+  date?: string;
+  content?: string;
+  leads_processed?: number;
+  deals_closed?: number;
+  income?: number | string;
+  income_usd?: number | string;
+  total_income?: number | string;
+  expense?: number | string;
+  expense_usd?: number | string;
+  total_expense?: number | string;
+  created_at?: string;
 };
 
-function parseAmount(value?: string | number | null) {
-  const amount = Number(value || 0);
-  return Number.isFinite(amount) ? amount : 0;
+function money(v: number) {
+  return `$${Math.round(v || 0).toLocaleString('ru-RU')}`;
 }
 
-function money(value?: string | number | null) {
-  const amount = parseAmount(value);
-  return `$${amount.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}`;
+function num(v: any) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
 
-function currentMonthRange() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const format = (date: Date) => date.toISOString().slice(0, 10);
-  return {
-    date_from: format(start),
-    date_to: format(now),
-  };
+function officeOfPayment(payment: PaymentItem, officeMap: Map<number, string>) {
+  return (
+    officeMap.get(Number(payment.manager || 0)) ||
+    payment.manager_data?.office?.city ||
+    'Без офиса'
+  );
+}
+
+function officeOfExpense(expense: ExpenseItem, officeMap: Map<number, string>) {
+  return (
+    officeMap.get(Number(expense.manager || 0)) ||
+    expense.manager_data?.office?.city ||
+    'Без офиса'
+  );
+}
+
+function officeOfCashflow(item: CashflowItem) {
+  return item.office_name || 'Без офиса';
+}
+
+function reportIncome(item: DailyReportItem) {
+  return num(item.income ?? item.income_usd ?? item.total_income);
+}
+
+function reportExpense(item: DailyReportItem) {
+  return num(item.expense ?? item.expense_usd ?? item.total_expense);
 }
 
 export default function AdminDashboard({ user, onRefresh }: Props) {
   const { theme } = useTheme();
   const router = useRouter();
 
+  const POSITIVE = theme.success || '#1AAE6F';
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [users, setUsers] = useState<UserItem[]>([]);
-  const [offices, setOffices] = useState<OfficeItem[]>([]);
+
+  const [users, setUsers] = useState<any[]>([]);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
   const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
+  const [cashflow, setCashflow] = useState<CashflowItem[]>([]);
   const [pendingDocs, setPendingDocs] = useState<DocumentItem[]>([]);
   const [pendingPayments, setPendingPayments] = useState<PaymentItem[]>([]);
+  const [reports, setReports] = useState<DailyReportItem[]>([]);
+  const [cashflowEnabled, setCashflowEnabled] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const { date_from, date_to } = currentMonthRange();
+      const [usersData, paymentsData, documentsData, reportsData, expensesData] =
+        await Promise.all([
+          fetchAllPages('users/users/').catch(() => []),
+          fetchAllPages('analytics/payments/').catch(() => []),
+          fetchAllPages('documents/generated/').catch(() => []),
+          fetchAllPages('reports/daily/').catch(() => []),
+          fetchAllPages('analytics/expenses/').catch(() => []),
+        ]);
 
-      const [usersResult, officesResult, paymentsResult, expensesResult, documentsResult] = await Promise.allSettled([
-        fetchAllPages('users/users/'),
-        fetchAllPages('users/offices/'),
-        fetchAllPages(`analytics/payments/?date_from=${date_from}&date_to=${date_to}`),
-        fetchAllPages(`analytics/expenses/?date_from=${date_from}&date_to=${date_to}`),
-        fetchAllPages('documents/generated/'),
-      ]);
+      setUsers((usersData || []) as any[]);
+      setPayments((paymentsData || []) as PaymentItem[]);
+      setReports((reportsData || []) as DailyReportItem[]);
+      setExpenses((expensesData || []) as ExpenseItem[]);
 
-      const safeUsers = usersResult.status === 'fulfilled' ? ((usersResult.value as UserItem[]) || []) : [];
-      const safeOffices = officesResult.status === 'fulfilled' ? ((officesResult.value as OfficeItem[]) || []) : [];
-      const safePayments = paymentsResult.status === 'fulfilled' ? ((paymentsResult.value as PaymentItem[]) || []) : [];
-      const safeExpenses = expensesResult.status === 'fulfilled' ? ((expensesResult.value as ExpenseItem[]) || []) : [];
-      const safeDocuments = documentsResult.status === 'fulfilled' ? ((documentsResult.value as DocumentItem[]) || []) : [];
+      const docs = ((documentsData || []) as DocumentItem[]).filter((doc) => {
+        const status = String(doc.status || '').toLowerCase();
+        return status === 'generated' || status === 'pending';
+      });
+      setPendingDocs(docs);
 
-      setUsers(safeUsers);
-      setOffices(safeOffices);
-      setPayments(safePayments);
-      setExpenses(safeExpenses);
-      setPendingDocs(safeDocuments.filter((doc) => doc.status === 'generated'));
-      setPendingPayments(safePayments.filter((payment) => !payment.is_confirmed));
-    } catch (error) {
-      console.log('Admin dashboard load error', error);
+      const pendingPays = ((paymentsData || []) as PaymentItem[]).filter((p) => !p.is_confirmed);
+      setPendingPayments(pendingPays);
+
+      try {
+        const cashflowData = await fetchAllPages('analytics/cashflow/');
+        setCashflow((cashflowData || []) as CashflowItem[]);
+        setCashflowEnabled(true);
+      } catch {
+        setCashflow([]);
+        setCashflowEnabled(false);
+      }
+    } catch (e) {
+      console.log('Admin dashboard load error', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -137,66 +186,175 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
-  const officeCards = useMemo<OfficeCard[]>(() => {
-    const managerOfficeMap = new Map<number, number | null>();
-    const employeeCountMap = new Map<number, number>();
-    const fallbackIncomeMap = new Map<number, number>();
-    const expenseMap = new Map<number, number>();
+  const officeMap = useMemo(() => {
+    const map = new Map<number, string>();
+    users.forEach((u: any) => {
+      map.set(Number(u.id), u.office?.city || 'Без офиса');
+    });
+    return map;
+  }, [users]);
 
-    users.forEach((staff) => {
-      const officeId = staff.office?.id ?? null;
-      managerOfficeMap.set(staff.id, officeId);
+  const totalRevenueDeals = useMemo(
+    () =>
+      payments
+        .filter((p) => p.is_confirmed)
+        .reduce((sum, p) => sum + num(p.amount_usd || p.amount || 0), 0),
+    [payments]
+  );
 
-      if (officeId) {
-        employeeCountMap.set(officeId, (employeeCountMap.get(officeId) || 0) + 1);
+  const totalNetDeals = useMemo(
+    () =>
+      payments
+        .filter((p) => p.is_confirmed)
+        .reduce((sum, p) => sum + num(p.net_income_usd || p.amount_usd || 0), 0),
+    [payments]
+  );
+
+  const totalOfficeExpenses = useMemo(
+    () => expenses.reduce((sum, x) => sum + num(x.amount_usd ?? x.amount), 0),
+    [expenses]
+  );
+
+  const totalCashflowIncome = useMemo(
+    () =>
+      cashflow
+        .filter((x) => String(x.entry_type || '').toLowerCase() === 'income')
+        .reduce((sum, x) => sum + num(x.amount_usd ?? x.amount), 0),
+    [cashflow]
+  );
+
+  const totalCashflowExpense = useMemo(
+    () =>
+      cashflow
+        .filter((x) => String(x.entry_type || '').toLowerCase() === 'expense')
+        .reduce((sum, x) => sum + num(x.amount_usd ?? x.amount), 0),
+    [cashflow]
+  );
+
+  const fullOfficeIncome = useMemo(
+    () => totalRevenueDeals + totalCashflowIncome,
+    [totalRevenueDeals, totalCashflowIncome]
+  );
+
+  const fullOfficeExpense = useMemo(
+    () => totalOfficeExpenses + totalCashflowExpense,
+    [totalOfficeExpenses, totalCashflowExpense]
+  );
+
+  const fullOfficeBalance = useMemo(
+    () => fullOfficeIncome - fullOfficeExpense,
+    [fullOfficeIncome, fullOfficeExpense]
+  );
+
+  const officeFinance = useMemo(() => {
+    const bucket: Record<
+      string,
+      {
+        office: string;
+        deals_income: number;
+        extra_income: number;
+        expenses: number;
+      }
+    > = {};
+
+    payments
+      .filter((p) => p.is_confirmed)
+      .forEach((p) => {
+        const office = officeOfPayment(p, officeMap);
+        if (!bucket[office]) {
+          bucket[office] = {
+            office,
+            deals_income: 0,
+            extra_income: 0,
+            expenses: 0,
+          };
+        }
+        bucket[office].deals_income += num(p.amount_usd || p.amount || 0);
+      });
+
+    expenses.forEach((e) => {
+      const office = officeOfExpense(e, officeMap);
+      if (!bucket[office]) {
+        bucket[office] = {
+          office,
+          deals_income: 0,
+          extra_income: 0,
+          expenses: 0,
+        };
+      }
+      bucket[office].expenses += num(e.amount_usd ?? e.amount);
+    });
+
+    cashflow.forEach((c) => {
+      const office = officeOfCashflow(c);
+      if (!bucket[office]) {
+        bucket[office] = {
+          office,
+          deals_income: 0,
+          extra_income: 0,
+          expenses: 0,
+        };
+      }
+
+      if (String(c.entry_type || '').toLowerCase() === 'income') {
+        bucket[office].extra_income += num(c.amount_usd ?? c.amount);
+      } else if (String(c.entry_type || '').toLowerCase() === 'expense') {
+        bucket[office].expenses += num(c.amount_usd ?? c.amount);
       }
     });
 
-    payments
-      .filter((payment) => payment.is_confirmed)
-      .forEach((payment) => {
-        const officeId = payment.manager ? managerOfficeMap.get(payment.manager) : null;
-        if (!officeId) return;
+    return Object.values(bucket)
+      .map((row) => ({
+        ...row,
+        total_income: row.deals_income + row.extra_income,
+        balance: row.deals_income + row.extra_income - row.expenses,
+      }))
+      .sort((a, b) => b.balance - a.balance)
+      .slice(0, 8);
+  }, [payments, expenses, cashflow, officeMap]);
 
-        fallbackIncomeMap.set(officeId, (fallbackIncomeMap.get(officeId) || 0) + parseAmount(payment.amount_usd));
-      });
+  const today = new Date().toISOString().slice(0, 10);
 
-    expenses.forEach((expense) => {
-      const officeId = expense.manager ? managerOfficeMap.get(expense.manager) : null;
-      if (!officeId) return;
+  const todayReports = useMemo(
+    () =>
+      reports.filter((r) => String(r.date || r.created_at || '').slice(0, 10) === today),
+    [reports, today]
+  );
 
-      expenseMap.set(officeId, (expenseMap.get(officeId) || 0) + parseAmount(expense.amount_usd));
-    });
+  const todayIncome = useMemo(
+    () => todayReports.reduce((sum, r) => sum + reportIncome(r), 0),
+    [todayReports]
+  );
 
-    return offices
-      .map((office) => {
-        const incomeFromOffice = parseAmount(office.monthly_revenue);
-        const fallbackIncome = fallbackIncomeMap.get(office.id) || 0;
-
-        return {
-          id: office.id,
-          title: office.city || `Офис #${office.id}`,
-          address: office.address || 'Адрес не указан',
-          income: incomeFromOffice > 0 ? incomeFromOffice : fallbackIncome,
-          expense: expenseMap.get(office.id) || 0,
-          employees: Number(office.employee_count ?? employeeCountMap.get(office.id) ?? 0),
-        };
-      })
-      .sort((a, b) => b.income - a.income);
-  }, [expenses, offices, payments, users]);
-
-  const totalIncome = useMemo(() => officeCards.reduce((sum, office) => sum + office.income, 0), [officeCards]);
-  const totalExpense = useMemo(() => officeCards.reduce((sum, office) => sum + office.expense, 0), [officeCards]);
-  const totalEmployees = useMemo(() => officeCards.reduce((sum, office) => sum + office.employees, 0), [officeCards]);
+  const todayExpense = useMemo(
+    () => todayReports.reduce((sum, r) => sum + reportExpense(r), 0),
+    [todayReports]
+  );
 
   const adminActions = [
-    { title: 'Сотрудники', route: '/admin-staff', subtitle: 'Добавить, удалить, редактировать' },
-    { title: 'Платежи', route: '/admin-payments', subtitle: 'Подтверждение и касса' },
-    { title: 'Отчёты', route: '/admin-reports', subtitle: 'Финансы, расходы, аналитика' },
-    { title: 'CRM', route: '/crm', subtitle: 'Сделки, клиенты, договоры' },
+    {
+      title: 'Сотрудники',
+      route: '/(app)/admin-staff',
+      subtitle: 'Доступы, офисы, рейтинг, планы',
+    },
+    {
+      title: 'Финансы',
+      route: '/(app)/admin-payments',
+      subtitle: 'Платежи, доходы, расходы',
+    },
+    {
+      title: 'Отчёты',
+      route: '/(app)/admin-reports',
+      subtitle: 'Daily reports и AI summary',
+    },
+    {
+      title: 'CRM',
+      route: '/(app)/crm',
+      subtitle: 'Сделки, клиенты, договоры',
+    },
   ];
 
   if (loading) {
@@ -218,135 +376,216 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              load();
+              void load();
               onRefresh();
             }}
             tintColor={theme.blue}
           />
         }
-        showsVerticalScrollIndicator={false}>
-        <View style={styles.top}>
-          <View>
-            <Text style={[styles.caption, { color: theme.textMuted }]}>Администратор</Text>
-            <Text style={[styles.title, { color: theme.text }]}>
-              {user.first_name} {user.last_name}
-            </Text>
+        showsVerticalScrollIndicator={false}
+      >
+        <LinearGradient
+          colors={[theme.blue, '#5B86E5']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.hero}
+        >
+          <View style={styles.top}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.caption}>Администратор</Text>
+              <Text style={styles.title}>
+                {user.first_name} {user.last_name}
+              </Text>
+            </View>
+
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>ADMIN</Text>
+            </View>
           </View>
 
-          <View style={[styles.badge, { backgroundColor: theme.redSoft }]}>
-            <Text style={[styles.badgeText, { color: theme.red }]}>ADMIN</Text>
+          <View style={styles.heroStats}>
+            <View style={styles.heroStat}>
+              <Text style={styles.heroValue}>{money(fullOfficeIncome)}</Text>
+              <Text style={styles.heroLabel}>Полный доход офисов</Text>
+            </View>
+            <View style={styles.heroStat}>
+              <Text style={styles.heroValue}>{money(fullOfficeBalance)}</Text>
+              <Text style={styles.heroLabel}>Итоговый баланс</Text>
+            </View>
           </View>
-        </View>
+        </LinearGradient>
 
         <View style={styles.kpiGrid}>
-          <LinearGradient colors={theme.gradientSurface as [string, string]} style={[styles.kpiCard, { borderColor: theme.border }]}>
-            <Text style={[styles.kpiValue, { color: theme.text }]}>{money(totalIncome)}</Text>
-            <Text style={[styles.kpiLabel, { color: theme.textMuted }]}>Доход офисов</Text>
-          </LinearGradient>
-
-          <LinearGradient colors={theme.gradientSurface as [string, string]} style={[styles.kpiCard, { borderColor: theme.border }]}>
-            <Text style={[styles.kpiValue, { color: theme.text }]}>{money(totalExpense)}</Text>
-            <Text style={[styles.kpiLabel, { color: theme.textMuted }]}>Расход офисов</Text>
-          </LinearGradient>
-
-          <LinearGradient colors={theme.gradientSurface as [string, string]} style={[styles.kpiCard, { borderColor: theme.border }]}>
-            <Text style={[styles.kpiValue, { color: theme.text }]}>{totalEmployees}</Text>
-            <Text style={[styles.kpiLabel, { color: theme.textMuted }]}>Сотрудники</Text>
-          </LinearGradient>
-
-          <LinearGradient colors={theme.gradientSurface as [string, string]} style={[styles.kpiCard, { borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{pendingPayments.length}</Text>
-            <Text style={[styles.kpiLabel, { color: theme.textMuted }]}>Ждут подтверждения</Text>
-          </LinearGradient>
+            <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Ждут платежи</Text>
+          </View>
+
+          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.kpiValue, { color: theme.text }]}>{pendingDocs.length}</Text>
+            <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Ждут документы</Text>
+          </View>
+
+          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.kpiValue, { color: theme.text }]}>{money(fullOfficeExpense)}</Text>
+            <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Полный расход офисов</Text>
+          </View>
+
+          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.kpiValue, { color: theme.text }]}>{money(totalNetDeals)}</Text>
+            <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Net по сделкам</Text>
+          </View>
+
+          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.kpiValue, { color: theme.text }]}>{money(todayIncome)}</Text>
+            <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Доход по отчётам сегодня</Text>
+          </View>
+
+          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.kpiValue, { color: theme.text }]}>{money(todayExpense)}</Text>
+            <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Расход по отчётам сегодня</Text>
+          </View>
         </View>
 
         <Text style={[styles.section, { color: theme.text }]}>Быстрые действия</Text>
         <View style={styles.actionsGrid}>
           {adminActions.map((action) => (
             <Pressable
-              key={action.route}
+              key={action.title}
               onPress={() => router.push(action.route as any)}
-              style={[styles.actionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              style={[styles.actionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            >
               <Text style={[styles.actionTitle, { color: theme.text }]}>{action.title}</Text>
-              <Text style={[styles.actionSub, { color: theme.textMuted }]}>{action.subtitle}</Text>
+              <Text style={[styles.actionSub, { color: theme.textSecondary }]}>{action.subtitle}</Text>
             </Pressable>
           ))}
         </View>
 
-        <Text style={[styles.section, { color: theme.text }]}>Офисы</Text>
-        {officeCards.length === 0 ? (
-          <View style={[styles.emptyBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.emptyText, { color: theme.textMuted }]}>Пока нет офисов или финансовых данных по ним.</Text>
-          </View>
-        ) : (
-          officeCards.map((office) => {
-            const net = office.income - office.expense;
-
-            return (
-              <View key={office.id} style={[styles.officeCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <View style={styles.officeHead}>
-                  <View style={{ flex: 1, paddingRight: 10 }}>
-                    <Text style={[styles.officeTitle, { color: theme.text }]}>{office.title}</Text>
-                    <Text style={[styles.officeAddress, { color: theme.textMuted }]}>{office.address}</Text>
-                  </View>
-
-                  <View style={[styles.netPill, { backgroundColor: net >= 0 ? theme.blueSoft : theme.redSoft }]}>
-                    <Text style={[styles.netPillText, { color: net >= 0 ? theme.blue : theme.red }]}>{money(net)}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.officeStatsRow}>
-                  <View style={[styles.officeStat, { backgroundColor: theme.backgroundSoft }]}> 
-                    <Text style={[styles.officeStatLabel, { color: theme.textMuted }]}>Доход</Text>
-                    <Text style={[styles.officeStatValue, { color: theme.text }]}>{money(office.income)}</Text>
-                  </View>
-
-                  <View style={[styles.officeStat, { backgroundColor: theme.backgroundSoft }]}> 
-                    <Text style={[styles.officeStatLabel, { color: theme.textMuted }]}>Расход</Text>
-                    <Text style={[styles.officeStatValue, { color: theme.text }]}>{money(office.expense)}</Text>
-                  </View>
-
-                  <View style={[styles.officeStat, { backgroundColor: theme.backgroundSoft }]}> 
-                    <Text style={[styles.officeStatLabel, { color: theme.textMuted }]}>Сотрудники</Text>
-                    <Text style={[styles.officeStatValue, { color: theme.text }]}>{office.employees}</Text>
-                  </View>
-                </View>
-              </View>
-            );
-          })
-        )}
-
-        <Text style={[styles.section, { color: theme.text }]}>Требуют подтверждения</Text>
-        <View style={[styles.panel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {pendingPayments.length === 0 ? (
-            <Text style={[styles.emptyInline, { color: theme.textMuted }]}>Нет неподтверждённых платежей.</Text>
-          ) : (
-            pendingPayments.slice(0, 5).map((payment) => (
-              <Pressable
-                key={`payment-${payment.id}`}
-                onPress={() => router.push('/admin-payments' as any)}
-                style={[styles.row, { borderBottomColor: theme.divider }]}>
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={[styles.rowTitle, { color: theme.text }]}>Платёж #{payment.id}</Text>
-                  <Text style={[styles.rowMeta, { color: theme.textMuted }]}>Сделка #{payment.deal} · {payment.method || 'payment'}</Text>
-                </View>
-                <Text style={[styles.rowValue, { color: theme.text }]}>{money(payment.amount_usd)}</Text>
-              </Pressable>
-            ))
+        <Text style={[styles.section, { color: theme.text }]}>Финансы по офисам</Text>
+        <View style={[styles.panel, { borderColor: theme.border, backgroundColor: theme.card }]}>
+          {!cashflowEnabled && (
+            <View style={[styles.noticeBox, { backgroundColor: theme.backgroundSoft }]}>
+              <Text style={[styles.noticeText, { color: theme.textSecondary }]}>
+                Свободные доходы/расходы из cashflow не найдены. Сейчас в сводке учтены сделки и расходы, которые доступны на backend.
+              </Text>
+            </View>
           )}
 
-          {pendingDocs.slice(0, 5).map((doc) => (
+          {officeFinance.length === 0 ? (
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+              Пока нет финансовых данных по офисам.
+            </Text>
+          ) : (
+            officeFinance.map((row, index) => (
+              <View
+                key={`${row.office}-${index}`}
+                style={[
+                  styles.officeFinanceCard,
+                  {
+                    borderColor: theme.divider,
+                    backgroundColor: theme.surface,
+                  },
+                ]}
+              >
+                <View style={styles.officeFinanceHead}>
+                  <Text style={[styles.officeTitle, { color: theme.text }]}>{row.office}</Text>
+                  <Text
+                    style={[
+                      styles.officeBalance,
+                      { color: row.balance >= 0 ? POSITIVE : theme.red },
+                    ]}
+                  >
+                    {money(row.balance)}
+                  </Text>
+                </View>
+
+                <View style={styles.officeFinanceRow}>
+                  <Text style={[styles.officeFinanceLabel, { color: theme.textSecondary }]}>
+                    Сделки
+                  </Text>
+                  <Text style={[styles.officeFinanceValue, { color: theme.text }]}>
+                    {money(row.deals_income)}
+                  </Text>
+                </View>
+
+                <View style={styles.officeFinanceRow}>
+                  <Text style={[styles.officeFinanceLabel, { color: theme.textSecondary }]}>
+                    Прочие доходы
+                  </Text>
+                  <Text style={[styles.officeFinanceValue, { color: POSITIVE }]}>
+                    {money(row.extra_income)}
+                  </Text>
+                </View>
+
+                <View style={styles.officeFinanceRow}>
+                  <Text style={[styles.officeFinanceLabel, { color: theme.textSecondary }]}>
+                    Расходы
+                  </Text>
+                  <Text style={[styles.officeFinanceValue, { color: theme.red }]}>
+                    {money(row.expenses)}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        <Text style={[styles.section, { color: theme.text }]}>Требуют подтверждения</Text>
+        <View style={[styles.panel, { borderColor: theme.border, backgroundColor: theme.card }]}>
+          {pendingPayments.slice(0, 5).map((p, idx) => (
             <Pressable
-              key={`doc-${doc.id}`}
-              onPress={() => router.push('/documents' as any)}
-              style={[styles.row, { borderBottomColor: theme.divider }]}>
-              <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={[styles.rowTitle, { color: theme.text }]}>{doc.title || `Документ #${doc.id}`}</Text>
-                <Text style={[styles.rowMeta, { color: theme.textMuted }]}>Ожидает одобрения</Text>
+              key={`p-${p.id}`}
+              onPress={() => router.push('/(app)/admin-payments' as any)}
+              style={[
+                styles.row,
+                {
+                  borderBottomColor: theme.divider,
+                  borderBottomWidth:
+                    idx === pendingPayments.slice(0, 5).length - 1 && pendingDocs.slice(0, 5).length === 0 ? 0 : 1,
+                },
+              ]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.text }]}>Платёж #{p.id}</Text>
+                <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
+                  Сделка #{p.deal || '-'} · {p.method || 'payment'}
+                </Text>
+              </View>
+              <Text style={[styles.rowValue, { color: theme.blue }]}>
+                {money(num(p.amount_usd || 0))}
+              </Text>
+            </Pressable>
+          ))}
+
+          {pendingDocs.slice(0, 5).map((doc, idx) => (
+            <Pressable
+              key={`d-${doc.id}`}
+              onPress={() => router.push('/(app)/documents' as any)}
+              style={[
+                styles.row,
+                {
+                  borderBottomColor: theme.divider,
+                  borderBottomWidth: idx === pendingDocs.slice(0, 5).length - 1 ? 0 : 1,
+                },
+              ]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.text }]}>
+                  {doc.title || `Документ #${doc.id}`}
+                </Text>
+                <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
+                  Ожидает одобрения
+                </Text>
               </View>
               <Text style={[styles.rowValue, { color: theme.blue }]}>Открыть</Text>
             </Pressable>
           ))}
+
+          {pendingPayments.length === 0 && pendingDocs.length === 0 && (
+            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+              Сейчас ничего не ждёт подтверждения.
+            </Text>
+          )}
         </View>
       </ScrollView>
     </ScreenWrapper>
@@ -354,14 +593,11 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
 }
 
 const styles = StyleSheet.create({
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  container: {
-    padding: 20,
-    paddingBottom: 120,
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { padding: 20, paddingBottom: 120 },
+  hero: {
+    borderRadius: 26,
+    padding: 18,
   },
   top: {
     flexDirection: 'row',
@@ -369,12 +605,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   caption: {
+    color: 'rgba(255,255,255,0.82)',
     fontSize: 12,
     fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   title: {
+    color: '#fff',
     fontSize: 28,
     fontWeight: '900',
     marginTop: 4,
@@ -383,10 +621,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.14)',
   },
   badgeText: {
+    color: '#fff',
     fontSize: 12,
     fontWeight: '900',
+  },
+  heroStats: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 18,
+  },
+  heroStat: {
+    flex: 1,
+  },
+  heroValue: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  heroLabel: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 12,
+    fontWeight: '700',
   },
   kpiGrid: {
     flexDirection: 'row',
@@ -400,15 +659,8 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     padding: 18,
   },
-  kpiValue: {
-    fontSize: 22,
-    fontWeight: '900',
-  },
-  kpiLabel: {
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: '700',
-  },
+  kpiValue: { fontSize: 22, fontWeight: '900' },
+  kpiLabel: { marginTop: 8, fontSize: 13, fontWeight: '700' },
   section: {
     fontSize: 18,
     fontWeight: '900',
@@ -434,93 +686,72 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 13,
     lineHeight: 18,
-  },
-  emptyBox: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
-  },
-  emptyText: {
-    fontSize: 14,
     fontWeight: '600',
-  },
-  officeCard: {
-    borderWidth: 1,
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 12,
-  },
-  officeHead: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  officeTitle: {
-    fontSize: 17,
-    fontWeight: '900',
-  },
-  officeAddress: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  netPill: {
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  netPillText: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  officeStatsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
-  },
-  officeStat: {
-    flex: 1,
-    borderRadius: 18,
-    padding: 12,
-  },
-  officeStatLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  officeStatValue: {
-    marginTop: 6,
-    fontSize: 16,
-    fontWeight: '900',
   },
   panel: {
     borderWidth: 1,
     borderRadius: 22,
     overflow: 'hidden',
+    padding: 16,
+  },
+  noticeBox: {
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 12,
+  },
+  noticeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  officeFinanceCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 10,
+  },
+  officeFinanceHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 10,
+  },
+  officeTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    flex: 1,
+  },
+  officeBalance: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  officeFinanceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 6,
+  },
+  officeFinanceLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  officeFinanceValue: {
+    fontSize: 13,
+    fontWeight: '900',
   },
   row: {
-    paddingHorizontal: 16,
     paddingVertical: 15,
     borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  rowTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  rowMeta: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  rowValue: {
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  emptyInline: {
-    padding: 16,
+  rowTitle: { fontSize: 15, fontWeight: '800' },
+  rowMeta: { marginTop: 4, fontSize: 12, fontWeight: '600' },
+  rowValue: { fontSize: 14, fontWeight: '900' },
+  emptyText: {
     fontSize: 14,
     fontWeight: '600',
+    lineHeight: 20,
   },
 });

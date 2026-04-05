@@ -163,6 +163,41 @@ function ProfileField({
   );
 }
 
+function QuickLinkCard({
+  title,
+  subtitle,
+  icon,
+  onPress,
+  theme,
+}: {
+  title: string;
+  subtitle: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  theme: any;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.quickCard,
+        {
+          backgroundColor: theme.card,
+          borderColor: theme.border,
+          shadowColor: theme.shadow,
+        },
+      ]}
+    >
+      <View style={[styles.quickIconWrap, { backgroundColor: theme.blueSoft }]}>
+        <Ionicons name={icon} size={18} color={theme.blue} />
+      </View>
+
+      <Text style={[styles.quickTitle, { color: theme.text }]}>{title}</Text>
+      <Text style={[styles.quickSub, { color: theme.textSecondary }]}>{subtitle}</Text>
+    </Pressable>
+  );
+}
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { theme, themeMode, setTheme } = useTheme();
@@ -346,7 +381,7 @@ export default function ProfileScreen() {
           ]}
         >
           <Pressable onPress={handlePickAvatar} style={styles.avatarOuter}>
-            <View style={[styles.avatarRing, { borderColor: `${theme.blue}35` }]}>
+            <View style={[styles.avatarRing, { borderColor: `${theme.blue}26` }]}>
               {avatarUri ? (
                 <Image source={{ uri: avatarUri }} style={styles.avatarImage} resizeMode="cover" />
               ) : (
@@ -461,6 +496,86 @@ export default function ProfileScreen() {
             hint={`Выполнение ${progress}%`}
             theme={theme}
           />
+        </View>
+
+        <View
+          style={[
+            styles.quickSection,
+            {
+              backgroundColor: theme.card,
+              borderColor: theme.border,
+              shadowColor: theme.shadow,
+            },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Быстрые переходы</Text>
+          <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
+            Важные страницы прямо из профиля
+          </Text>
+
+          <View style={styles.quickGrid}>
+            <QuickLinkCard
+              title="База знаний"
+              subtitle="Материалы и подсказки"
+              icon="library-outline"
+              onPress={() => router.push('/(app)/knowledge-base' as any)}
+              theme={theme}
+            />
+            <QuickLinkCard
+              title="Документы"
+              subtitle="Шаблоны и генерация"
+              icon="document-text-outline"
+              onPress={() => router.push('/(app)/documents' as any)}
+              theme={theme}
+            />
+            <QuickLinkCard
+              title="Задачи"
+              subtitle="Мои задачи и статусы"
+              icon="checkbox-outline"
+              onPress={() => router.push('/(app)/tasks' as any)}
+              theme={theme}
+            />
+            <QuickLinkCard
+              title="Workday"
+              subtitle="Приход и уход"
+              icon="time-outline"
+              onPress={() => router.push('/(app)/workday' as any)}
+              theme={theme}
+            />
+            <QuickLinkCard
+              title="Финансы"
+              subtitle="Платежи, доходы и расходы"
+              icon="wallet-outline"
+              onPress={() => router.push('/(app)/admin-payments' as any)}
+              theme={theme}
+            />
+            <QuickLinkCard
+              title="Вузы"
+              subtitle="Каталог университетов"
+              icon="school-outline"
+              onPress={() => router.push('/(app)/catalog' as any)}
+              theme={theme}
+            />
+
+            {isAdmin && (
+              <>
+                <QuickLinkCard
+                  title="Сотрудники"
+                  subtitle="Доступы и офисы"
+                  icon="people-outline"
+                  onPress={() => router.push('/(app)/admin-staff' as any)}
+                  theme={theme}
+                />
+                <QuickLinkCard
+                  title="Отчёты"
+                  subtitle="AI summary и daily"
+                  icon="stats-chart-outline"
+                  onPress={() => router.push('/(app)/admin-reports' as any)}
+                  theme={theme}
+                />
+              </>
+            )}
+          </View>
         </View>
 
         {(managedOffice || canViewOfficeDashboard) && (
@@ -788,6 +903,49 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 12,
     fontWeight: '600',
+  },
+  quickSection: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 16,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  quickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 12,
+  },
+  quickCard: {
+    width: '48%',
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  quickIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  quickTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  quickSub: {
+    marginTop: 5,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
   },
   officeCard: {
     borderWidth: 1,

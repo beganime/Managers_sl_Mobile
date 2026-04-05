@@ -1,17 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
-import { fetchAllPages } from '../../src/api/apiClient';
+import apiClient, { fetchAllPages } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
 
 type FilterKey = 'today' | 'week' | 'all';
@@ -33,10 +33,17 @@ type ReportItem = {
   created_at?: string;
 };
 
+type PaymentItem = {
+  id: number;
+  amount?: number | string;
+  amount_usd?: number | string;
+  is_confirmed?: boolean;
+};
+
 function stripHtml(value?: string) {
   return String(value || '')
     .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
+    .replace(/ /g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -63,14 +70,21 @@ export default function AdminReportsScreen() {
   const { user } = useCurrentUser();
 
   const isAdmin = Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
+  const POSITIVE = theme.success || '#1AAE6F';
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
   const [filter, setFilter] = useState<FilterKey>('today');
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const [reports, setReports] = useState<ReportItem[]>([]);
-  const [payments, setPayments] = useState<any[]>([]);
+  const [payments, setPayments] = useState<PaymentItem[]>([]);
+
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSummary, setAiSummary] = useState('');
+  const [aiProvider, setAiProvider] = useState('');
+  const [aiError, setAiError] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -79,18 +93,61 @@ export default function AdminReportsScreen() {
         fetchAllPages('analytics/payments/').catch(() => []),
       ]);
 
-      setReports(reportsData as ReportItem[]);
-      setPayments(paymentsData as any[]);
+      setReports((reportsData || []) as ReportItem[]);
+      setPayments((paymentsData || []) as PaymentItem[]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
+  const loadAiSummary = useCallback(async (selectedFilter: FilterKey) => {
+    setAiLoading(true);
+    setAiError('');
+
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+
+      const params: Record<string, string> = {};
+
+      if (selectedFilter === 'today') {
+        params.date_from = todayStr;
+        params.date_to = todayStr;
+      } else if (selectedFilter === 'week') {
+        params.date_from = weekAgo;
+      }
+
+      const response = await apiClient.get('reports/daily/ai_summary/', { params });
+
+      setAiSummary(stripHtml(response?.data?.summary || ''));
+      setAiProvider(String(response?.data?.provider || ''));
+      setAiError(String(response?.data?.error || ''));
+    } catch (error: any) {
+      setAiSummary('');
+      setAiProvider('');
+      setAiError(
+        error?.response?.data?.detail ||
+          'AI summary пока недоступен. Проверь endpoint reports/daily/ai_summary/.'
+      );
+    } finally {
+      setAiLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (isAdmin) load();
-    else setLoading(false);
+    if (isAdmin) {
+      void load();
+    } else {
+      setLoading(false);
+    }
   }, [isAdmin, load]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      void loadAiSummary(filter);
+    }
+  }, [filter, isAdmin, loadAiSummary]);
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
@@ -99,7 +156,6 @@ export default function AdminReportsScreen() {
     return [...reports]
       .filter((item) => {
         const date = String(item.date || item.created_at || '').slice(0, 10);
-
         if (filter === 'today') return date === todayStr;
         if (filter === 'week') return date >= weekAgo;
         return true;
@@ -136,7 +192,9 @@ export default function AdminReportsScreen() {
     return (
       <ScreenWrapper>
         <View style={styles.center}>
-          <Text style={[styles.denied, { color: theme.text }]}>Доступ только для администратора.</Text>
+          <Text style={[styles.denied, { color: theme.text }]}>
+            Доступ только для администратора.
+          </Text>
         </View>
       </ScreenWrapper>
     );
@@ -161,7 +219,8 @@ export default function AdminReportsScreen() {
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              load();
+              void load();
+              void loadAiSummary(filter);
             }}
             tintColor={theme.blue}
           />
@@ -170,7 +229,7 @@ export default function AdminReportsScreen() {
       >
         <Text style={[styles.title, { color: theme.text }]}>Отчёты</Text>
         <Text style={[styles.sub, { color: theme.textSecondary }]}>
-          Доход, расход и ежедневные отчёты команды
+          Доход, расход, daily reports и итоговый AI анализ
         </Text>
 
         <View style={styles.filterRow}>
@@ -180,6 +239,7 @@ export default function AdminReportsScreen() {
             { key: 'all', label: 'Все' },
           ].map((item) => {
             const active = filter === item.key;
+
             return (
               <Pressable
                 key={item.key}
@@ -192,7 +252,13 @@ export default function AdminReportsScreen() {
                   },
                 ]}
               >
-                <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
+                <Text
+                  style={{
+                    color: active ? '#fff' : theme.text,
+                    fontWeight: '900',
+                    fontSize: 13,
+                  }}
+                >
                   {item.label}
                 </Text>
               </Pressable>
@@ -201,36 +267,36 @@ export default function AdminReportsScreen() {
         </View>
 
         <View style={styles.kpiGrid}>
-          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{stats.count}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Отчётов</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{stats.employees}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Сотрудников</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.kpiValue, { color: theme.success }]}>{money(stats.income)}</Text>
+          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.kpiValue, { color: theme.text }]}>{money(stats.income)}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Доход по отчётам</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.kpiValue, { color: theme.red }]}>{money(stats.expense)}</Text>
+          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.kpiValue, { color: theme.text }]}>{money(stats.expense)}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Расход по отчётам</Text>
           </View>
 
-          <View style={[styles.kpiWide, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.kpiWideValue, { color: theme.blue }]}>{money(stats.turnover)}</Text>
+          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.kpiValue, { color: theme.text }]}>{money(stats.turnover)}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Подтверждённый оборот</Text>
           </View>
 
-          <View style={[styles.kpiWide, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <Text
               style={[
-                styles.kpiWideValue,
-                { color: stats.balance >= 0 ? theme.success : theme.red },
+                styles.kpiValue,
+                { color: stats.balance >= 0 ? POSITIVE : theme.red },
               ]}
             >
               {money(stats.balance)}
@@ -239,67 +305,121 @@ export default function AdminReportsScreen() {
           </View>
         </View>
 
-        <View style={{ gap: 12, marginTop: 18 }}>
-          {filteredReports.length === 0 ? (
-            <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={{ color: theme.textSecondary }}>Отчётов нет.</Text>
+        <View style={[styles.aiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={styles.aiHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.aiTitle, { color: theme.text }]}>Ответ ИИ</Text>
+              <Text style={[styles.aiSub, { color: theme.textSecondary }]}>
+                Отдельное поле с итоговой сводкой
+              </Text>
             </View>
-          ) : (
-            filteredReports.map((item) => {
-              const expanded = expandedId === item.id;
-              const preview = stripHtml(item.content).slice(0, 180);
-              const income = reportIncome(item);
-              const expense = reportExpense(item);
 
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => setExpandedId(expanded ? null : item.id)}
-                  style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                >
-                  <View style={styles.cardHead}>
-                    <View style={{ flex: 1, paddingRight: 12 }}>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>
-                        {item.employee_name || `Сотрудник #${item.employee || item.id}`}
-                      </Text>
-                      <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
-                        {item.date || String(item.created_at || '').slice(0, 10) || 'Без даты'}
-                      </Text>
-                    </View>
+            <Pressable
+              onPress={() => void loadAiSummary(filter)}
+              style={[
+                styles.aiRefreshBtn,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                },
+              ]}
+            >
+              {aiLoading ? (
+                <ActivityIndicator size="small" color={theme.blue} />
+              ) : (
+                <Text style={[styles.aiRefreshText, { color: theme.blue }]}>Обновить</Text>
+              )}
+            </Pressable>
+          </View>
 
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <View style={[styles.pill, { backgroundColor: theme.blueSoft }]}>
-                        <Text style={[styles.pillText, { color: theme.blue }]}>
-                          +{num(item.leads_processed)} лидов
-                        </Text>
-                      </View>
-                      <View style={[styles.pill, { backgroundColor: theme.redSoft, marginTop: 6 }]}>
-                        <Text style={[styles.pillText, { color: theme.red }]}>
-                          {num(item.deals_closed)} сделок
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.moneyRow}>
-                    <Text style={[styles.moneyText, { color: theme.success }]}>Доход: {money(income)}</Text>
-                    <Text style={[styles.moneyText, { color: theme.red }]}>Расход: {money(expense)}</Text>
-                  </View>
-
-                  {!expanded ? (
-                    <Text style={[styles.preview, { color: theme.textSecondary }]}>
-                      {preview || '— Нет текста —'}
-                    </Text>
-                  ) : (
-                    <Text style={[styles.preview, { color: theme.text }]}>
-                      {stripHtml(item.content) || '— Нет текста —'}
-                    </Text>
-                  )}
-                </Pressable>
-              );
-            })
+          {!!aiProvider && (
+            <Text style={[styles.aiProvider, { color: theme.blue }]}>
+              Провайдер: {aiProvider.toUpperCase()}
+            </Text>
           )}
+
+          <View
+            style={[
+              styles.aiBodyWrap,
+              {
+                backgroundColor: theme.backgroundSoft,
+                borderColor: theme.border,
+              },
+            ]}
+          >
+            <Text style={[styles.aiBody, { color: theme.text }]}>
+              {aiSummary || aiError || 'AI summary пока не получен.'}
+            </Text>
+          </View>
         </View>
+
+        {filteredReports.length === 0 ? (
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.preview, { color: theme.textSecondary }]}>Отчётов нет.</Text>
+          </View>
+        ) : (
+          filteredReports.map((item) => {
+            const expanded = expandedId === item.id;
+            const preview = stripHtml(item.content).slice(0, 180);
+            const income = reportIncome(item);
+            const expense = reportExpense(item);
+
+            return (
+              <Pressable
+                key={item.id}
+                onPress={() => setExpandedId(expanded ? null : item.id)}
+                style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              >
+                <View style={styles.cardHead}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.cardTitle, { color: theme.text }]}>
+                      {item.employee_name || `Сотрудник #${item.employee || item.id}`}
+                    </Text>
+                    <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
+                      {item.date || String(item.created_at || '').slice(0, 10) || 'Без даты'}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.pill,
+                      {
+                        backgroundColor: theme.backgroundSoft,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.pillText, { color: theme.blue }]}>
+                      +{num(item.leads_processed)} лидов
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.moneyRow}>
+                  <Text style={[styles.moneyText, { color: POSITIVE }]}>
+                    Доход: {money(income)}
+                  </Text>
+                  <Text style={[styles.moneyText, { color: theme.red }]}>
+                    Расход: {money(expense)}
+                  </Text>
+                </View>
+
+                <Text style={[styles.moneyText, { color: theme.textSecondary, marginTop: 8 }]}>
+                  {num(item.deals_closed)} сделок
+                </Text>
+
+                {!expanded ? (
+                  <Text style={[styles.preview, { color: theme.textSecondary }]}>
+                    {preview || '— Нет текста —'}
+                  </Text>
+                ) : (
+                  <Text style={[styles.preview, { color: theme.textSecondary }]}>
+                    {stripHtml(item.content) || '— Нет текста —'}
+                  </Text>
+                )}
+              </Pressable>
+            );
+          })
+        )}
       </ScrollView>
     </ScreenWrapper>
   );
@@ -312,15 +432,71 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '900' },
   sub: { marginTop: 6, fontSize: 13, fontWeight: '700' },
   filterRow: { flexDirection: 'row', gap: 8, marginTop: 18 },
-  filterChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10 },
+  filterChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 18 },
   kpiCard: { width: '48%', borderWidth: 1, borderRadius: 20, padding: 16 },
-  kpiWide: { width: '100%', borderWidth: 1, borderRadius: 20, padding: 16 },
   kpiValue: { fontSize: 22, fontWeight: '900' },
-  kpiWideValue: { fontSize: 24, fontWeight: '900' },
   kpiLabel: { marginTop: 6, fontSize: 12, fontWeight: '700' },
-  card: { borderWidth: 1, borderRadius: 22, padding: 16 },
-  cardHead: { flexDirection: 'row', justifyContent: 'space-between' },
+  aiCard: {
+    marginTop: 18,
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 16,
+  },
+  aiHeader: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  aiTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  aiSub: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  aiRefreshBtn: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minWidth: 94,
+    alignItems: 'center',
+  },
+  aiRefreshText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  aiProvider: {
+    marginTop: 12,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  aiBodyWrap: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+  },
+  aiBody: {
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 22,
+  },
+  card: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 16,
+    marginTop: 14,
+  },
+  cardHead: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   cardTitle: { fontSize: 16, fontWeight: '900' },
   cardMeta: { marginTop: 6, fontSize: 13, fontWeight: '600' },
   pill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },

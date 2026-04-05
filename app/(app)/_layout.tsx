@@ -1,7 +1,8 @@
 import { BlurView } from 'expo-blur';
-import { Tabs } from 'expo-router';
-import React, { useEffect } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Tabs, useRouter, useSegments } from 'expo-router';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AppTabIcon from '../../components/ui/AppTabIcon';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
@@ -10,8 +11,22 @@ import { ensureWorkdayRemindersScheduled } from '../../src/notifications/workday
 
 const TAB_HEIGHT = Platform.OS === 'ios' ? 86 : 72;
 const TAB_BOTTOM = Platform.OS === 'ios' ? 18 : 10;
+const GREEN = '#1AAE6F';
+
+function canShowFabOnRoute(segments: string[]) {
+  if (!segments.length || segments[0] !== '(app)') return false;
+  if (segments.length === 1) return true;
+
+  const screen = segments[1];
+
+  return ['index', 'crm', 'leaderboard', 'catalog', 'profile'].includes(screen);
+}
 
 export default function AppTabsLayout() {
+  const router = useRouter();
+  const segments = useSegments();
+  const insets = useSafeAreaInsets();
+
   const { user } = useCurrentUser();
   const { theme, themeMode } = useTheme();
 
@@ -19,184 +34,297 @@ export default function AppTabsLayout() {
   const dark = themeMode === 'dark';
   const useBlur = Platform.OS === 'ios';
 
+  const [fabOpen, setFabOpen] = useState(false);
+
+  const shouldShowGlobalFab = useMemo(() => {
+    return canShowFabOnRoute(segments as string[]);
+  }, [segments]);
+
+  const fabBottom = useMemo(() => {
+    return TAB_HEIGHT + TAB_BOTTOM + Math.max(insets.bottom, 8) + 14;
+  }, [insets.bottom]);
+
   useEffect(() => {
     ensureWorkdayRemindersScheduled();
   }, []);
 
+  useEffect(() => {
+    setFabOpen(false);
+  }, [segments]);
+
+  const openExpenseFromTemplate = () => {
+    setFabOpen(false);
+    router.push({
+      pathname: '/(app)/admin-payments',
+      params: { open: 'expense' },
+    } as any);
+  };
+
+  const openIncomeFromTemplate = () => {
+    setFabOpen(false);
+    router.push({
+      pathname: '/(app)/admin-payments',
+      params: { open: 'income' },
+    } as any);
+  };
+
+  const openOfficeTopUp = () => {
+    setFabOpen(false);
+    router.push({
+      pathname: '/(app)/admin-payments',
+      params: {
+        open: 'income',
+        title: 'Зарплата',
+      },
+    } as any);
+  };
+
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        lazy: true,
-        freezeOnBlur: false,
-        tabBarHideOnKeyboard: true,
-        sceneStyle: {
-          backgroundColor: theme.background,
-        },
-        tabBarActiveTintColor: dark ? '#FFFFFF' : theme.text,
-        tabBarInactiveTintColor: theme.textMuted,
-        tabBarLabelPosition: 'below-icon',
-        tabBarStyle: {
-          position: 'absolute',
-          left: 14,
-          right: 14,
-          bottom: TAB_BOTTOM,
-          height: TAB_HEIGHT,
-          borderRadius: 28,
-          backgroundColor: useBlur
-            ? 'transparent'
-            : dark
-            ? 'rgba(15,23,35,0.98)'
-            : 'rgba(255,255,255,0.98)',
-          borderTopWidth: 0,
-          elevation: 0,
-          shadowColor: theme.shadow,
-          shadowOffset: { width: 0, height: 10 },
-          shadowOpacity: dark ? 0.22 : 0.1,
-          shadowRadius: 20,
-          borderWidth: useBlur ? 0 : 1,
-          borderColor: useBlur ? 'transparent' : theme.border,
-        },
-        tabBarBackground: () =>
-          useBlur ? (
-            <View style={StyleSheet.absoluteFillObject}>
-              <BlurView
-                intensity={dark ? 45 : 80}
-                tint={dark ? 'dark' : 'light'}
-                style={StyleSheet.absoluteFillObject}
-              />
+    <View style={{ flex: 1 }}>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          lazy: true,
+          freezeOnBlur: false,
+          tabBarHideOnKeyboard: true,
+          sceneStyle: {
+            backgroundColor: theme.background,
+          },
+          tabBarActiveTintColor: dark ? '#FFFFFF' : theme.text,
+          tabBarInactiveTintColor: theme.textMuted,
+          tabBarLabelPosition: 'below-icon',
+          tabBarStyle: {
+            position: 'absolute',
+            left: 14,
+            right: 14,
+            bottom: TAB_BOTTOM + Math.max(insets.bottom - 4, 0),
+            height: TAB_HEIGHT,
+            borderRadius: 28,
+            backgroundColor: useBlur
+              ? 'transparent'
+              : dark
+              ? 'rgba(22,26,38,0.94)'
+              : 'rgba(255,255,255,0.96)',
+            borderTopWidth: 0,
+            elevation: 0,
+            shadowColor: theme.shadow,
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: dark ? 0.2 : 0.08,
+            shadowRadius: 20,
+            borderWidth: useBlur ? 0 : 1,
+            borderColor: useBlur ? 'transparent' : theme.border,
+          },
+          tabBarBackground: () =>
+            useBlur ? (
+              <View style={StyleSheet.absoluteFillObject}>
+                <BlurView
+                  intensity={dark ? 42 : 72}
+                  tint={dark ? 'dark' : 'light'}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                <View
+                  style={[
+                    StyleSheet.absoluteFillObject,
+                    styles.tabShell,
+                    {
+                      backgroundColor: dark ? 'rgba(22,26,38,0.78)' : 'rgba(255,255,255,0.82)',
+                      borderColor: theme.border,
+                    },
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.topHairline,
+                    {
+                      backgroundColor: dark
+                        ? 'rgba(255,255,255,0.06)'
+                        : 'rgba(255,255,255,0.78)',
+                    },
+                  ]}
+                />
+              </View>
+            ) : (
               <View
                 style={[
                   StyleSheet.absoluteFillObject,
-                  styles.tabShell,
+                  styles.androidTabBg,
                   {
-                    backgroundColor: dark ? 'rgba(15,23,35,0.82)' : 'rgba(255,255,255,0.82)',
+                    backgroundColor: dark ? 'rgba(22,26,38,0.96)' : 'rgba(255,255,255,0.98)',
                     borderColor: theme.border,
                   },
                 ]}
               />
-              <View
-                style={[
-                  styles.topHairline,
-                  {
-                    backgroundColor: dark
-                      ? 'rgba(255,255,255,0.08)'
-                      : 'rgba(255,255,255,0.7)',
-                  },
-                ]}
-              />
-            </View>
-          ) : (
+            ),
+          tabBarItemStyle: {
+            paddingTop: 7,
+            paddingBottom: Platform.OS === 'ios' ? 11 : 10,
+          },
+          tabBarIconStyle: {
+            marginBottom: 2,
+          },
+        }}
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Главная',
+            tabBarLabel: ({ color, focused }) => (
+              <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
+                Главная
+              </Text>
+            ),
+            tabBarIcon: ({ color, focused }) => (
+              <AppTabIcon name="home" color={color} focused={focused} size={22} />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="crm"
+          options={{
+            title: 'CRM',
+            tabBarLabel: ({ color, focused }) => (
+              <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
+                CRM
+              </Text>
+            ),
+            tabBarIcon: ({ color, focused }) => (
+              <AppTabIcon name="crm" color={color} focused={focused} size={22} />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="leaderboard"
+          options={{
+            title: isAdmin ? 'Команда' : 'Рейтинг',
+            tabBarLabel: ({ color, focused }) => (
+              <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
+                {isAdmin ? 'Команда' : 'Рейтинг'}
+              </Text>
+            ),
+            tabBarIcon: ({ color, focused }) => (
+              <AppTabIcon name="rank" color={color} focused={focused} size={22} />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="catalog"
+          options={{
+            title: 'Вузы',
+            tabBarLabel: ({ color, focused }) => (
+              <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
+                Вузы
+              </Text>
+            ),
+            tabBarIcon: ({ color, focused }) => (
+              <AppTabIcon name="catalog" color={color} focused={focused} size={22} />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: 'Профиль',
+            tabBarLabel: ({ color, focused }) => (
+              <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
+                Профиль
+              </Text>
+            ),
+            tabBarIcon: ({ color, focused }) => (
+              <AppTabIcon name="profile" color={color} focused={focused} size={22} />
+            ),
+          }}
+        />
+
+        <Tabs.Screen name="documents" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="client/[id]" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="deal/[id]" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="add-deal" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="create-document" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="add-client" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="payment/create" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="university/[id]" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="knowledge-base" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="admin-staff" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="admin-reports" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="admin-payments" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="tasks" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="workday" options={{ href: null, headerShown: false }} />
+      </Tabs>
+
+      {shouldShowGlobalFab && (
+        <View pointerEvents="box-none" style={[styles.fabHost, { bottom: fabBottom }]}>
+          {fabOpen && (
             <View
               style={[
-                StyleSheet.absoluteFillObject,
-                styles.androidTabBg,
+                styles.fabMenu,
                 {
-                  backgroundColor: dark ? 'rgba(15,23,35,0.98)' : 'rgba(255,255,255,0.98)',
+                  backgroundColor: theme.card,
                   borderColor: theme.border,
+                  shadowColor: theme.shadow,
                 },
               ]}
-            />
-          ),
-        tabBarItemStyle: {
-          paddingTop: 7,
-          paddingBottom: Platform.OS === 'ios' ? 11 : 10,
-        },
-        tabBarIconStyle: {
-          marginBottom: 2,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Главная',
-          tabBarLabel: ({ color, focused }) => (
-            <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
-              Главная
-            </Text>
-          ),
-          tabBarIcon: ({ color, focused }) => (
-            <AppTabIcon name="home" color={color} focused={focused} size={22} />
-          ),
-        }}
-      />
+            >
+              <Pressable onPress={openExpenseFromTemplate} style={styles.fabMenuItem}>
+                <View style={[styles.fabMenuIcon, { backgroundColor: 'rgba(225,64,64,0.10)' }]}>
+                  <Text style={[styles.fabMenuIconText, { color: theme.red }]}>−</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Добавить расход</Text>
+                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>
+                    Wi-Fi, вода, свет, офис и другое
+                  </Text>
+                </View>
+              </Pressable>
 
-      <Tabs.Screen
-        name="crm"
-        options={{
-          title: 'CRM',
-          tabBarLabel: ({ color, focused }) => (
-            <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
-              CRM
-            </Text>
-          ),
-          tabBarIcon: ({ color, focused }) => (
-            <AppTabIcon name="crm" color={color} focused={focused} size={22} />
-          ),
-        }}
-      />
+              <Pressable onPress={openIncomeFromTemplate} style={styles.fabMenuItem}>
+                <View style={[styles.fabMenuIcon, { backgroundColor: 'rgba(123,97,255,0.10)' }]}>
+                  <Text style={[styles.fabMenuIconText, { color: '#7B61FF' }]}>+</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Добавить доход</Text>
+                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>
+                    Доход вне платежа по сделке
+                  </Text>
+                </View>
+              </Pressable>
 
-      <Tabs.Screen
-        name="leaderboard"
-        options={{
-          title: isAdmin ? 'Команда' : 'Рейтинг',
-          tabBarLabel: ({ color, focused }) => (
-            <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
-              {isAdmin ? 'Команда' : 'Рейтинг'}
-            </Text>
-          ),
-          tabBarIcon: ({ color, focused }) => (
-            <AppTabIcon name="rank" color={color} focused={focused} size={22} />
-          ),
-        }}
-      />
+              {isAdmin && (
+                <Pressable onPress={openOfficeTopUp} style={styles.fabMenuItem}>
+                  <View style={[styles.fabMenuIcon, { backgroundColor: 'rgba(38,116,255,0.10)' }]}>
+                    <Text style={[styles.fabMenuIconText, { color: theme.blue }]}>₴</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.fabMenuTitle, { color: theme.text }]}>
+                      Пополнить баланс офиса
+                    </Text>
+                    <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>
+                      Создать доход с названием “Зарплата”
+                    </Text>
+                  </View>
+                </Pressable>
+              )}
+            </View>
+          )}
 
-      <Tabs.Screen
-        name="catalog"
-        options={{
-          title: 'Вузы',
-          tabBarLabel: ({ color, focused }) => (
-            <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
-              Вузы
-            </Text>
-          ),
-          tabBarIcon: ({ color, focused }) => (
-            <AppTabIcon name="catalog" color={color} focused={focused} size={22} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Профиль',
-          tabBarLabel: ({ color, focused }) => (
-            <Text style={{ color, fontSize: 10.5, fontWeight: focused ? '900' : '700' }}>
-              Профиль
-            </Text>
-          ),
-          tabBarIcon: ({ color, focused }) => (
-            <AppTabIcon name="profile" color={color} focused={focused} size={22} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen name="documents" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="client/[id]" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="deal/[id]" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="add-deal" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="create-document" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="add-client" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="payment/create" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="university/[id]" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="knowledge-base" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="admin-staff" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="admin-reports" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="admin-payments" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="tasks" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="workday" options={{ href: null, headerShown: false }} />
-    </Tabs>
+          <Pressable
+            onPress={() => setFabOpen((v) => !v)}
+            style={[
+              styles.fab,
+              {
+                backgroundColor: theme.blue,
+                shadowColor: theme.shadow,
+              },
+            ]}
+          >
+            <Text style={styles.fabText}>{fabOpen ? '×' : '+'}</Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -216,5 +344,71 @@ const styles = StyleSheet.create({
   androidTabBg: {
     borderRadius: 28,
     borderWidth: 1,
+  },
+
+  fabHost: {
+    position: 'absolute',
+    right: 18,
+    alignItems: 'flex-end',
+    zIndex: 9999,
+    elevation: 40,
+  },
+  fabMenu: {
+    width: 278,
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 10,
+    marginBottom: 12,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.16,
+    shadowRadius: 22,
+    elevation: 10,
+  },
+  fabMenuItem: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+  },
+  fabMenuIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fabMenuIconText: {
+    fontSize: 22,
+    fontWeight: '900',
+    lineHeight: 24,
+  },
+  fabMenuTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  fabMenuSub: {
+    marginTop: 3,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
+  },
+  fab: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  fabText: {
+    color: '#fff',
+    fontSize: 34,
+    fontWeight: '900',
+    marginTop: -2,
+    lineHeight: 36,
   },
 });
