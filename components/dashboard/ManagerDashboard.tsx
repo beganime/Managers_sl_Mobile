@@ -1,16 +1,16 @@
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
@@ -36,11 +36,41 @@ type LocalNote = {
   updated_at: string;
 };
 
+type OfficeDashboardData = {
+  office: {
+    id: number;
+    city?: string;
+    address?: string;
+    phone?: string;
+  };
+  total_income_usd?: string | number;
+  total_expense_usd?: string | number;
+  net_usd?: string | number;
+  monthly_revenue_usd?: string | number;
+  monthly_plan_usd?: string | number;
+  plan_progress_percent?: string | number;
+  managers?: Array<{
+    id: number;
+    full_name?: string;
+    email?: string;
+    revenue_usd?: string | number;
+    plan_usd?: string | number;
+    progress_percent?: string | number;
+  }>;
+};
+
+type QuickOfficeEntryType = 'income' | 'expense';
+
 const LOCAL_NOTES_KEY = 'manager_dashboard_notes_v2';
 const LEAD_STATUSES: LeadStatus[] = ['new', 'contacted', 'converted', 'rejected'];
 
 function money(v: number) {
   return `$${Math.round(v || 0).toLocaleString('ru-RU')}`;
+}
+
+function num(v: any) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function isMineOrShared(client: any, userId: number) {
@@ -209,6 +239,14 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
   const [hasReport, setHasReport] = useState(false);
   const [fabOpen, setFabOpen] = useState(false);
 
+  const [officeDashboard, setOfficeDashboard] = useState<OfficeDashboardData | null>(null);
+  const [officeEntryOpen, setOfficeEntryOpen] = useState(false);
+  const [officeEntryType, setOfficeEntryType] = useState<QuickOfficeEntryType>('income');
+  const [officeEntryTitle, setOfficeEntryTitle] = useState('');
+  const [officeEntryAmount, setOfficeEntryAmount] = useState('');
+  const [officeEntryComment, setOfficeEntryComment] = useState('');
+  const [officeEntrySaving, setOfficeEntrySaving] = useState(false);
+
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const [leadSaving, setLeadSaving] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null);
@@ -240,12 +278,14 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
 
   const load = useCallback(async () => {
     try {
-      const [storedNotes, clientsResponse, reportResponse, leadsResponse] = await Promise.all([
-        readLocalNotes(),
-        fetchAllPages('clients/').catch(() => []),
-        apiClient.get('reports/daily/today/').catch(() => null),
-        fetchAllPages('leads/mobile/').catch(() => []),
-      ]);
+      const [storedNotes, clientsResponse, reportResponse, leadsResponse, officeDashboardResponse] =
+        await Promise.all([
+          readLocalNotes(),
+          fetchAllPages('clients/').catch(() => []),
+          apiClient.get('reports/daily/today/').catch(() => null),
+          fetchAllPages('leads/mobile/').catch(() => []),
+          apiClient.get('users/users/me/office_dashboard/').catch(() => null),
+        ]);
 
       const myClients = (clientsResponse || []).filter((c: any) => isMineOrShared(c, user.id)).slice(0, 5);
 
@@ -253,6 +293,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
       setClients(myClients);
       setHasReport(!!reportResponse?.data);
       setLeads((leadsResponse || []).slice(0, 10));
+      setOfficeDashboard((officeDashboardResponse?.data || null) as OfficeDashboardData | null);
     } catch (e) {
       console.log('Manager dashboard load error', e);
     } finally {
@@ -278,6 +319,37 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
     [user.managersalary]
   );
   const progress = plan > 0 ? Math.min(Math.round((revenue / plan) * 100), 100) : 0;
+
+  const officeIncome = useMemo(
+    () => num(officeDashboard?.total_income_usd),
+    [officeDashboard]
+  );
+  const officeExpense = useMemo(
+    () => num(officeDashboard?.total_expense_usd),
+    [officeDashboard]
+  );
+  const officeNet = useMemo(
+    () => num(officeDashboard?.net_usd),
+    [officeDashboard]
+  );
+  const officePlan = useMemo(
+    () => num(officeDashboard?.monthly_plan_usd),
+    [officeDashboard]
+  );
+  const officeRevenue = useMemo(
+    () => num(officeDashboard?.monthly_revenue_usd),
+    [officeDashboard]
+  );
+  const officeProgress = useMemo(
+    () => Math.min(num(officeDashboard?.plan_progress_percent), 100),
+    [officeDashboard]
+  );
+
+  const officeManagers = useMemo(() => {
+    return [...(officeDashboard?.managers || [])].sort(
+      (a, b) => num(b.progress_percent) - num(a.progress_percent)
+    );
+  }, [officeDashboard]);
 
   const leadStats = useMemo(() => {
     const total = leads.length;
@@ -481,6 +553,69 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
     });
   }, [router, selectedLead]);
 
+  const openOfficeEntry = (type: QuickOfficeEntryType) => {
+    if (!officeDashboard?.office?.id) {
+      Alert.alert('Нет доступа', 'Для тебя не настроен офисный дашборд.');
+      return;
+    }
+
+    setOfficeEntryType(type);
+    setOfficeEntryTitle(type === 'income' ? 'Доход офиса' : 'Расход офиса');
+    setOfficeEntryAmount('');
+    setOfficeEntryComment('');
+    setOfficeEntryOpen(true);
+  };
+
+  const createOfficeEntry = async () => {
+    if (!officeDashboard?.office?.id) {
+      Alert.alert('Ошибка', 'Офис не найден.');
+      return;
+    }
+
+    if (!officeEntryTitle.trim()) {
+      Alert.alert('Ошибка', 'Укажи название операции.');
+      return;
+    }
+
+    if (!officeEntryAmount.trim() || Number(officeEntryAmount) <= 0) {
+      Alert.alert('Ошибка', 'Сумма должна быть больше нуля.');
+      return;
+    }
+
+    try {
+      setOfficeEntrySaving(true);
+
+      await apiClient.post('analytics/cashflow/', {
+        office: officeDashboard.office.id,
+        entry_type: officeEntryType,
+        title: officeEntryTitle.trim(),
+        amount: officeEntryAmount,
+        comment: officeEntryComment.trim(),
+        category: '',
+        entry_date: new Date().toISOString().slice(0, 10),
+      });
+
+      setOfficeEntryOpen(false);
+      await load();
+
+      Alert.alert(
+        'Готово',
+        officeEntryType === 'income' ? 'Доход по офису добавлен.' : 'Расход по офису добавлен.'
+      );
+    } catch (error: any) {
+      const detail =
+        error?.response?.data?.detail ||
+        error?.response?.data?.office?.[0] ||
+        error?.response?.data?.currency?.[0] ||
+        error?.response?.data?.title?.[0] ||
+        error?.response?.data?.amount?.[0] ||
+        'Не удалось создать офисную операцию.';
+      Alert.alert('Ошибка', detail);
+    } finally {
+      setOfficeEntrySaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <ScreenWrapper>
@@ -622,6 +757,144 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
             {money(revenue)} из {money(plan)}
           </Text>
         </View>
+
+        {officeDashboard ? (
+          <>
+            <View style={styles.sectionHead}>
+              <View>
+                <Text style={[styles.section, { color: theme.text }]}>Баланс офиса</Text>
+                <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
+                  Видно только сотрудникам, кому админ включил доступ к офисному дашборду
+                </Text>
+              </View>
+            </View>
+
+            <View style={[styles.officeCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <View style={styles.officeCardHead}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.officeName, { color: theme.text }]}>
+                    {officeDashboard.office?.city || 'Офис'}
+                  </Text>
+                  <Text style={[styles.officeMeta, { color: theme.textSecondary }]}>
+                    {officeDashboard.office?.address || 'Адрес не указан'}
+                  </Text>
+                </View>
+
+                <Text
+                  style={[
+                    styles.officeNet,
+                    { color: officeNet >= 0 ? (theme.success || '#1AAE6F') : theme.red },
+                  ]}
+                >
+                  {money(officeNet)}
+                </Text>
+              </View>
+
+              <View style={styles.officeKpiGrid}>
+                <View style={[styles.officeKpiItem, { backgroundColor: theme.backgroundSoft }]}>
+                  <Text style={[styles.officeKpiValue, { color: theme.text }]}>{money(officeIncome)}</Text>
+                  <Text style={[styles.officeKpiLabel, { color: theme.textSecondary }]}>Доход</Text>
+                </View>
+
+                <View style={[styles.officeKpiItem, { backgroundColor: theme.backgroundSoft }]}>
+                  <Text style={[styles.officeKpiValue, { color: theme.text }]}>{money(officeExpense)}</Text>
+                  <Text style={[styles.officeKpiLabel, { color: theme.textSecondary }]}>Расход</Text>
+                </View>
+
+                <View style={[styles.officeKpiItem, { backgroundColor: theme.backgroundSoft }]}>
+                  <Text style={[styles.officeKpiValue, { color: theme.text }]}>{money(officeRevenue)}</Text>
+                  <Text style={[styles.officeKpiLabel, { color: theme.textSecondary }]}>Выручка</Text>
+                </View>
+
+                <View style={[styles.officeKpiItem, { backgroundColor: theme.backgroundSoft }]}>
+                  <Text style={[styles.officeKpiValue, { color: theme.blue }]}>{Math.round(officeProgress)}%</Text>
+                  <Text style={[styles.officeKpiLabel, { color: theme.textSecondary }]}>План офиса</Text>
+                </View>
+              </View>
+
+              <View style={[styles.officeProgressCard, { backgroundColor: theme.backgroundSoft }]}>
+                <View style={styles.progressRow}>
+                  <Text style={[styles.progressTitle, { color: theme.text }]}>План офиса</Text>
+                  <Text style={[styles.progressValue, { color: theme.blue }]}>
+                    {Math.round(officeProgress)}%
+                  </Text>
+                </View>
+
+                <View style={[styles.progressBarBg, { backgroundColor: '#DDE7FF' }]}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      {
+                        width: `${Math.min(officeProgress, 100)}%`,
+                        backgroundColor: theme.blue,
+                      },
+                    ]}
+                  />
+                </View>
+
+                <Text style={[styles.progressSub, { color: theme.textSecondary }]}>
+                  {money(officeRevenue)} из {money(officePlan)}
+                </Text>
+              </View>
+
+              <View style={styles.officeQuickRow}>
+                <Pressable
+                  onPress={() => openOfficeEntry('income')}
+                  style={[styles.officeQuickBtn, { backgroundColor: '#EAF7EF', borderColor: '#CBE9D5' }]}
+                >
+                  <Text style={[styles.officeQuickBtnTitle, { color: '#157347' }]}>+ Доход офиса</Text>
+                  <Text style={[styles.officeQuickBtnSub, { color: '#157347' }]}>
+                    Быстро добавить офисный доход
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => openOfficeEntry('expense')}
+                  style={[styles.officeQuickBtn, { backgroundColor: '#FDECEC', borderColor: '#F6CACA' }]}
+                >
+                  <Text style={[styles.officeQuickBtnTitle, { color: theme.red }]}>− Расход офиса</Text>
+                  <Text style={[styles.officeQuickBtnSub, { color: theme.red }]}>
+                    Быстро добавить офисный расход
+                  </Text>
+                </Pressable>
+              </View>
+
+              {officeManagers.length > 0 && (
+                <View style={styles.officeManagersWrap}>
+                  <Text style={[styles.officeManagersTitle, { color: theme.text }]}>
+                    Команда офиса
+                  </Text>
+
+                  {officeManagers.map((manager, index) => (
+                    <View
+                      key={`${manager.id}-${index}`}
+                      style={[
+                        styles.officeManagerRow,
+                        {
+                          borderBottomColor: theme.divider,
+                          borderBottomWidth: index === officeManagers.length - 1 ? 0 : 1,
+                        },
+                      ]}
+                    >
+                      <View style={{ flex: 1, paddingRight: 12 }}>
+                        <Text style={[styles.officeManagerName, { color: theme.text }]}>
+                          {manager.full_name || manager.email || `ID ${manager.id}`}
+                        </Text>
+                        <Text style={[styles.officeManagerMeta, { color: theme.textSecondary }]}>
+                          {money(num(manager.revenue_usd))} из {money(num(manager.plan_usd))}
+                        </Text>
+                      </View>
+
+                      <Text style={[styles.officeManagerProgress, { color: theme.blue }]}>
+                        {Math.round(num(manager.progress_percent))}%
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          </>
+        ) : null}
 
         <View style={styles.sectionHead}>
           <View>
@@ -814,6 +1087,30 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
               <Text style={[styles.fabActionText, { color: theme.text }]}>Быстрый доход / платёж</Text>
             </Pressable>
 
+            {officeDashboard ? (
+              <>
+                <Pressable
+                  onPress={() => {
+                    setFabOpen(false);
+                    openOfficeEntry('income');
+                  }}
+                  style={styles.fabAction}
+                >
+                  <Text style={[styles.fabActionText, { color: theme.text }]}>Быстрый доход офиса</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    setFabOpen(false);
+                    openOfficeEntry('expense');
+                  }}
+                  style={styles.fabAction}
+                >
+                  <Text style={[styles.fabActionText, { color: theme.text }]}>Быстрый расход офиса</Text>
+                </Pressable>
+              </>
+            ) : null}
+
             <Pressable
               onPress={() => {
                 setFabOpen(false);
@@ -845,6 +1142,103 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
             </Pressable>
           </View>
         </Pressable>
+      </Modal>
+
+      <Modal
+        visible={officeEntryOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setOfficeEntryOpen(false)}
+      >
+        <View style={styles.modalWrap}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              {officeEntryType === 'income' ? 'Быстрый доход офиса' : 'Быстрый расход офиса'}
+            </Text>
+
+            <Text style={[styles.officeFormLabel, { color: theme.textSecondary }]}>
+              Офис: {officeDashboard?.office?.city || '—'}
+            </Text>
+
+            <TextInput
+              value={officeEntryTitle}
+              onChangeText={setOfficeEntryTitle}
+              placeholder="Название"
+              placeholderTextColor={theme.textMuted}
+              style={[
+                styles.input,
+                {
+                  color: theme.text,
+                  borderColor: theme.border,
+                  backgroundColor: theme.backgroundSoft,
+                },
+              ]}
+            />
+
+            <TextInput
+              value={officeEntryAmount}
+              onChangeText={setOfficeEntryAmount}
+              placeholder="Сумма"
+              keyboardType="numeric"
+              placeholderTextColor={theme.textMuted}
+              style={[
+                styles.input,
+                {
+                  color: theme.text,
+                  borderColor: theme.border,
+                  backgroundColor: theme.backgroundSoft,
+                },
+              ]}
+            />
+
+            <TextInput
+              value={officeEntryComment}
+              onChangeText={setOfficeEntryComment}
+              placeholder="Комментарий"
+              placeholderTextColor={theme.textMuted}
+              multiline
+              style={[
+                styles.input,
+                styles.textarea,
+                {
+                  color: theme.text,
+                  borderColor: theme.border,
+                  backgroundColor: theme.backgroundSoft,
+                },
+              ]}
+            />
+
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setOfficeEntryOpen(false)}
+                style={[
+                  styles.secondaryBtn,
+                  { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                ]}
+              >
+                <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Отмена</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={createOfficeEntry}
+                disabled={officeEntrySaving}
+                style={[
+                  styles.primaryBtn,
+                  {
+                    backgroundColor: officeEntryType === 'income' ? (theme.success || '#1AAE6F') : theme.red,
+                    opacity: officeEntrySaving ? 0.7 : 1,
+                  },
+                ]}
+              >
+                {officeEntrySaving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Сохранить</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       <Modal visible={leadModalOpen} transparent animationType="slide" onRequestClose={() => setLeadModalOpen(false)}>
@@ -1132,12 +1526,107 @@ const styles = StyleSheet.create({
   kpiLabel: { marginTop: 8, fontSize: 13, fontWeight: '700' },
 
   progressCard: { marginTop: 14, borderRadius: 22, borderWidth: 1, padding: 18 },
+  officeProgressCard: { marginTop: 12, borderRadius: 20, padding: 14 },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   progressTitle: { fontSize: 15, fontWeight: '900' },
   progressValue: { fontSize: 14, fontWeight: '900' },
   progressBarBg: { marginTop: 12, height: 10, borderRadius: 999, overflow: 'hidden' },
   progressBarFill: { height: 10, borderRadius: 999 },
   progressSub: { marginTop: 10, fontSize: 13, fontWeight: '700' },
+
+  officeCard: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 4,
+  },
+  officeCardHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  officeName: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  officeMeta: {
+    marginTop: 6,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  officeNet: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  officeKpiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 14,
+  },
+  officeKpiItem: {
+    width: '48%',
+    borderRadius: 18,
+    padding: 14,
+  },
+  officeKpiValue: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  officeKpiLabel: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  officeQuickRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+  officeQuickBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+  },
+  officeQuickBtnTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  officeQuickBtnSub: {
+    marginTop: 6,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+  },
+  officeManagersWrap: {
+    marginTop: 16,
+  },
+  officeManagersTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
+  officeManagerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+  },
+  officeManagerName: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  officeManagerMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  officeManagerProgress: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
 
   sectionHead: {
     marginTop: 24,
@@ -1287,6 +1776,13 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: '900' },
 
+  officeFormLabel: {
+    marginTop: 10,
+    marginBottom: 2,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
   closeBtn: {
     width: 34,
     height: 34,
@@ -1392,6 +1888,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   primaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '900' },
 });

@@ -22,18 +22,20 @@ import { useTheme } from '../../src/context/ThemeContext';
 type DocumentItem = {
   id: number;
   title?: string;
-  status?: 'draft' | 'generated' | 'pending' | 'approved' | 'rejected' | 'error' | string;
+  status?: 'draft' | 'generated' | 'pending' | 'approved' | 'error' | 'rejected' | string;
   created_at?: string;
   updated_at?: string;
   file?: string;
-  file_url?: string;
+  file_url?: string | null;
   approved_file_url?: string | null;
   can_download?: boolean;
-  rejection_reason?: string;
-  template_name?: string;
-  manager_name?: string;
-  deal_client_name?: string;
+  template_name?: string | null;
+  manager_name?: string | null;
+  deal_client_name?: string | null;
+  rejection_reason?: string | null;
 };
+
+type StatusFilter = 'all' | 'pending' | 'approved' | 'error';
 
 function formatDate(value?: string) {
   if (!value) return '—';
@@ -48,11 +50,13 @@ function normalizeStatus(value?: string) {
   const raw = String(value || '').toLowerCase();
 
   if (raw === 'approved') return 'approved';
-  if (raw === 'rejected') return 'rejected';
-  if (raw === 'generated') return 'pending';
-  if (raw === 'pending') return 'pending';
   if (raw === 'error') return 'error';
-  return raw || 'draft';
+  if (raw === 'rejected') return 'error';
+  if (raw === 'generated') return 'pending';
+  if (raw === 'draft') return 'pending';
+  if (raw === 'pending') return 'pending';
+
+  return raw || 'pending';
 }
 
 function statusMeta(status: string, theme: any) {
@@ -64,20 +68,6 @@ function statusMeta(status: string, theme: any) {
         color: '#157347',
         icon: 'checkmark-circle' as const,
       };
-    case 'rejected':
-      return {
-        label: 'Отклонён',
-        bg: '#FDECEC',
-        color: theme.red,
-        icon: 'close-circle' as const,
-      };
-    case 'pending':
-      return {
-        label: 'На проверке',
-        bg: '#FFF4E5',
-        color: '#B26A00',
-        icon: 'time' as const,
-      };
     case 'error':
       return {
         label: 'Ошибка',
@@ -87,10 +77,10 @@ function statusMeta(status: string, theme: any) {
       };
     default:
       return {
-        label: 'Черновик',
-        bg: theme.backgroundSoft,
-        color: theme.textSecondary,
-        icon: 'document-text' as const,
+        label: 'На проверке',
+        bg: '#FFF4E5',
+        color: '#B26A00',
+        icon: 'time' as const,
       };
   }
 }
@@ -107,7 +97,7 @@ export default function DocumentsScreen() {
 
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [processingId, setProcessingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -120,7 +110,10 @@ export default function DocumentsScreen() {
       const data = await fetchAllPages(path);
       setDocuments((data || []) as DocumentItem[]);
     } catch (error: any) {
-      Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось загрузить документы.');
+      Alert.alert(
+        'Ошибка',
+        error?.response?.data?.detail || 'Не удалось загрузить документы.'
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -137,10 +130,9 @@ export default function DocumentsScreen() {
     return documents.filter((item) => {
       const status = normalizeStatus(item.status);
 
-      const matchesStatus =
-        statusFilter === 'all' ? true : status === statusFilter;
+      const statusOk = statusFilter === 'all' ? true : status === statusFilter;
+      if (!statusOk) return false;
 
-      if (!matchesStatus) return false;
       if (!q) return true;
 
       return (
@@ -148,19 +140,25 @@ export default function DocumentsScreen() {
         String(item.template_name || '').toLowerCase().includes(q) ||
         String(item.deal_client_name || '').toLowerCase().includes(q) ||
         String(item.manager_name || '').toLowerCase().includes(q) ||
-        String(status || '').toLowerCase().includes(q) ||
-        String(item.id).includes(q)
+        String(item.id).includes(q) ||
+        String(status).includes(q)
       );
     });
   }, [documents, search, statusFilter]);
 
   const openFile = async (item: DocumentItem) => {
-    const url = item.can_download
-      ? item.approved_file_url || item.file_url || item.file
-      : item.file_url || item.file;
+    const url = item.approved_file_url || item.file_url || item.file;
 
     if (!url) {
-      Alert.alert('Файл', 'У этого документа пока нет файла.');
+      Alert.alert('Файл', 'У документа пока нет файла.');
+      return;
+    }
+
+    if (!item.can_download && normalizeStatus(item.status) !== 'approved') {
+      Alert.alert(
+        'Документ ещё не одобрен',
+        'Скачивание доступно только после одобрения администратором.'
+      );
       return;
     }
 
@@ -178,48 +176,30 @@ export default function DocumentsScreen() {
       await load();
       Alert.alert('Готово', 'Документ одобрен.');
     } catch (error: any) {
-      Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось одобрить документ.');
+      Alert.alert(
+        'Ошибка',
+        error?.response?.data?.detail || 'Не удалось одобрить документ.'
+      );
     } finally {
       setProcessingId(null);
-    }
-  };
-
-  const reject = async (item: DocumentItem) => {
-    Alert.prompt?.(
-      'Отклонить документ',
-      'Укажи причину отклонения',
-      async (reason) => {
-        try {
-          setProcessingId(item.id);
-          await apiClient.post(`documents/generated/${item.id}/reject/`, {
-            reason: String(reason || '').trim(),
-          });
-          await load();
-          Alert.alert('Готово', 'Документ отклонён.');
-        } catch (error: any) {
-          Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось отклонить документ.');
-        } finally {
-          setProcessingId(null);
-        }
-      }
-    );
-
-    if (!Alert.prompt) {
-      Alert.alert(
-        'Отклонить документ',
-        'На Android системный prompt может быть недоступен. Если нужно, потом добавим отдельное модальное окно для причины.'
-      );
     }
   };
 
   const regenerate = async (item: DocumentItem) => {
     try {
       setProcessingId(item.id);
-      await apiClient.post(`documents/generated/${item.id}/regenerate/`, {});
+      const response = await apiClient.post(`documents/generated/${item.id}/regenerate/`, {});
       await load();
-      Alert.alert('Готово', 'Документ перегенерирован и снова отправлен на проверку.');
+
+      Alert.alert(
+        'Готово',
+        response?.data?.detail || 'Документ перегенерирован.'
+      );
     } catch (error: any) {
-      Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось перегенерировать документ.');
+      Alert.alert(
+        'Ошибка',
+        error?.response?.data?.detail || 'Не удалось перегенерировать документ.'
+      );
     } finally {
       setProcessingId(null);
     }
@@ -244,7 +224,13 @@ export default function DocumentsScreen() {
     <ScreenWrapper>
       <ScrollView
         contentContainerStyle={styles.container}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.blue} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.blue}
+          />
+        }
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
@@ -253,7 +239,7 @@ export default function DocumentsScreen() {
             <Text style={[styles.sub, { color: theme.textSecondary }]}>
               {isAdmin
                 ? 'Проверка, одобрение и просмотр документов'
-                : 'Созданные документы и статус одобрения'}
+                : 'Созданные документы и их статус'}
             </Text>
           </View>
 
@@ -294,14 +280,14 @@ export default function DocumentsScreen() {
             { key: 'all', label: 'Все' },
             { key: 'pending', label: 'На проверке' },
             { key: 'approved', label: 'Одобрены' },
-            { key: 'rejected', label: 'Отклонены' },
+            { key: 'error', label: 'С ошибкой' },
           ].map((item) => {
             const active = statusFilter === item.key;
 
             return (
               <Pressable
                 key={item.key}
-                onPress={() => setStatusFilter(item.key as any)}
+                onPress={() => setStatusFilter(item.key as StatusFilter)}
                 style={[
                   styles.filterChip,
                   {
@@ -391,23 +377,14 @@ export default function DocumentsScreen() {
                   Создан: {formatDate(item.created_at)}
                 </Text>
 
-                {status === 'rejected' && !!item.rejection_reason && (
-                  <View
-                    style={[
-                      styles.reasonBox,
-                      {
-                        backgroundColor: '#FFF1F1',
-                        borderColor: '#FFD5D5',
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.reasonTitle, { color: theme.red }]}>
-                      Причина отклонения
-                    </Text>
-                    <Text style={[styles.reasonText, { color: theme.red }]}>
-                      {item.rejection_reason}
-                    </Text>
-                  </View>
+                <Text style={[styles.cardLine, { color: theme.textSecondary }]}>
+                  Обновлён: {formatDate(item.updated_at)}
+                </Text>
+
+                {!!item.rejection_reason && status === 'error' && (
+                  <Text style={[styles.hint, { color: theme.red }]}>
+                    Причина: {item.rejection_reason}
+                  </Text>
                 )}
 
                 {!item.can_download && status !== 'approved' && (
@@ -424,16 +401,22 @@ export default function DocumentsScreen() {
                       {
                         borderColor: theme.border,
                         backgroundColor: theme.backgroundSoft,
+                        opacity:
+                          !item.can_download && status !== 'approved' ? 0.7 : 1,
                       },
                     ]}
                   >
-                    <Ionicons name="eye-outline" size={16} color={theme.text} />
+                    <Ionicons
+                      name={item.can_download ? 'download-outline' : 'eye-outline'}
+                      size={16}
+                      color={theme.text}
+                    />
                     <Text style={[styles.ghostBtnText, { color: theme.text }]}>
-                      {item.can_download ? 'Открыть / скачать' : 'Открыть'}
+                      {item.can_download ? 'Открыть / скачать' : 'Ожидает approve'}
                     </Text>
                   </Pressable>
 
-                  {!isAdmin && status !== 'approved' && (
+                  {status !== 'approved' && (
                     <Pressable
                       onPress={() => regenerate(item)}
                       disabled={isProcessing}
@@ -459,14 +442,14 @@ export default function DocumentsScreen() {
                     </Pressable>
                   )}
 
-                  {isAdmin && status !== 'approved' && (
+                  {isAdmin && status === 'pending' && (
                     <Pressable
                       onPress={() => approve(item)}
                       disabled={isProcessing}
                       style={[
                         styles.actionBtn,
                         {
-                          backgroundColor: theme.success,
+                          backgroundColor: theme.success || '#1AAE6F',
                           opacity: isProcessing ? 0.7 : 1,
                         },
                       ]}
@@ -479,23 +462,6 @@ export default function DocumentsScreen() {
                           <Text style={styles.actionBtnText}>Approve</Text>
                         </>
                       )}
-                    </Pressable>
-                  )}
-
-                  {isAdmin && status !== 'rejected' && status !== 'approved' && (
-                    <Pressable
-                      onPress={() => reject(item)}
-                      disabled={isProcessing}
-                      style={[
-                        styles.actionBtn,
-                        {
-                          backgroundColor: theme.red,
-                          opacity: isProcessing ? 0.7 : 1,
-                        },
-                      ]}
-                    >
-                      <Ionicons name="close" size={16} color="#fff" />
-                      <Text style={styles.actionBtnText}>Reject</Text>
                     </Pressable>
                   )}
                 </View>
@@ -629,22 +595,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     lineHeight: 19,
-  },
-  reasonBox: {
-    marginTop: 12,
-    borderWidth: 1,
-    borderRadius: 18,
-    padding: 12,
-  },
-  reasonTitle: {
-    fontSize: 12,
-    fontWeight: '900',
-    marginBottom: 6,
-  },
-  reasonText: {
-    fontSize: 13,
-    lineHeight: 19,
-    fontWeight: '700',
   },
   hint: {
     marginTop: 12,

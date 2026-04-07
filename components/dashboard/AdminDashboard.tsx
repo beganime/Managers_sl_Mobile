@@ -3,16 +3,19 @@ import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
 import { CurrentUser } from '../../hooks/useCurrentUser';
-import { fetchAllPages } from '../../src/api/apiClient';
+import apiClient, { fetchAllPages } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
 import ScreenWrapper from '../ScreenWrapper';
 
@@ -20,6 +23,27 @@ interface Props {
   user: CurrentUser;
   onRefresh: () => void;
 }
+
+type OfficeData = {
+  id?: number | null;
+  city?: string;
+  address?: string;
+  phone?: string;
+} | null;
+
+type UserItem = {
+  id: number;
+  email?: string;
+  first_name?: string;
+  last_name?: string;
+  role?: string;
+  office?: OfficeData;
+  managersalary?: {
+    current_month_revenue?: number | string;
+    current_balance?: number | string;
+    monthly_plan?: number | string;
+  } | null;
+};
 
 type PaymentItem = {
   id: number;
@@ -89,6 +113,32 @@ type DailyReportItem = {
   created_at?: string;
 };
 
+type QuickEntryType = 'income' | 'expense';
+
+type OfficeEmployeeRow = {
+  id: number;
+  full_name: string;
+  email: string;
+  revenue_month: number;
+  income: number;
+  expense: number;
+  balance: number;
+};
+
+type OfficeFinanceRow = {
+  key: string;
+  officeId?: number | null;
+  office: string;
+  address?: string;
+  phone?: string;
+  deals_income: number;
+  extra_income: number;
+  expenses: number;
+  total_income: number;
+  balance: number;
+  employees: OfficeEmployeeRow[];
+};
+
 function money(v: number) {
   return `$${Math.round(v || 0).toLocaleString('ru-RU')}`;
 }
@@ -98,24 +148,31 @@ function num(v: any) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function officeOfPayment(payment: PaymentItem, officeMap: Map<number, string>) {
-  return (
-    officeMap.get(Number(payment.manager || 0)) ||
-    payment.manager_data?.office?.city ||
-    'Без офиса'
-  );
+function normalizeName(value?: string | null) {
+  return String(value || '').trim().toLowerCase();
 }
 
-function officeOfExpense(expense: ExpenseItem, officeMap: Map<number, string>) {
-  return (
-    officeMap.get(Number(expense.manager || 0)) ||
-    expense.manager_data?.office?.city ||
-    'Без офиса'
-  );
+function officeKeyFromOffice(office?: OfficeData) {
+  if (!office) return null;
+
+  if (office.id) return `office:${office.id}`;
+  if (office.city) return `city:${normalizeName(office.city)}`;
+
+  return null;
 }
 
-function officeOfCashflow(item: CashflowItem) {
-  return item.office_name || 'Без офиса';
+function officeKeyFromName(city?: string | null) {
+  const normalized = normalizeName(city);
+  if (!normalized) return null;
+  return `city:${normalized}`;
+}
+
+function officeTitleFromKey(key: string) {
+  if (key.startsWith('city:')) {
+    const raw = key.replace('city:', '');
+    return raw || 'Без офиса';
+  }
+  return 'Офис';
 }
 
 function reportIncome(item: DailyReportItem) {
@@ -135,7 +192,7 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserItem[]>([]);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
   const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
   const [cashflow, setCashflow] = useState<CashflowItem[]>([]);
@@ -144,27 +201,30 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
   const [reports, setReports] = useState<DailyReportItem[]>([]);
   const [cashflowEnabled, setCashflowEnabled] = useState(false);
 
+  const [quickEntryOpen, setQuickEntryOpen] = useState(false);
+  const [quickEntryType, setQuickEntryType] = useState<QuickEntryType>('income');
+  const [quickOfficeKey, setQuickOfficeKey] = useState('');
+  const [quickTitle, setQuickTitle] = useState('');
+  const [quickAmount, setQuickAmount] = useState('');
+  const [quickComment, setQuickComment] = useState('');
+  const [quickSaving, setQuickSaving] = useState(false);
+
   const load = useCallback(async () => {
     try {
       const [usersData, paymentsData, documentsData, reportsData, expensesData] =
         await Promise.all([
           fetchAllPages('users/users/').catch(() => []),
           fetchAllPages('analytics/payments/').catch(() => []),
-          fetchAllPages('documents/generated/').catch(() => []),
+          fetchAllPages('documents/generated/?status=pending').catch(() => []),
           fetchAllPages('reports/daily/').catch(() => []),
           fetchAllPages('analytics/expenses/').catch(() => []),
         ]);
 
-      setUsers((usersData || []) as any[]);
+      setUsers((usersData || []) as UserItem[]);
       setPayments((paymentsData || []) as PaymentItem[]);
       setReports((reportsData || []) as DailyReportItem[]);
       setExpenses((expensesData || []) as ExpenseItem[]);
-
-      const docs = ((documentsData || []) as DocumentItem[]).filter((doc) => {
-        const status = String(doc.status || '').toLowerCase();
-        return status === 'generated' || status === 'pending';
-      });
-      setPendingDocs(docs);
+      setPendingDocs((documentsData || []) as DocumentItem[]);
 
       const pendingPays = ((paymentsData || []) as PaymentItem[]).filter((p) => !p.is_confirmed);
       setPendingPayments(pendingPays);
@@ -189,13 +249,319 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
     void load();
   }, [load]);
 
-  const officeMap = useMemo(() => {
-    const map = new Map<number, string>();
-    users.forEach((u: any) => {
-      map.set(Number(u.id), u.office?.city || 'Без офиса');
+  const officeFinance = useMemo<OfficeFinanceRow[]>(() => {
+    const officeRegistry = new Map<
+      string,
+      {
+        key: string;
+        officeId?: number | null;
+        office: string;
+        address?: string;
+        phone?: string;
+      }
+    >();
+
+    const userOfficeKeyById = new Map<number, string>();
+    const employeeMapByOffice = new Map<string, Map<number, OfficeEmployeeRow>>();
+
+    const ensureOffice = (
+      key: string | null,
+      info?: {
+        officeId?: number | null;
+        office?: string;
+        address?: string;
+        phone?: string;
+      }
+    ) => {
+      if (!key) return;
+
+      if (!officeRegistry.has(key)) {
+        officeRegistry.set(key, {
+          key,
+          officeId: info?.officeId ?? null,
+          office: info?.office || officeTitleFromKey(key) || 'Без офиса',
+          address: info?.address || '',
+          phone: info?.phone || '',
+        });
+      } else {
+        const current = officeRegistry.get(key)!;
+        if (info?.officeId && !current.officeId) current.officeId = info.officeId;
+        if (info?.office && (!current.office || current.office === 'Без офиса')) current.office = info.office;
+        if (info?.address && !current.address) current.address = info.address;
+        if (info?.phone && !current.phone) current.phone = info.phone;
+      }
+    };
+
+    const ensureEmployee = (officeKey: string, userItem: UserItem) => {
+      if (!employeeMapByOffice.has(officeKey)) {
+        employeeMapByOffice.set(officeKey, new Map<number, OfficeEmployeeRow>());
+      }
+
+      const map = employeeMapByOffice.get(officeKey)!;
+      if (!map.has(userItem.id)) {
+        map.set(userItem.id, {
+          id: userItem.id,
+          full_name:
+            `${userItem.first_name || ''} ${userItem.last_name || ''}`.trim() || userItem.email || `ID ${userItem.id}`,
+          email: userItem.email || '',
+          revenue_month: num(userItem.managersalary?.current_month_revenue),
+          income: 0,
+          expense: 0,
+          balance: 0,
+        });
+      }
+
+      return map.get(userItem.id)!;
+    };
+
+    users.forEach((u) => {
+      const key =
+        officeKeyFromOffice(u.office) ||
+        officeKeyFromName(u.office?.city) ||
+        `user-office-missing:${u.id}`;
+
+      const officeName = u.office?.city || 'Без офиса';
+
+      ensureOffice(key, {
+        officeId: u.office?.id ?? null,
+        office: officeName,
+        address: u.office?.address || '',
+        phone: u.office?.phone || '',
+      });
+
+      userOfficeKeyById.set(u.id, key);
+      ensureEmployee(key, u);
     });
-    return map;
-  }, [users]);
+
+    payments.forEach((p) => {
+      const key =
+        userOfficeKeyById.get(Number(p.manager || 0)) ||
+        officeKeyFromName(p.manager_data?.office?.city) ||
+        null;
+
+      ensureOffice(key, {
+        office: p.manager_data?.office?.city || 'Без офиса',
+      });
+    });
+
+    expenses.forEach((e) => {
+      const key =
+        userOfficeKeyById.get(Number(e.manager || 0)) ||
+        officeKeyFromName(e.manager_data?.office?.city) ||
+        null;
+
+      ensureOffice(key, {
+        office: e.manager_data?.office?.city || 'Без офиса',
+      });
+    });
+
+    cashflow.forEach((c) => {
+      const key =
+        (c.office ? `office:${c.office}` : null) ||
+        officeKeyFromName(c.office_name) ||
+        null;
+
+      ensureOffice(key, {
+        officeId: c.office ?? null,
+        office: c.office_name || 'Без офиса',
+      });
+    });
+
+    const bucket = new Map<string, OfficeFinanceRow>();
+
+    officeRegistry.forEach((info, key) => {
+      const employees = Array.from(employeeMapByOffice.get(key)?.values() || []);
+      bucket.set(key, {
+        key,
+        officeId: info.officeId ?? null,
+        office: info.office || 'Без офиса',
+        address: info.address || '',
+        phone: info.phone || '',
+        deals_income: 0,
+        extra_income: 0,
+        expenses: 0,
+        total_income: 0,
+        balance: 0,
+        employees,
+      });
+    });
+
+    const ensureBucket = (key: string | null, officeName?: string) => {
+      if (!key) return null;
+
+      if (!bucket.has(key)) {
+        bucket.set(key, {
+          key,
+          officeId: key.startsWith('office:') ? Number(key.replace('office:', '')) : null,
+          office: officeName || officeTitleFromKey(key) || 'Без офиса',
+          address: '',
+          phone: '',
+          deals_income: 0,
+          extra_income: 0,
+          expenses: 0,
+          total_income: 0,
+          balance: 0,
+          employees: [],
+        });
+      }
+
+      return bucket.get(key)!;
+    };
+
+    const findEmployee = (officeKey: string | null, userId?: number | null) => {
+      if (!officeKey || !userId) return null;
+      const office = bucket.get(officeKey);
+      if (!office) return null;
+      return office.employees.find((x) => x.id === userId) || null;
+    };
+
+    payments
+      .filter((p) => p.is_confirmed)
+      .forEach((p) => {
+        const officeKey =
+          userOfficeKeyById.get(Number(p.manager || 0)) ||
+          officeKeyFromName(p.manager_data?.office?.city) ||
+          null;
+
+        const office = ensureBucket(officeKey, p.manager_data?.office?.city || 'Без офиса');
+        if (!office) return;
+
+        const amount = num(p.amount_usd || p.amount || 0);
+        office.deals_income += amount;
+
+        const employee = findEmployee(officeKey, p.manager ?? null);
+        if (employee) {
+          employee.income += amount;
+        }
+      });
+
+    expenses.forEach((e) => {
+      const officeKey =
+        userOfficeKeyById.get(Number(e.manager || 0)) ||
+        officeKeyFromName(e.manager_data?.office?.city) ||
+        null;
+
+      const office = ensureBucket(officeKey, e.manager_data?.office?.city || 'Без офиса');
+      if (!office) return;
+
+      const amount = num(e.amount_usd ?? e.amount);
+      office.expenses += amount;
+
+      const employee = findEmployee(officeKey, e.manager ?? null);
+      if (employee) {
+        employee.expense += amount;
+      }
+    });
+
+    cashflow.forEach((c) => {
+      const officeKey =
+        (c.office ? `office:${c.office}` : null) ||
+        officeKeyFromName(c.office_name) ||
+        null;
+
+      const office = ensureBucket(officeKey, c.office_name || 'Без офиса');
+      if (!office) return;
+
+      const amount = num(c.amount_usd ?? c.amount);
+      if (String(c.entry_type || '').toLowerCase() === 'income') {
+        office.extra_income += amount;
+      } else if (String(c.entry_type || '').toLowerCase() === 'expense') {
+        office.expenses += amount;
+      }
+    });
+
+    return Array.from(bucket.values())
+      .map((row) => {
+        const employees = [...row.employees]
+          .map((emp) => ({
+            ...emp,
+            balance: emp.income - emp.expense,
+          }))
+          .sort((a, b) => b.balance - a.balance);
+
+        return {
+          ...row,
+          employees,
+          total_income: row.deals_income + row.extra_income,
+          balance: row.deals_income + row.extra_income - row.expenses,
+        };
+      })
+      .sort((a, b) => a.office.localeCompare(b.office, 'ru'));
+  }, [users, payments, expenses, cashflow]);
+
+  const officeSelectorOptions = useMemo(() => {
+    return officeFinance
+      .filter((x) => !!x.officeId)
+      .map((x) => ({
+        key: x.key,
+        officeId: x.officeId as number,
+        label: x.office,
+      }));
+  }, [officeFinance]);
+
+  const openQuickEntry = (type: QuickEntryType) => {
+    setQuickEntryType(type);
+
+    const firstOffice = officeSelectorOptions[0];
+    setQuickOfficeKey(firstOffice?.key || '');
+
+    setQuickTitle(type === 'income' ? 'Доход офиса' : 'Расход офиса');
+    setQuickAmount('');
+    setQuickComment('');
+    setQuickEntryOpen(true);
+  };
+
+  const createQuickEntry = async () => {
+    const selectedOffice = officeSelectorOptions.find((x) => x.key === quickOfficeKey);
+
+    if (!selectedOffice?.officeId) {
+      Alert.alert('Ошибка', 'Не удалось определить офис для операции.');
+      return;
+    }
+
+    if (!quickTitle.trim()) {
+      Alert.alert('Ошибка', 'Укажи название.');
+      return;
+    }
+
+    if (!quickAmount.trim() || Number(quickAmount) <= 0) {
+      Alert.alert('Ошибка', 'Сумма должна быть больше нуля.');
+      return;
+    }
+
+    try {
+      setQuickSaving(true);
+
+      await apiClient.post('analytics/cashflow/', {
+        office: selectedOffice.officeId,
+        entry_type: quickEntryType,
+        title: quickTitle.trim(),
+        amount: quickAmount,
+        comment: quickComment.trim(),
+        category: '',
+        entry_date: new Date().toISOString().slice(0, 10),
+      });
+
+      setQuickEntryOpen(false);
+      await load();
+
+      Alert.alert(
+        'Готово',
+        quickEntryType === 'income' ? 'Доход добавлен.' : 'Расход добавлен.'
+      );
+    } catch (error: any) {
+      const detail =
+        error?.response?.data?.detail ||
+        error?.response?.data?.office?.[0] ||
+        error?.response?.data?.currency?.[0] ||
+        error?.response?.data?.title?.[0] ||
+        error?.response?.data?.amount?.[0] ||
+        'Не удалось создать операцию.';
+      Alert.alert('Ошибка', detail);
+    } finally {
+      setQuickSaving(false);
+    }
+  };
 
   const totalRevenueDeals = useMemo(
     () =>
@@ -248,73 +614,6 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
     () => fullOfficeIncome - fullOfficeExpense,
     [fullOfficeIncome, fullOfficeExpense]
   );
-
-  const officeFinance = useMemo(() => {
-    const bucket: Record<
-      string,
-      {
-        office: string;
-        deals_income: number;
-        extra_income: number;
-        expenses: number;
-      }
-    > = {};
-
-    payments
-      .filter((p) => p.is_confirmed)
-      .forEach((p) => {
-        const office = officeOfPayment(p, officeMap);
-        if (!bucket[office]) {
-          bucket[office] = {
-            office,
-            deals_income: 0,
-            extra_income: 0,
-            expenses: 0,
-          };
-        }
-        bucket[office].deals_income += num(p.amount_usd || p.amount || 0);
-      });
-
-    expenses.forEach((e) => {
-      const office = officeOfExpense(e, officeMap);
-      if (!bucket[office]) {
-        bucket[office] = {
-          office,
-          deals_income: 0,
-          extra_income: 0,
-          expenses: 0,
-        };
-      }
-      bucket[office].expenses += num(e.amount_usd ?? e.amount);
-    });
-
-    cashflow.forEach((c) => {
-      const office = officeOfCashflow(c);
-      if (!bucket[office]) {
-        bucket[office] = {
-          office,
-          deals_income: 0,
-          extra_income: 0,
-          expenses: 0,
-        };
-      }
-
-      if (String(c.entry_type || '').toLowerCase() === 'income') {
-        bucket[office].extra_income += num(c.amount_usd ?? c.amount);
-      } else if (String(c.entry_type || '').toLowerCase() === 'expense') {
-        bucket[office].expenses += num(c.amount_usd ?? c.amount);
-      }
-    });
-
-    return Object.values(bucket)
-      .map((row) => ({
-        ...row,
-        total_income: row.deals_income + row.extra_income,
-        balance: row.deals_income + row.extra_income - row.expenses,
-      }))
-      .sort((a, b) => b.balance - a.balance)
-      .slice(0, 8);
-  }, [payments, expenses, cashflow, officeMap]);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -406,7 +705,7 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
           <View style={styles.heroStats}>
             <View style={styles.heroStat}>
               <Text style={styles.heroValue}>{money(fullOfficeIncome)}</Text>
-              <Text style={styles.heroLabel}>Полный доход офисов</Text>
+              <Text style={styles.heroLabel}>Полный доход всех офисов</Text>
             </View>
             <View style={styles.heroStat}>
               <Text style={styles.heroValue}>{money(fullOfficeBalance)}</Text>
@@ -414,6 +713,29 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
             </View>
           </View>
         </LinearGradient>
+
+        <Text style={[styles.section, { color: theme.text }]}>Быстрые операции</Text>
+        <View style={styles.quickFinanceRow}>
+          <Pressable
+            onPress={() => openQuickEntry('income')}
+            style={[styles.quickFinanceCard, { backgroundColor: '#EAF7EF', borderColor: '#CBE9D5' }]}
+          >
+            <Text style={[styles.quickFinanceTitle, { color: '#157347' }]}>+ Доход офиса</Text>
+            <Text style={[styles.quickFinanceSub, { color: '#157347' }]}>
+              Быстро добавить доход по офису
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => openQuickEntry('expense')}
+            style={[styles.quickFinanceCard, { backgroundColor: '#FDECEC', borderColor: '#F6CACA' }]}
+          >
+            <Text style={[styles.quickFinanceTitle, { color: theme.red }]}>− Расход офиса</Text>
+            <Text style={[styles.quickFinanceSub, { color: theme.red }]}>
+              Быстро добавить расход по офису
+            </Text>
+          </Pressable>
+        </View>
 
         <View style={styles.kpiGrid}>
           <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -461,24 +783,24 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
           ))}
         </View>
 
-        <Text style={[styles.section, { color: theme.text }]}>Финансы по офисам</Text>
+        <Text style={[styles.section, { color: theme.text }]}>Офисы и сотрудники</Text>
         <View style={[styles.panel, { borderColor: theme.border, backgroundColor: theme.card }]}>
           {!cashflowEnabled && (
             <View style={[styles.noticeBox, { backgroundColor: theme.backgroundSoft }]}>
               <Text style={[styles.noticeText, { color: theme.textSecondary }]}>
-                Свободные доходы/расходы из cashflow не найдены. Сейчас в сводке учтены сделки и расходы, которые доступны на backend.
+                Cashflow не найден или недоступен. Офисы всё равно показаны по сотрудникам, платежам и расходам.
               </Text>
             </View>
           )}
 
           {officeFinance.length === 0 ? (
             <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-              Пока нет финансовых данных по офисам.
+              Пока нет данных по офисам.
             </Text>
           ) : (
             officeFinance.map((row, index) => (
               <View
-                key={`${row.office}-${index}`}
+                key={`${row.key}-${index}`}
                 style={[
                   styles.officeFinanceCard,
                   {
@@ -488,7 +810,20 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
                 ]}
               >
                 <View style={styles.officeFinanceHead}>
-                  <Text style={[styles.officeTitle, { color: theme.text }]}>{row.office}</Text>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                    <Text style={[styles.officeTitle, { color: theme.text }]}>{row.office}</Text>
+                    {!!row.address && (
+                      <Text style={[styles.officeMeta, { color: theme.textSecondary }]}>
+                        {row.address}
+                      </Text>
+                    )}
+                    {!!row.phone && (
+                      <Text style={[styles.officeMeta, { color: theme.textSecondary }]}>
+                        {row.phone}
+                      </Text>
+                    )}
+                  </View>
+
                   <Text
                     style={[
                       styles.officeBalance,
@@ -499,95 +834,257 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
                   </Text>
                 </View>
 
-                <View style={styles.officeFinanceRow}>
-                  <Text style={[styles.officeFinanceLabel, { color: theme.textSecondary }]}>
-                    Сделки
-                  </Text>
-                  <Text style={[styles.officeFinanceValue, { color: theme.text }]}>
-                    {money(row.deals_income)}
-                  </Text>
+                <View style={styles.officeSummaryGrid}>
+                  <View style={[styles.officeSummaryCard, { backgroundColor: theme.backgroundSoft }]}>
+                    <Text style={[styles.officeSummaryValue, { color: theme.text }]}>
+                      {money(row.total_income)}
+                    </Text>
+                    <Text style={[styles.officeSummaryLabel, { color: theme.textSecondary }]}>
+                      Общий доход офиса
+                    </Text>
+                  </View>
+
+                  <View style={[styles.officeSummaryCard, { backgroundColor: theme.backgroundSoft }]}>
+                    <Text style={[styles.officeSummaryValue, { color: theme.red }]}>
+                      {money(row.expenses)}
+                    </Text>
+                    <Text style={[styles.officeSummaryLabel, { color: theme.textSecondary }]}>
+                      Общий расход офиса
+                    </Text>
+                  </View>
+
+                  <View style={[styles.officeSummaryCard, { backgroundColor: theme.backgroundSoft }]}>
+                    <Text style={[styles.officeSummaryValue, { color: theme.text }]}>
+                      {money(row.deals_income)}
+                    </Text>
+                    <Text style={[styles.officeSummaryLabel, { color: theme.textSecondary }]}>
+                      Доход по сделкам
+                    </Text>
+                  </View>
+
+                  <View style={[styles.officeSummaryCard, { backgroundColor: theme.backgroundSoft }]}>
+                    <Text style={[styles.officeSummaryValue, { color: POSITIVE }]}>
+                      {money(row.extra_income)}
+                    </Text>
+                    <Text style={[styles.officeSummaryLabel, { color: theme.textSecondary }]}>
+                      Прочий доход офиса
+                    </Text>
+                  </View>
                 </View>
 
-                <View style={styles.officeFinanceRow}>
-                  <Text style={[styles.officeFinanceLabel, { color: theme.textSecondary }]}>
-                    Прочие доходы
-                  </Text>
-                  <Text style={[styles.officeFinanceValue, { color: POSITIVE }]}>
-                    {money(row.extra_income)}
-                  </Text>
-                </View>
+                <Text style={[styles.staffSectionTitle, { color: theme.text }]}>
+                  Сотрудники офиса
+                </Text>
 
-                <View style={styles.officeFinanceRow}>
-                  <Text style={[styles.officeFinanceLabel, { color: theme.textSecondary }]}>
-                    Расходы
+                {row.employees.length === 0 ? (
+                  <Text style={[styles.emptyStaffText, { color: theme.textSecondary }]}>
+                    Сотрудники не найдены, но финансовые данные по офису есть.
                   </Text>
-                  <Text style={[styles.officeFinanceValue, { color: theme.red }]}>
-                    {money(row.expenses)}
-                  </Text>
-                </View>
+                ) : (
+                  row.employees.map((emp, empIndex) => (
+                    <View
+                      key={`${row.key}-emp-${emp.id}-${empIndex}`}
+                      style={[
+                        styles.employeeCard,
+                        {
+                          borderColor: theme.border,
+                          backgroundColor: theme.card,
+                        },
+                      ]}
+                    >
+                      <View style={styles.employeeHead}>
+                        <View style={{ flex: 1, paddingRight: 12 }}>
+                          <Text style={[styles.employeeName, { color: theme.text }]}>
+                            {emp.full_name}
+                          </Text>
+                          <Text style={[styles.employeeEmail, { color: theme.textSecondary }]}>
+                            {emp.email || 'Без email'}
+                          </Text>
+                        </View>
+
+                        <Text
+                          style={[
+                            styles.employeeBalance,
+                            { color: emp.balance >= 0 ? POSITIVE : theme.red },
+                          ]}
+                        >
+                          {money(emp.balance)}
+                        </Text>
+                      </View>
+
+                      <View style={styles.employeeStatsRow}>
+                        <View style={[styles.employeeStat, { backgroundColor: theme.backgroundSoft }]}>
+                          <Text style={[styles.employeeStatValue, { color: theme.text }]}>
+                            {money(emp.income)}
+                          </Text>
+                          <Text style={[styles.employeeStatLabel, { color: theme.textSecondary }]}>
+                            Доход
+                          </Text>
+                        </View>
+
+                        <View style={[styles.employeeStat, { backgroundColor: theme.backgroundSoft }]}>
+                          <Text style={[styles.employeeStatValue, { color: theme.red }]}>
+                            {money(emp.expense)}
+                          </Text>
+                          <Text style={[styles.employeeStatLabel, { color: theme.textSecondary }]}>
+                            Расход
+                          </Text>
+                        </View>
+
+                        <View style={[styles.employeeStat, { backgroundColor: theme.backgroundSoft }]}>
+                          <Text style={[styles.employeeStatValue, { color: theme.blue }]}>
+                            {money(emp.revenue_month)}
+                          </Text>
+                          <Text style={[styles.employeeStatLabel, { color: theme.textSecondary }]}>
+                            Выручка мес.
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  ))
+                )}
               </View>
             ))
           )}
         </View>
-
-        <Text style={[styles.section, { color: theme.text }]}>Требуют подтверждения</Text>
-        <View style={[styles.panel, { borderColor: theme.border, backgroundColor: theme.card }]}>
-          {pendingPayments.slice(0, 5).map((p, idx) => (
-            <Pressable
-              key={`p-${p.id}`}
-              onPress={() => router.push('/(app)/admin-payments' as any)}
-              style={[
-                styles.row,
-                {
-                  borderBottomColor: theme.divider,
-                  borderBottomWidth:
-                    idx === pendingPayments.slice(0, 5).length - 1 && pendingDocs.slice(0, 5).length === 0 ? 0 : 1,
-                },
-              ]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.rowTitle, { color: theme.text }]}>Платёж #{p.id}</Text>
-                <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
-                  Сделка #{p.deal || '-'} · {p.method || 'payment'}
-                </Text>
-              </View>
-              <Text style={[styles.rowValue, { color: theme.blue }]}>
-                {money(num(p.amount_usd || 0))}
-              </Text>
-            </Pressable>
-          ))}
-
-          {pendingDocs.slice(0, 5).map((doc, idx) => (
-            <Pressable
-              key={`d-${doc.id}`}
-              onPress={() => router.push('/(app)/documents' as any)}
-              style={[
-                styles.row,
-                {
-                  borderBottomColor: theme.divider,
-                  borderBottomWidth: idx === pendingDocs.slice(0, 5).length - 1 ? 0 : 1,
-                },
-              ]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.rowTitle, { color: theme.text }]}>
-                  {doc.title || `Документ #${doc.id}`}
-                </Text>
-                <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
-                  Ожидает одобрения
-                </Text>
-              </View>
-              <Text style={[styles.rowValue, { color: theme.blue }]}>Открыть</Text>
-            </Pressable>
-          ))}
-
-          {pendingPayments.length === 0 && pendingDocs.length === 0 && (
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-              Сейчас ничего не ждёт подтверждения.
-            </Text>
-          )}
-        </View>
       </ScrollView>
+
+      <Modal
+        visible={quickEntryOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setQuickEntryOpen(false)}
+      >
+        <View style={styles.modalWrap}>
+          <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
+                {quickEntryType === 'income' ? 'Быстрый доход офиса' : 'Быстрый расход офиса'}
+              </Text>
+
+              <Pressable onPress={() => setQuickEntryOpen(false)} style={styles.modalCloseBtn}>
+                <Text style={[styles.modalCloseText, { color: theme.textSecondary }]}>✕</Text>
+              </Pressable>
+            </View>
+
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Офис</Text>
+            <View style={styles.officeChipWrap}>
+              {officeSelectorOptions.length === 0 ? (
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                  Нет офисов с id для быстрого добавления операции.
+                </Text>
+              ) : (
+                officeSelectorOptions.map((office) => {
+                  const active = office.key === quickOfficeKey;
+                  return (
+                    <Pressable
+                      key={office.key}
+                      onPress={() => setQuickOfficeKey(office.key)}
+                      style={[
+                        styles.officeChip,
+                        {
+                          backgroundColor: active ? theme.blue : theme.backgroundSoft,
+                          borderColor: active ? theme.blue : theme.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.officeChipText,
+                          { color: active ? '#fff' : theme.text },
+                        ]}
+                      >
+                        {office.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })
+              )}
+            </View>
+
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название</Text>
+            <TextInput
+              value={quickTitle}
+              onChangeText={setQuickTitle}
+              placeholder="Например: доход офиса / аренда / расход"
+              placeholderTextColor={theme.textMuted}
+              style={[
+                styles.input,
+                {
+                  color: theme.text,
+                  borderColor: theme.border,
+                  backgroundColor: theme.backgroundSoft,
+                },
+              ]}
+            />
+
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Сумма</Text>
+            <TextInput
+              value={quickAmount}
+              onChangeText={setQuickAmount}
+              placeholder="0"
+              keyboardType="numeric"
+              placeholderTextColor={theme.textMuted}
+              style={[
+                styles.input,
+                {
+                  color: theme.text,
+                  borderColor: theme.border,
+                  backgroundColor: theme.backgroundSoft,
+                },
+              ]}
+            />
+
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Комментарий</Text>
+            <TextInput
+              value={quickComment}
+              onChangeText={setQuickComment}
+              placeholder="Необязательно"
+              multiline
+              placeholderTextColor={theme.textMuted}
+              style={[
+                styles.input,
+                styles.textarea,
+                {
+                  color: theme.text,
+                  borderColor: theme.border,
+                  backgroundColor: theme.backgroundSoft,
+                },
+              ]}
+            />
+
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setQuickEntryOpen(false)}
+                style={[
+                  styles.secondaryBtn,
+                  { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                ]}
+              >
+                <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Отмена</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={createQuickEntry}
+                disabled={quickSaving || officeSelectorOptions.length === 0}
+                style={[
+                  styles.primaryBtn,
+                  {
+                    backgroundColor: quickEntryType === 'income' ? POSITIVE : theme.red,
+                    opacity: quickSaving || officeSelectorOptions.length === 0 ? 0.7 : 1,
+                  },
+                ]}
+              >
+                {quickSaving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Сохранить</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScreenWrapper>
   );
 }
@@ -595,6 +1092,7 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   container: { padding: 20, paddingBottom: 120 },
+
   hero: {
     borderRadius: 26,
     padding: 18,
@@ -647,6 +1145,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+
+  quickFinanceRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 2,
+  },
+  quickFinanceCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 16,
+  },
+  quickFinanceTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  quickFinanceSub: {
+    marginTop: 8,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+
   kpiGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -661,12 +1182,14 @@ const styles = StyleSheet.create({
   },
   kpiValue: { fontSize: 22, fontWeight: '900' },
   kpiLabel: { marginTop: 8, fontSize: 13, fontWeight: '700' },
+
   section: {
     fontSize: 18,
     fontWeight: '900',
     marginTop: 26,
     marginBottom: 14,
   },
+
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -688,6 +1211,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '600',
   },
+
   panel: {
     borderWidth: 1,
     borderRadius: 22,
@@ -704,11 +1228,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 18,
   },
+
   officeFinanceCard: {
     borderWidth: 1,
     borderRadius: 18,
     padding: 14,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   officeFinanceHead: {
     flexDirection: 'row',
@@ -717,41 +1242,204 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   officeTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '900',
     flex: 1,
   },
+  officeMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
   officeBalance: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '900',
   },
-  officeFinanceRow: {
+
+  officeSummaryGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-    marginTop: 6,
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 4,
   },
-  officeFinanceLabel: {
+  officeSummaryCard: {
+    width: '48%',
+    borderRadius: 16,
+    padding: 14,
+  },
+  officeSummaryValue: {
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  officeSummaryLabel: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+
+  staffSectionTitle: {
+    marginTop: 16,
+    marginBottom: 10,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  emptyStaffText: {
     fontSize: 13,
+    lineHeight: 18,
     fontWeight: '600',
   },
-  officeFinanceValue: {
-    fontSize: 13,
-    fontWeight: '900',
+
+  employeeCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    marginTop: 10,
   },
-  row: {
-    paddingVertical: 15,
-    borderBottomWidth: 1,
+  employeeHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: 12,
   },
-  rowTitle: { fontSize: 15, fontWeight: '800' },
-  rowMeta: { marginTop: 4, fontSize: 12, fontWeight: '600' },
-  rowValue: { fontSize: 14, fontWeight: '900' },
+  employeeName: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  employeeEmail: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  employeeBalance: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  employeeStatsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  employeeStat: {
+    flex: 1,
+    minWidth: 90,
+    borderRadius: 14,
+    padding: 10,
+  },
+  employeeStatValue: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  employeeStatLabel: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
   emptyText: {
     fontSize: 14,
     fontWeight: '600',
     lineHeight: 20,
+  },
+
+  modalWrap: {
+    flex: 1,
+    backgroundColor: 'rgba(7, 12, 20, 0.35)',
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+  modalCard: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 18,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    flex: 1,
+    paddingRight: 12,
+  },
+  modalCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseText: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+
+  inputLabel: {
+    marginTop: 10,
+    marginBottom: 6,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  officeChipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  officeChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  officeChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  input: {
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  textarea: {
+    minHeight: 96,
+    textAlignVertical: 'top',
+  },
+
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  secondaryBtn: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  secondaryBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  primaryBtn: {
+    flex: 1,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
   },
 });
