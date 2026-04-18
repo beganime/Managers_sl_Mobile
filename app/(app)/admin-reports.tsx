@@ -267,32 +267,32 @@ export default function AdminReportsScreen() {
         </View>
 
         <View style={styles.kpiGrid}>
-          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{stats.count}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Отчётов</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{stats.employees}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Сотрудников</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{money(stats.income)}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Доход по отчётам</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{money(stats.expense)}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Расход по отчётам</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{money(stats.turnover)}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Подтверждённый оборот</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text
               style={[
                 styles.kpiValue,
@@ -305,7 +305,7 @@ export default function AdminReportsScreen() {
           </View>
         </View>
 
-        <View style={[styles.aiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <View style={[styles.aiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.aiHeader}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.aiTitle, { color: theme.text }]}>Ответ ИИ</Text>

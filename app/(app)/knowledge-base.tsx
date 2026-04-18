@@ -5,16 +5,16 @@ import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 
 import ScreenWrapper from '../../components/ScreenWrapper';
@@ -23,12 +23,30 @@ import apiClient from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
 import { getToken, saveToken } from '../../src/utils/storage';
 
+type KnowledgeSection = {
+  id: number;
+  parent?: number | null;
+  title: string;
+  slug?: string;
+  icon?: string;
+  color?: string;
+  order?: number;
+  is_active?: boolean;
+  full_path?: string;
+  children?: KnowledgeSection[];
+  created_at?: string;
+  updated_at?: string;
+};
+
 type Snippet = {
   id: number;
+  section?: number | null;
+  section_data?: KnowledgeSection | null;
   title: string;
   content: string;
   category: string;
   order?: number;
+  updated_at?: string;
 };
 
 type VideoItem = {
@@ -51,6 +69,8 @@ type Question = {
 
 type TestItem = {
   id: number;
+  section?: number | null;
+  section_data?: KnowledgeSection | null;
   title: string;
   description?: string;
   questions: Question[];
@@ -72,7 +92,7 @@ type TestAttempt = {
 
 type TabKey = 'snippets' | 'videos' | 'tests';
 type EditorMode = 'create' | 'edit';
-type EditorEntity = 'snippet' | 'video' | 'test';
+type EditorEntity = 'section' | 'snippet' | 'video' | 'test';
 
 const TABS: TabKey[] = ['snippets', 'videos', 'tests'];
 
@@ -88,6 +108,16 @@ const CATEGORY_LABELS: Record<string, { label: string; icon: keyof typeof Ionico
   requisites: { label: 'Реквизиты', icon: 'card' },
   links: { label: 'Ссылки', icon: 'link' },
 };
+
+const SECTION_ICONS: Array<{ key: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+  { key: 'folder', label: 'Папка', icon: 'folder' },
+  { key: 'book', label: 'Книга', icon: 'book' },
+  { key: 'school', label: 'Обучение', icon: 'school' },
+  { key: 'chatbubbles', label: 'Скрипты', icon: 'chatbubbles' },
+  { key: 'airplane', label: 'Авиабилеты', icon: 'airplane' },
+  { key: 'document-text', label: 'Документы', icon: 'document-text' },
+  { key: 'card', label: 'Оплаты', icon: 'card' },
+];
 
 function normalizeOptions(options: any): string[] {
   if (Array.isArray(options)) return options.map((x) => String(x));
@@ -152,6 +182,30 @@ function getYoutubeMeta(url?: string | null) {
   return null;
 }
 
+function sectionIconName(icon?: string): keyof typeof Ionicons.glyphMap {
+  const found = SECTION_ICONS.find((x) => x.key === icon);
+  return found?.icon || 'folder';
+}
+
+function buildSectionPath(sectionId: number | null, sections: KnowledgeSection[]) {
+  if (!sectionId) return [];
+
+  const byId = new Map<number, KnowledgeSection>();
+  sections.forEach((s) => byId.set(s.id, s));
+
+  const path: KnowledgeSection[] = [];
+  let current = byId.get(sectionId);
+  let guard = 0;
+
+  while (current && guard < 20) {
+    path.unshift(current);
+    current = current.parent ? byId.get(current.parent) : undefined;
+    guard += 1;
+  }
+
+  return path;
+}
+
 function AdminActions({
   theme,
   onEdit,
@@ -195,7 +249,9 @@ export default function KnowledgeBaseScreen() {
 
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('');
+  const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
 
+  const [sections, setSections] = useState<KnowledgeSection[]>([]);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [tests, setTests] = useState<TestItem[]>([]);
@@ -213,9 +269,14 @@ export default function KnowledgeBaseScreen() {
   const [editorEntity, setEditorEntity] = useState<EditorEntity>('snippet');
   const [editingId, setEditingId] = useState<number | null>(null);
 
+  const [sectionTitle, setSectionTitle] = useState('');
+  const [sectionIcon, setSectionIcon] = useState('folder');
+  const [sectionParentId, setSectionParentId] = useState<number | null>(null);
+
   const [snippetTitle, setSnippetTitle] = useState('');
-  const [snippetCategory, setSnippetCategory] = useState('script');
+  const [snippetCategory, setSnippetCategory] = useState('faq');
   const [snippetContent, setSnippetContent] = useState('');
+  const [snippetSectionId, setSnippetSectionId] = useState<number | null>(null);
 
   const [videoTitle, setVideoTitle] = useState('');
   const [videoDescription, setVideoDescription] = useState('');
@@ -223,6 +284,7 @@ export default function KnowledgeBaseScreen() {
 
   const [testTitle, setTestTitle] = useState('');
   const [testDescription, setTestDescription] = useState('');
+  const [testSectionId, setTestSectionId] = useState<number | null>(null);
   const [questions, setQuestions] = useState<Question[]>([
     { text: '', options: ['', '', '', ''], correct: 0, order: 0 },
   ]);
@@ -232,14 +294,38 @@ export default function KnowledgeBaseScreen() {
     [activeVideo?.youtube_url]
   );
 
+  const sectionPath = useMemo(
+    () => buildSectionPath(activeSectionId, sections),
+    [activeSectionId, sections]
+  );
+
+  const currentChildSections = useMemo(() => {
+    return sections
+      .filter((section) => {
+        const parent = section.parent ?? null;
+        return parent === activeSectionId && section.is_active !== false;
+      })
+      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || a.title.localeCompare(b.title));
+  }, [sections, activeSectionId]);
+
+  const activeSection = useMemo(
+    () => sections.find((section) => section.id === activeSectionId) || null,
+    [sections, activeSectionId]
+  );
+
   const resetEditor = () => {
     setEditorMode('create');
     setEditorEntity('snippet');
     setEditingId(null);
 
+    setSectionTitle('');
+    setSectionIcon('folder');
+    setSectionParentId(activeSectionId);
+
     setSnippetTitle('');
-    setSnippetCategory('script');
+    setSnippetCategory('faq');
     setSnippetContent('');
+    setSnippetSectionId(activeSectionId);
 
     setVideoTitle('');
     setVideoDescription('');
@@ -247,17 +333,35 @@ export default function KnowledgeBaseScreen() {
 
     setTestTitle('');
     setTestDescription('');
+    setTestSectionId(activeSectionId);
     setQuestions([{ text: '', options: ['', '', '', ''], correct: 0, order: 0 }]);
   };
 
-  const openCreate = () => {
+  const openCreate = (entity?: EditorEntity) => {
     resetEditor();
 
-    if (activeTab === 'snippets') setEditorEntity('snippet');
-    if (activeTab === 'videos') setEditorEntity('video');
-    if (activeTab === 'tests') setEditorEntity('test');
+    if (entity) {
+      setEditorEntity(entity);
+    } else if (activeTab === 'snippets') {
+      setEditorEntity('snippet');
+    } else if (activeTab === 'videos') {
+      setEditorEntity('video');
+    } else if (activeTab === 'tests') {
+      setEditorEntity('test');
+    }
 
     setEditorMode('create');
+    setEditorOpen(true);
+  };
+
+  const openEditSection = (item: KnowledgeSection) => {
+    resetEditor();
+    setEditorMode('edit');
+    setEditorEntity('section');
+    setEditingId(item.id);
+    setSectionTitle(item.title || '');
+    setSectionIcon(item.icon || 'folder');
+    setSectionParentId(item.parent ?? null);
     setEditorOpen(true);
   };
 
@@ -267,8 +371,9 @@ export default function KnowledgeBaseScreen() {
     setEditorEntity('snippet');
     setEditingId(item.id);
     setSnippetTitle(item.title || '');
-    setSnippetCategory(item.category || 'script');
+    setSnippetCategory(item.category || 'faq');
     setSnippetContent(item.content || '');
+    setSnippetSectionId(item.section ?? item.section_data?.id ?? null);
     setEditorOpen(true);
   };
 
@@ -290,6 +395,7 @@ export default function KnowledgeBaseScreen() {
     setEditingId(item.id);
     setTestTitle(item.title || '');
     setTestDescription(item.description || '');
+    setTestSectionId(item.section ?? item.section_data?.id ?? null);
     setQuestions(
       (item.questions || []).length
         ? item.questions.map((q, index) => ({
@@ -310,19 +416,30 @@ export default function KnowledgeBaseScreen() {
     if (!silent) setLoading(true);
 
     try {
+      const cachedSections = await getToken('cache_knowledge_sections');
       const cachedSnippets = await getToken('cache_snippets');
       const cachedVideos = await getToken('cache_videos');
       const cachedTests = await getToken('cache_tests');
 
+      if (cachedSections) setSections(JSON.parse(cachedSections));
       if (cachedSnippets) setSnippets(JSON.parse(cachedSnippets));
       if (cachedVideos) setVideos(JSON.parse(cachedVideos));
       if (cachedTests) setTests(JSON.parse(cachedTests));
 
-      const [snipRes, videoRes, testsRes] = await Promise.allSettled([
+      const [sectionsRes, snipRes, videoRes, testsRes] = await Promise.allSettled([
+        apiClient.get('documents/knowledge-sections/'),
         apiClient.get('documents/snippets/'),
         apiClient.get('gamification/tutorials/'),
         apiClient.get('documents/knowledge-tests/'),
       ]);
+
+      if (sectionsRes.status === 'fulfilled') {
+        const data = sectionsRes.value.data.results ?? sectionsRes.value.data ?? [];
+        setSections(data);
+        await saveToken('cache_knowledge_sections', JSON.stringify(data));
+      } else {
+        setSections([]);
+      }
 
       if (snipRes.status === 'fulfilled') {
         const data = snipRes.value.data.results ?? snipRes.value.data ?? [];
@@ -362,17 +479,27 @@ export default function KnowledgeBaseScreen() {
 
   const filteredSnippets = useMemo(() => {
     let res = snippets;
-    if (activeCategory) res = res.filter((s) => s.category === activeCategory);
+
+    if (activeSectionId) {
+      res = res.filter((s) => (s.section ?? s.section_data?.id ?? null) === activeSectionId);
+    } else if (activeCategory) {
+      res = res.filter((s) => s.category === activeCategory);
+    } else if (sections.length > 0) {
+      res = res.filter((s) => !(s.section ?? s.section_data?.id));
+    }
+
     if (search.trim()) {
       const q = search.toLowerCase();
       res = res.filter(
         (s) =>
-          s.title.toLowerCase().includes(q) ||
-          stripHtml(s.content).toLowerCase().includes(q)
+          String(s.title || '').toLowerCase().includes(q) ||
+          stripHtml(s.content).toLowerCase().includes(q) ||
+          String(s.section_data?.full_path || s.section_data?.title || '').toLowerCase().includes(q)
       );
     }
+
     return res;
-  }, [snippets, activeCategory, search]);
+  }, [snippets, sections.length, activeSectionId, activeCategory, search]);
 
   const filteredVideos = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -385,14 +512,26 @@ export default function KnowledgeBaseScreen() {
   }, [videos, search]);
 
   const filteredTests = useMemo(() => {
+    let res = tests;
+
+    if (activeSectionId) {
+      res = res.filter((t) => (t.section ?? t.section_data?.id ?? null) === activeSectionId);
+    } else if (sections.length > 0) {
+      res = res.filter((t) => !(t.section ?? t.section_data?.id));
+    }
+
     const q = search.trim().toLowerCase();
-    if (!q) return tests;
-    return tests.filter(
-      (t) =>
-        String(t.title || '').toLowerCase().includes(q) ||
-        String(t.description || '').toLowerCase().includes(q)
-    );
-  }, [tests, search]);
+    if (q) {
+      res = res.filter(
+        (t) =>
+          String(t.title || '').toLowerCase().includes(q) ||
+          String(t.description || '').toLowerCase().includes(q) ||
+          String(t.section_data?.full_path || t.section_data?.title || '').toLowerCase().includes(q)
+      );
+    }
+
+    return res;
+  }, [tests, sections.length, activeSectionId, search]);
 
   const copySnippet = async (item: Snippet) => {
     await Clipboard.setStringAsync(stripHtml(item.content));
@@ -438,11 +577,14 @@ export default function KnowledgeBaseScreen() {
 
   const score = useMemo(() => {
     if (!activeTest) return 0;
+
     let result = 0;
+
     for (const [index, question] of (activeTest.questions || []).entries()) {
       const key = question.id ?? index + 100000;
       if (answers[key] === question.correct) result += 1;
     }
+
     return result;
   }, [activeTest, answers]);
 
@@ -453,6 +595,7 @@ export default function KnowledgeBaseScreen() {
       setSubmittingTest(true);
 
       const payloadAnswers: Record<string, number> = {};
+
       (activeTest.questions || []).forEach((q, index) => {
         const key = q.id ?? index + 100000;
         if (typeof answers[key] === 'number' && q.id) {
@@ -519,7 +662,29 @@ export default function KnowledgeBaseScreen() {
     if (!isAdmin) return;
 
     setSaving(true);
+
     try {
+      if (editorEntity === 'section') {
+        if (!sectionTitle.trim()) {
+          Alert.alert('Ошибка', 'Заполни название раздела.');
+          return;
+        }
+
+        const payload = {
+          title: sectionTitle.trim(),
+          icon: sectionIcon,
+          parent: sectionParentId || null,
+          is_active: true,
+          order: 0,
+        };
+
+        if (editorMode === 'create') {
+          await apiClient.post('documents/knowledge-sections/', payload);
+        } else {
+          await apiClient.patch(`documents/knowledge-sections/${editingId}/`, payload);
+        }
+      }
+
       if (editorEntity === 'snippet') {
         if (!snippetTitle.trim() || !snippetContent.trim()) {
           Alert.alert('Ошибка', 'Заполни название и текст.');
@@ -527,8 +692,9 @@ export default function KnowledgeBaseScreen() {
         }
 
         const payload = {
+          section: snippetSectionId || null,
           title: snippetTitle.trim(),
-          category: snippetCategory,
+          category: snippetCategory || 'faq',
           content: snippetContent.trim(),
           order: 0,
         };
@@ -588,6 +754,7 @@ export default function KnowledgeBaseScreen() {
         }
 
         const payload = {
+          section: testSectionId || null,
           title: testTitle.trim(),
           description: testDescription.trim(),
           questions: preparedQuestions,
@@ -605,10 +772,37 @@ export default function KnowledgeBaseScreen() {
       await loadData(true);
       Alert.alert('Готово', editorMode === 'create' ? 'Материал добавлен.' : 'Материал обновлён.');
     } catch (e: any) {
-      Alert.alert('Ошибка', e?.response?.data?.detail || 'Не удалось сохранить материал.');
+      const data = e?.response?.data;
+      const detail =
+        data?.detail ||
+        data?.title?.[0] ||
+        data?.parent?.[0] ||
+        data?.section?.[0] ||
+        data?.questions?.[0] ||
+        'Не удалось сохранить материал.';
+      Alert.alert('Ошибка', detail);
     } finally {
       setSaving(false);
     }
+  };
+
+  const deleteSection = async (item: KnowledgeSection) => {
+    Alert.alert('Удаление', `Удалить раздел "${item.title}"?`, [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Удалить',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiClient.delete(`documents/knowledge-sections/${item.id}/`);
+            if (activeSectionId === item.id) setActiveSectionId(item.parent ?? null);
+            await loadData(true);
+          } catch (e: any) {
+            Alert.alert('Ошибка', e?.response?.data?.detail || 'Не удалось удалить раздел.');
+          }
+        },
+      },
+    ]);
   };
 
   const deleteSnippet = async (item: Snippet) => {
@@ -664,7 +858,6 @@ export default function KnowledgeBaseScreen() {
       },
     ]);
   };
-
   if (loading) {
     return (
       <ScreenWrapper>
@@ -680,10 +873,7 @@ export default function KnowledgeBaseScreen() {
       <View style={styles.header}>
         <Pressable
           onPress={() => router.back()}
-          style={[
-            styles.backBtn,
-            { backgroundColor: theme.surface, borderColor: theme.border },
-          ]}
+          style={[styles.backBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
         >
           <Ionicons name="arrow-back" size={22} color={theme.text} />
         </Pressable>
@@ -692,7 +882,7 @@ export default function KnowledgeBaseScreen() {
 
         {isAdmin ? (
           <Pressable
-            onPress={openCreate}
+            onPress={() => openCreate()}
             style={[styles.addBtn, { backgroundColor: theme.blue }]}
           >
             <Ionicons name="add" size={18} color="#fff" />
@@ -720,25 +910,38 @@ export default function KnowledgeBaseScreen() {
           style={[
             styles.heroCard,
             {
-              backgroundColor: dark ? 'rgba(18,24,36,0.92)' : '#FFFFFF',
+              backgroundColor: dark ? 'rgba(18,24,36,0.94)' : '#FFFFFF',
               borderColor: theme.border,
-              shadowColor: '#000',
+              shadowColor: theme.shadow || '#000',
             },
           ]}
         >
-          <Text style={[styles.heroTitle, { color: theme.text }]}>Материалы для команды</Text>
-          <Text style={[styles.heroSub, { color: theme.textSecondary }]}>
-            Видео, тесты и быстрые тексты для копирования в одном месте
-          </Text>
+          <View style={styles.heroTop}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.heroTitle, { color: theme.text }]}>Материалы для команды</Text>
+              <Text style={[styles.heroSub, { color: theme.textSecondary }]}>
+                Разделы, подразделы, быстрые тексты, видео и тесты в одном месте
+              </Text>
+            </View>
+
+            {isAdmin && (
+              <Pressable
+                onPress={() => openCreate('section')}
+                style={[styles.smallAddSection, { backgroundColor: theme.blueSoft }]}
+              >
+                <Ionicons name="folder-open" size={18} color={theme.blue} />
+              </Pressable>
+            )}
+          </View>
 
           <View style={styles.heroStats}>
             <View style={[styles.heroStat, { backgroundColor: theme.backgroundSoft }]}>
-              <Text style={[styles.heroStatValue, { color: theme.text }]}>{snippets.length}</Text>
-              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Записей</Text>
+              <Text style={[styles.heroStatValue, { color: theme.text }]}>{sections.length}</Text>
+              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Разделов</Text>
             </View>
             <View style={[styles.heroStat, { backgroundColor: theme.backgroundSoft }]}>
-              <Text style={[styles.heroStatValue, { color: theme.text }]}>{videos.length}</Text>
-              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Видео</Text>
+              <Text style={[styles.heroStatValue, { color: theme.text }]}>{snippets.length}</Text>
+              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Записей</Text>
             </View>
             <View style={[styles.heroStat, { backgroundColor: theme.backgroundSoft }]}>
               <Text style={[styles.heroStatValue, { color: theme.text }]}>{tests.length}</Text>
@@ -747,12 +950,7 @@ export default function KnowledgeBaseScreen() {
           </View>
         </View>
 
-        <View
-          style={[
-            styles.searchBox,
-            { backgroundColor: theme.surface, borderColor: theme.border },
-          ]}
-        >
+        <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Ionicons name="search" size={18} color={theme.textSecondary} />
           <TextInput
             value={search}
@@ -794,38 +992,34 @@ export default function KnowledgeBaseScreen() {
           </View>
         </ScrollView>
 
-        {activeTab === 'snippets' && (
-          <>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
-              <View style={styles.tabRow}>
+        {(activeTab === 'snippets' || activeTab === 'tests') && sections.length > 0 && (
+          <View style={{ marginTop: 16 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.breadcrumbs}>
                 <Pressable
-                  onPress={() => setActiveCategory('')}
+                  onPress={() => setActiveSectionId(null)}
                   style={[
-                    styles.catBtn,
+                    styles.breadcrumbChip,
                     {
-                      backgroundColor: activeCategory === '' ? theme.blue : theme.surface,
-                      borderColor: activeCategory === '' ? theme.blue : theme.border,
+                      backgroundColor: !activeSectionId ? theme.blue : theme.surface,
+                      borderColor: !activeSectionId ? theme.blue : theme.border,
                     },
                   ]}
                 >
-                  <Text style={{ color: activeCategory === '' ? '#fff' : theme.text, fontWeight: '900' }}>
-                    Все
+                  <Ionicons name="home" size={14} color={!activeSectionId ? '#fff' : theme.text} />
+                  <Text style={[styles.breadcrumbText, { color: !activeSectionId ? '#fff' : theme.text }]}>
+                    Главная
                   </Text>
                 </Pressable>
 
-                {categories.map((cat) => {
-                  const active = activeCategory === cat;
-                  const meta = CATEGORY_LABELS[cat] || {
-                    label: cat,
-                    icon: 'folder' as keyof typeof Ionicons.glyphMap,
-                  };
-
+                {sectionPath.map((section) => {
+                  const active = section.id === activeSectionId;
                   return (
                     <Pressable
-                      key={cat}
-                      onPress={() => setActiveCategory(cat)}
+                      key={section.id}
+                      onPress={() => setActiveSectionId(section.id)}
                       style={[
-                        styles.catBtn,
+                        styles.breadcrumbChip,
                         {
                           backgroundColor: active ? theme.blue : theme.surface,
                           borderColor: active ? theme.blue : theme.border,
@@ -833,13 +1027,12 @@ export default function KnowledgeBaseScreen() {
                       ]}
                     >
                       <Ionicons
-                        name={meta.icon}
-                        size={15}
-                        color={active ? '#fff' : theme.textSecondary}
-                        style={{ marginRight: 6 }}
+                        name={sectionIconName(section.icon)}
+                        size={14}
+                        color={active ? '#fff' : theme.text}
                       />
-                      <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
-                        {meta.label}
+                      <Text style={[styles.breadcrumbText, { color: active ? '#fff' : theme.text }]}>
+                        {section.title}
                       </Text>
                     </Pressable>
                   );
@@ -847,47 +1040,162 @@ export default function KnowledgeBaseScreen() {
               </View>
             </ScrollView>
 
-            <View style={{ gap: 12, marginTop: 16 }}>
-              {filteredSnippets.length === 0 ? (
-                <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Text style={{ color: theme.textSecondary }}>Ничего не найдено.</Text>
+            {!!activeSection && isAdmin && (
+              <View style={styles.sectionAdminRow}>
+                <Pressable
+                  onPress={() => openCreate('section')}
+                  style={[styles.sectionAdminBtn, { backgroundColor: theme.blueSoft, borderColor: theme.border }]}
+                >
+                  <Ionicons name="add" size={16} color={theme.blue} />
+                  <Text style={[styles.sectionAdminText, { color: theme.blue }]}>Подраздел</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => openEditSection(activeSection)}
+                  style={[styles.sectionAdminBtn, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}
+                >
+                  <Ionicons name="create-outline" size={16} color={theme.text} />
+                  <Text style={[styles.sectionAdminText, { color: theme.text }]}>Изменить</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        )}
+
+        {(activeTab === 'snippets' || activeTab === 'tests') && currentChildSections.length > 0 && (
+          <View style={styles.sectionGrid}>
+            {currentChildSections.map((section) => (
+              <Pressable
+                key={section.id}
+                onPress={() => setActiveSectionId(section.id)}
+                style={[
+                  styles.sectionCard,
+                  {
+                    backgroundColor: theme.surface,
+                    borderColor: theme.border,
+                    shadowColor: theme.shadow || '#000',
+                  },
+                ]}
+              >
+                <View style={[styles.sectionIcon, { backgroundColor: theme.blueSoft }]}>
+                  <Ionicons name={sectionIconName(section.icon)} size={22} color={theme.blue} />
                 </View>
-              ) : (
-                filteredSnippets.map((item) => (
-                  <View
-                    key={item.id}
-                    style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
+
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]} numberOfLines={2}>
+                    {section.title}
+                  </Text>
+                  <Text style={[styles.sectionMeta, { color: theme.textSecondary }]}>
+                    Раздел
+                  </Text>
+                </View>
+
+                {isAdmin && (
+                  <AdminActions
+                    theme={theme}
+                    onEdit={() => openEditSection(section)}
+                    onDelete={() => deleteSection(section)}
+                  />
+                )}
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {activeTab === 'snippets' && sections.length === 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+            <View style={styles.tabRow}>
+              <Pressable
+                onPress={() => setActiveCategory('')}
+                style={[
+                  styles.catBtn,
+                  {
+                    backgroundColor: activeCategory === '' ? theme.blue : theme.surface,
+                    borderColor: activeCategory === '' ? theme.blue : theme.border,
+                  },
+                ]}
+              >
+                <Text style={{ color: activeCategory === '' ? '#fff' : theme.text, fontWeight: '900' }}>
+                  Все
+                </Text>
+              </Pressable>
+
+              {categories.map((cat) => {
+                const active = activeCategory === cat;
+                const meta = CATEGORY_LABELS[cat] || {
+                  label: cat,
+                  icon: 'folder' as keyof typeof Ionicons.glyphMap,
+                };
+
+                return (
+                  <Pressable
+                    key={cat}
+                    onPress={() => setActiveCategory(cat)}
+                    style={[
+                      styles.catBtn,
+                      {
+                        backgroundColor: active ? theme.blue : theme.surface,
+                        borderColor: active ? theme.blue : theme.border,
+                      },
+                    ]}
                   >
-                    <View style={styles.cardTopRow}>
-                      <Text style={[styles.cardTitle, { color: theme.text, flex: 1 }]}>{item.title}</Text>
-                      {isAdmin ? (
-                        <AdminActions
-                          theme={theme}
-                          onEdit={() => openEditSnippet(item)}
-                          onDelete={() => deleteSnippet(item)}
-                        />
-                      ) : null}
-                    </View>
-
-                    <Pressable onPress={() => copySnippet(item)}>
-                      <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                        {stripHtml(item.content)}
-                      </Text>
-
-                      <View style={styles.cardFooter}>
-                        <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
-                          {CATEGORY_LABELS[item.category]?.label || item.category}
-                        </Text>
-                        <Text style={[styles.copyText, { color: theme.blue }]}>
-                          Нажми, чтобы скопировать
-                        </Text>
-                      </View>
-                    </Pressable>
-                  </View>
-                ))
-              )}
+                    <Ionicons
+                      name={meta.icon}
+                      size={15}
+                      color={active ? '#fff' : theme.textSecondary}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
+                      {meta.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
-          </>
+          </ScrollView>
+        )}
+
+        {activeTab === 'snippets' && (
+          <View style={{ gap: 12, marginTop: 16 }}>
+            {filteredSnippets.length === 0 ? (
+              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={{ color: theme.textSecondary }}>В этом разделе пока нет записей.</Text>
+              </View>
+            ) : (
+              filteredSnippets.map((item) => (
+                <View key={item.id} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <View style={styles.cardTopRow}>
+                    <Text style={[styles.cardTitle, { color: theme.text, flex: 1 }]}>{item.title}</Text>
+                    {isAdmin ? (
+                      <AdminActions
+                        theme={theme}
+                        onEdit={() => openEditSnippet(item)}
+                        onDelete={() => deleteSnippet(item)}
+                      />
+                    ) : null}
+                  </View>
+
+                  <Pressable onPress={() => copySnippet(item)}>
+                    <Text style={[styles.cardText, { color: theme.textSecondary }]}>
+                      {stripHtml(item.content)}
+                    </Text>
+
+                    <View style={styles.cardFooter}>
+                      <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
+                        {item.section_data?.full_path ||
+                          item.section_data?.title ||
+                          CATEGORY_LABELS[item.category]?.label ||
+                          item.category}
+                      </Text>
+                      <Text style={[styles.copyText, { color: theme.blue }]}>
+                        Нажми, чтобы скопировать
+                      </Text>
+                    </View>
+                  </Pressable>
+                </View>
+              ))
+            )}
+          </View>
         )}
 
         {activeTab === 'videos' && (
@@ -902,10 +1210,7 @@ export default function KnowledgeBaseScreen() {
                 const isShort = !!yt?.isShort;
 
                 return (
-                  <View
-                    key={item.id}
-                    style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                  >
+                  <View key={item.id} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                     <View style={styles.cardTopRow}>
                       <View style={{ flex: 1, paddingRight: 8 }}>
                         <View style={styles.videoHead}>
@@ -955,7 +1260,7 @@ export default function KnowledgeBaseScreen() {
           <View style={{ gap: 12, marginTop: 16 }}>
             {filteredTests.length === 0 ? (
               <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={{ color: theme.textSecondary }}>Тесты пока не найдены.</Text>
+                <Text style={{ color: theme.textSecondary }}>В этом разделе пока нет тестов.</Text>
               </View>
             ) : (
               filteredTests.map((item) => (
@@ -972,6 +1277,9 @@ export default function KnowledgeBaseScreen() {
                           {item.description}
                         </Text>
                       )}
+                      <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
+                        {item.section_data?.full_path || item.section_data?.title || 'Без раздела'}
+                      </Text>
                       <Text style={[styles.copyText, { color: theme.blue }]}>Открыть тест</Text>
                     </View>
 
@@ -1015,8 +1323,8 @@ export default function KnowledgeBaseScreen() {
 
             {activeVideoMeta ? (
               <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={[styles.cardText, { color: theme.textSecondary }]}> 
-                  YouTube и Shorts будут открываться через встроенный браузер приложения. Так стабильнее на телефоне и без чёрного экрана.
+                <Text style={[styles.cardText, { color: theme.textSecondary }]}>
+                  YouTube и Shorts открываются через встроенный браузер приложения. Так стабильнее на телефоне.
                 </Text>
 
                 <Pressable
@@ -1202,6 +1510,7 @@ export default function KnowledgeBaseScreen() {
           <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
             <View style={styles.tabRow}>
               {[
+                { key: 'section', label: 'Раздел' },
                 { key: 'snippet', label: 'Инфа' },
                 { key: 'video', label: 'Видео' },
                 { key: 'test', label: 'Тест' },
@@ -1230,6 +1539,96 @@ export default function KnowledgeBaseScreen() {
               })}
             </View>
 
+            {editorEntity === 'section' && (
+              <View style={{ marginTop: 16, gap: 12 }}>
+                <TextInput
+                  value={sectionTitle}
+                  onChangeText={setSectionTitle}
+                  placeholder="Название раздела"
+                  placeholderTextColor={theme.textMuted}
+                  style={[
+                    styles.input,
+                    { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface },
+                  ]}
+                />
+
+                <Text style={[styles.editorLabel, { color: theme.textSecondary }]}>Иконка</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.tabRow}>
+                    {SECTION_ICONS.map((item) => {
+                      const active = sectionIcon === item.key;
+                      return (
+                        <Pressable
+                          key={item.key}
+                          onPress={() => setSectionIcon(item.key)}
+                          style={[
+                            styles.catBtn,
+                            {
+                              backgroundColor: active ? theme.blue : theme.surface,
+                              borderColor: active ? theme.blue : theme.border,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name={item.icon}
+                            size={15}
+                            color={active ? '#fff' : theme.textSecondary}
+                            style={{ marginRight: 6 }}
+                          />
+                          <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
+                            {item.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+
+                <Text style={[styles.editorLabel, { color: theme.textSecondary }]}>Родительский раздел</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.tabRow}>
+                    <Pressable
+                      onPress={() => setSectionParentId(null)}
+                      style={[
+                        styles.catBtn,
+                        {
+                          backgroundColor: sectionParentId === null ? theme.blue : theme.surface,
+                          borderColor: sectionParentId === null ? theme.blue : theme.border,
+                        },
+                      ]}
+                    >
+                      <Text style={{ color: sectionParentId === null ? '#fff' : theme.text, fontWeight: '900' }}>
+                        Главная
+                      </Text>
+                    </Pressable>
+
+                    {sections
+                      .filter((section) => section.id !== editingId)
+                      .map((section) => {
+                        const active = sectionParentId === section.id;
+                        return (
+                          <Pressable
+                            key={section.id}
+                            onPress={() => setSectionParentId(section.id)}
+                            style={[
+                              styles.catBtn,
+                              {
+                                backgroundColor: active ? theme.blue : theme.surface,
+                                borderColor: active ? theme.blue : theme.border,
+                              },
+                            ]}
+                          >
+                            <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
+                              {section.full_path || section.title}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+
             {editorEntity === 'snippet' && (
               <View style={{ marginTop: 16, gap: 12 }}>
                 <TextInput
@@ -1243,6 +1642,48 @@ export default function KnowledgeBaseScreen() {
                   ]}
                 />
 
+                <Text style={[styles.editorLabel, { color: theme.textSecondary }]}>Раздел</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.tabRow}>
+                    <Pressable
+                      onPress={() => setSnippetSectionId(null)}
+                      style={[
+                        styles.catBtn,
+                        {
+                          backgroundColor: snippetSectionId === null ? theme.blue : theme.surface,
+                          borderColor: snippetSectionId === null ? theme.blue : theme.border,
+                        },
+                      ]}
+                    >
+                      <Text style={{ color: snippetSectionId === null ? '#fff' : theme.text, fontWeight: '900' }}>
+                        Без раздела
+                      </Text>
+                    </Pressable>
+
+                    {sections.map((section) => {
+                      const active = snippetSectionId === section.id;
+                      return (
+                        <Pressable
+                          key={section.id}
+                          onPress={() => setSnippetSectionId(section.id)}
+                          style={[
+                            styles.catBtn,
+                            {
+                              backgroundColor: active ? theme.blue : theme.surface,
+                              borderColor: active ? theme.blue : theme.border,
+                            },
+                          ]}
+                        >
+                          <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
+                            {section.full_path || section.title}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+
+                <Text style={[styles.editorLabel, { color: theme.textSecondary }]}>Старая категория</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View style={styles.tabRow}>
                     {['script', 'faq', 'requisites', 'links'].map((cat) => {
@@ -1321,18 +1762,13 @@ export default function KnowledgeBaseScreen() {
                 />
 
                 {!!youtubeUrl.trim() && (
-                  <View
-                    style={[
-                      styles.previewCard,
-                      { backgroundColor: theme.surface, borderColor: theme.border },
-                    ]}
-                  >
+                  <View style={[styles.previewCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                     <Text style={[styles.previewTitle, { color: theme.text }]}>Предпросмотр ссылки</Text>
                     <Text style={[styles.previewText, { color: theme.textSecondary }]}>
                       {getYoutubeMeta(youtubeUrl)?.isShort
-                        ? 'Определено как Shorts (вертикально)'
+                        ? 'Определено как Shorts'
                         : getYoutubeMeta(youtubeUrl)
-                        ? 'Определено как обычное видео (горизонтально)'
+                        ? 'Определено как YouTube-видео'
                         : 'Ссылка пока не распознана'}
                     </Text>
                   </View>
@@ -1366,6 +1802,47 @@ export default function KnowledgeBaseScreen() {
                   ]}
                 />
 
+                <Text style={[styles.editorLabel, { color: theme.textSecondary }]}>Раздел</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.tabRow}>
+                    <Pressable
+                      onPress={() => setTestSectionId(null)}
+                      style={[
+                        styles.catBtn,
+                        {
+                          backgroundColor: testSectionId === null ? theme.blue : theme.surface,
+                          borderColor: testSectionId === null ? theme.blue : theme.border,
+                        },
+                      ]}
+                    >
+                      <Text style={{ color: testSectionId === null ? '#fff' : theme.text, fontWeight: '900' }}>
+                        Без раздела
+                      </Text>
+                    </Pressable>
+
+                    {sections.map((section) => {
+                      const active = testSectionId === section.id;
+                      return (
+                        <Pressable
+                          key={section.id}
+                          onPress={() => setTestSectionId(section.id)}
+                          style={[
+                            styles.catBtn,
+                            {
+                              backgroundColor: active ? theme.blue : theme.surface,
+                              borderColor: active ? theme.blue : theme.border,
+                            },
+                          ]}
+                        >
+                          <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
+                            {section.full_path || section.title}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+
                 {questions.map((question, qIndex) => {
                   const options = normalizeOptions(question.options).length
                     ? normalizeOptions(question.options)
@@ -1374,19 +1851,13 @@ export default function KnowledgeBaseScreen() {
                   while (options.length < 4) options.push('');
 
                   return (
-                    <View
-                      key={qIndex}
-                      style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                    >
+                    <View key={qIndex} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                       <View style={styles.cardTopRow}>
                         <Text style={[styles.cardTitle, { color: theme.text }]}>Вопрос {qIndex + 1}</Text>
 
                         <Pressable
                           onPress={() => removeQuestion(qIndex)}
-                          style={[
-                            styles.adminIconBtn,
-                            { backgroundColor: theme.redSoft, borderColor: theme.border },
-                          ]}
+                          style={[styles.adminIconBtn, { backgroundColor: theme.redSoft, borderColor: theme.border }]}
                         >
                           <Ionicons name="trash-outline" size={17} color={theme.red} />
                         </Pressable>
@@ -1438,10 +1909,7 @@ export default function KnowledgeBaseScreen() {
 
                 <Pressable
                   onPress={addQuestion}
-                  style={[
-                    styles.secondaryActionBtn,
-                    { backgroundColor: theme.surface, borderColor: theme.border },
-                  ]}
+                  style={[styles.secondaryActionBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
                 >
                   <Text style={[styles.secondaryActionText, { color: theme.text }]}>
                     Добавить вопрос
@@ -1509,8 +1977,20 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 3,
   },
+  heroTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
   heroTitle: { fontSize: 21, fontWeight: '900' },
   heroSub: { marginTop: 6, fontSize: 13, lineHeight: 19, fontWeight: '600' },
+  smallAddSection: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   heroStats: { flexDirection: 'row', gap: 10, marginTop: 16 },
   heroStat: {
     flex: 1,
@@ -1548,6 +2028,78 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+
+  breadcrumbs: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 16,
+  },
+  breadcrumbChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  breadcrumbText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  sectionAdminRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  sectionAdminBtn: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  sectionAdminText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  sectionGrid: {
+    marginTop: 16,
+    gap: 12,
+  },
+  sectionCard: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  sectionIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    lineHeight: 20,
+  },
+  sectionMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   card: {
@@ -1623,19 +2175,6 @@ const styles = StyleSheet.create({
   },
   submitBtnText: { color: '#fff', fontSize: 15, fontWeight: '900' },
 
-  widePlayerWrap: {
-    width: '100%',
-    height: 240,
-    borderRadius: 22,
-    overflow: 'hidden',
-  },
-  shortPlayerWrap: {
-    width: '72%',
-    alignSelf: 'center',
-    height: 520,
-    borderRadius: 26,
-    overflow: 'hidden',
-  },
   nativeVideo: {
     width: '100%',
     height: 240,
@@ -1687,5 +2226,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     fontWeight: '600',
+  },
+  editorLabel: {
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
 });

@@ -101,7 +101,7 @@ function StatCard({
       style={[
         styles.statCard,
         {
-          backgroundColor: accent ? theme.blueSoft : theme.card,
+          backgroundColor: accent ? theme.blueSoft : theme.surface,
           borderColor: theme.border,
           shadowColor: theme.shadow,
         },
@@ -136,7 +136,7 @@ function ProfileField({
       style={[
         styles.fieldWrap,
         {
-          backgroundColor: theme.card,
+          backgroundColor: theme.surface,
           borderColor: theme.border,
         },
       ]}
@@ -182,7 +182,7 @@ function QuickLinkCard({
       style={[
         styles.quickCard,
         {
-          backgroundColor: theme.card,
+          backgroundColor: theme.surface,
           borderColor: theme.border,
           shadowColor: theme.shadow,
         },
@@ -374,7 +374,7 @@ export default function ProfileScreen() {
           style={[
             styles.hero,
             {
-              backgroundColor: theme.card,
+              backgroundColor: theme.surface,
               borderColor: theme.border,
               shadowColor: theme.shadow,
             },
@@ -502,7 +502,7 @@ export default function ProfileScreen() {
           style={[
             styles.quickSection,
             {
-              backgroundColor: theme.card,
+              backgroundColor: theme.surface,
               borderColor: theme.border,
               shadowColor: theme.shadow,
             },
@@ -583,7 +583,7 @@ export default function ProfileScreen() {
             style={[
               styles.officeCard,
               {
-                backgroundColor: theme.card,
+                backgroundColor: theme.surface,
                 borderColor: theme.border,
                 shadowColor: theme.shadow,
               },
@@ -673,7 +673,7 @@ export default function ProfileScreen() {
           style={[
             styles.themeCard,
             {
-              backgroundColor: theme.card,
+              backgroundColor: theme.surface,
               borderColor: theme.border,
             },
           ]}
@@ -742,7 +742,7 @@ export default function ProfileScreen() {
           style={[
             styles.secondaryLargeBtn,
             {
-              backgroundColor: theme.card,
+              backgroundColor: theme.surface,
               borderColor: theme.border,
               opacity: loggingOut ? 0.7 : 1,
             },

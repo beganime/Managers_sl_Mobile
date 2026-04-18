@@ -1,8 +1,8 @@
 {
   "expo": {
     "name": "ManagerSL",
-    "slug": "managersl",
-    "version": "2.2.5",
+    "slug": "ManagersSL",
+    "version": "2.2.6",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "managerssl",
@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.studentslife.managersl",
+      "bundleIdentifier": "com.beganime.ManagersSL",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -52,7 +52,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "9ca4f4db-3b3a-4c85-a00e-eb42c96d371d"
+        "projectId": "98911d49-c99a-492c-94d9-c6c566ba4687"
       }
     }
   }

@@ -11,7 +11,6 @@ import { ensureWorkdayRemindersScheduled } from '../../src/notifications/workday
 
 const TAB_HEIGHT = Platform.OS === 'ios' ? 86 : 72;
 const TAB_BOTTOM = Platform.OS === 'ios' ? 18 : 10;
-const GREEN = '#1AAE6F';
 
 function canShowFabOnRoute(segments: string[]) {
   if (!segments.length || segments[0] !== '(app)') return false;
@@ -19,7 +18,7 @@ function canShowFabOnRoute(segments: string[]) {
 
   const screen = segments[1];
 
-  return ['index', 'crm', 'leaderboard', 'catalog', 'profile'].includes(screen);
+  return ['index', 'crm', 'leaderboard', 'catalog', 'profile', 'leads'].includes(screen);
 }
 
 export default function AppTabsLayout() {
@@ -127,7 +126,9 @@ export default function AppTabsLayout() {
                     StyleSheet.absoluteFillObject,
                     styles.tabShell,
                     {
-                      backgroundColor: dark ? 'rgba(22,26,38,0.78)' : 'rgba(255,255,255,0.82)',
+                      backgroundColor: dark
+                        ? 'rgba(22,26,38,0.78)'
+                        : 'rgba(255,255,255,0.82)',
                       borderColor: theme.border,
                     },
                   ]}
@@ -149,7 +150,9 @@ export default function AppTabsLayout() {
                   StyleSheet.absoluteFillObject,
                   styles.androidTabBg,
                   {
-                    backgroundColor: dark ? 'rgba(22,26,38,0.96)' : 'rgba(255,255,255,0.98)',
+                    backgroundColor: dark
+                      ? 'rgba(22,26,38,0.96)'
+                      : 'rgba(255,255,255,0.98)',
                     borderColor: theme.border,
                   },
                 ]}
@@ -240,6 +243,7 @@ export default function AppTabsLayout() {
         />
 
         <Tabs.Screen name="documents" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="leads" options={{ href: null, headerShown: false }} />
         <Tabs.Screen name="client/[id]" options={{ href: null, headerShown: false }} />
         <Tabs.Screen name="deal/[id]" options={{ href: null, headerShown: false }} />
         <Tabs.Screen name="add-deal" options={{ href: null, headerShown: false }} />
@@ -275,7 +279,7 @@ export default function AppTabsLayout() {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Добавить расход</Text>
                   <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>
-                    Wi-Fi, вода, свет, офис и другое
+                    Виза, авиабилеты, офис и другое
                   </Text>
                 </View>
               </Pressable>
@@ -287,7 +291,7 @@ export default function AppTabsLayout() {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Добавить доход</Text>
                   <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>
-                    Доход вне платежа по сделке
+                    Виза, авиабилеты или доход вне сделки
                   </Text>
                 </View>
               </Pressable>
@@ -302,7 +306,7 @@ export default function AppTabsLayout() {
                       Пополнить баланс офиса
                     </Text>
                     <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>
-                      Создать доход с названием “Зарплата”
+                      Создать доход с категорией “Зарплата”
                     </Text>
                   </View>
                 </Pressable>

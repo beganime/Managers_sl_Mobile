@@ -339,7 +339,7 @@ export default function LeaderboardScreen() {
               style={[
                 styles.manageBtn,
                 {
-                  backgroundColor: manageMode ? theme.blue : theme.card,
+                  backgroundColor: manageMode ? theme.blue : theme.surface,
                   borderColor: manageMode ? theme.blue : theme.border,
                 },
               ]}
@@ -395,7 +395,7 @@ export default function LeaderboardScreen() {
           style={[
             styles.tableWrap,
             {
-              backgroundColor: theme.card,
+              backgroundColor: theme.surface,
               borderColor: theme.border,
               shadowColor: theme.shadow,
             },
@@ -458,7 +458,7 @@ export default function LeaderboardScreen() {
             style={[
               styles.tableWrap,
               {
-                backgroundColor: theme.card,
+                backgroundColor: theme.surface,
                 borderColor: theme.border,
                 shadowColor: theme.shadow,
               },

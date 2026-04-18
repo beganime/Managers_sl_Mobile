@@ -39,6 +39,7 @@ type StatusFilter = 'all' | 'pending' | 'approved' | 'error';
 
 function formatDate(value?: string) {
   if (!value) return '—';
+
   try {
     return new Date(value).toLocaleString('ru-RU');
   } catch {
@@ -87,9 +88,10 @@ function statusMeta(status: string, theme: any) {
 
 export default function DocumentsScreen() {
   const router = useRouter();
-  const { theme } = useTheme();
+  const { theme, themeMode } = useTheme();
   const { user } = useCurrentUser();
 
+  const dark = themeMode === 'dark';
   const isAdmin = Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
 
   const [loading, setLoading] = useState(true);
@@ -222,6 +224,11 @@ export default function DocumentsScreen() {
 
   return (
     <ScreenWrapper>
+      <View style={styles.bgLayer} pointerEvents="none">
+        <View style={[styles.blobOne, { backgroundColor: theme.blueSoft }]} />
+        <View style={[styles.blobTwo, { backgroundColor: theme.redSoft }]} />
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.container}
         refreshControl={
@@ -254,10 +261,33 @@ export default function DocumentsScreen() {
 
         <View
           style={[
+            styles.heroCard,
+            {
+              backgroundColor: dark ? 'rgba(20,24,36,0.94)' : 'rgba(255,255,255,0.96)',
+              borderColor: theme.border,
+              shadowColor: theme.shadow || '#000',
+            },
+          ]}
+        >
+          <View style={styles.heroIcon}>
+            <Ionicons name="document-text" size={24} color={theme.blue} />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.heroValue, { color: theme.text }]}>{filtered.length}</Text>
+            <Text style={[styles.heroLabel, { color: theme.textSecondary }]}>
+              Документов по текущему фильтру
+            </Text>
+          </View>
+        </View>
+
+        <View
+          style={[
             styles.searchBox,
             {
-              backgroundColor: theme.card,
+              backgroundColor: dark ? 'rgba(20,24,36,0.94)' : 'rgba(255,255,255,0.96)',
               borderColor: theme.border,
+              shadowColor: theme.shadow || '#000',
             },
           ]}
         >
@@ -291,7 +321,11 @@ export default function DocumentsScreen() {
                 style={[
                   styles.filterChip,
                   {
-                    backgroundColor: active ? theme.blue : theme.card,
+                    backgroundColor: active
+                      ? theme.blue
+                      : dark
+                      ? 'rgba(20,24,36,0.94)'
+                      : 'rgba(255,255,255,0.96)',
                     borderColor: active ? theme.blue : theme.border,
                   },
                 ]}
@@ -314,7 +348,7 @@ export default function DocumentsScreen() {
             style={[
               styles.emptyCard,
               {
-                backgroundColor: theme.card,
+                backgroundColor: dark ? 'rgba(20,24,36,0.94)' : 'rgba(255,255,255,0.96)',
                 borderColor: theme.border,
               },
             ]}
@@ -336,9 +370,9 @@ export default function DocumentsScreen() {
                 style={[
                   styles.card,
                   {
-                    backgroundColor: theme.card,
+                    backgroundColor: dark ? 'rgba(20,24,36,0.94)' : 'rgba(255,255,255,0.96)',
                     borderColor: theme.border,
-                    shadowColor: theme.shadow,
+                    shadowColor: theme.shadow || '#000',
                   },
                 ]}
               >
@@ -475,6 +509,28 @@ export default function DocumentsScreen() {
 }
 
 const styles = StyleSheet.create({
+  bgLayer: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+  },
+  blobOne: {
+    position: 'absolute',
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    top: -80,
+    right: -90,
+    opacity: 0.55,
+  },
+  blobTwo: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    top: 210,
+    left: -100,
+    opacity: 0.35,
+  },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -514,14 +570,47 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontSize: 13,
   },
+  heroCard: {
+    borderWidth: 1,
+    borderRadius: 26,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 22,
+    elevation: 4,
+  },
+  heroIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 18,
+    backgroundColor: 'rgba(38,116,255,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroValue: {
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  heroLabel: {
+    marginTop: 3,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   searchBox: {
     borderWidth: 1,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    elevation: 2,
   },
   searchInput: {
     flex: 1,
@@ -556,12 +645,12 @@ const styles = StyleSheet.create({
   },
   card: {
     borderWidth: 1,
-    borderRadius: 24,
-    padding: 16,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
+    borderRadius: 28,
+    padding: 18,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 5,
   },
   cardTop: {
     flexDirection: 'row',

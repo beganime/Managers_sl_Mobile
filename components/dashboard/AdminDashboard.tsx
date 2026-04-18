@@ -738,32 +738,32 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
         </View>
 
         <View style={styles.kpiGrid}>
-          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{pendingPayments.length}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Ждут платежи</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{pendingDocs.length}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Ждут документы</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{money(fullOfficeExpense)}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Полный расход офисов</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{money(totalNetDeals)}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Net по сделкам</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{money(todayIncome)}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Доход по отчётам сегодня</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{money(todayExpense)}</Text>
             <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Расход по отчётам сегодня</Text>
           </View>
@@ -784,7 +784,7 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
         </View>
 
         <Text style={[styles.section, { color: theme.text }]}>Офисы и сотрудники</Text>
-        <View style={[styles.panel, { borderColor: theme.border, backgroundColor: theme.card }]}>
+        <View style={[styles.panel, { borderColor: theme.border, backgroundColor: theme.surface }]}>
           {!cashflowEnabled && (
             <View style={[styles.noticeBox, { backgroundColor: theme.backgroundSoft }]}>
               <Text style={[styles.noticeText, { color: theme.textSecondary }]}>
@@ -888,7 +888,7 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
                         styles.employeeCard,
                         {
                           borderColor: theme.border,
-                          backgroundColor: theme.card,
+                          backgroundColor: theme.surface,
                         },
                       ]}
                     >
@@ -956,7 +956,7 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
         onRequestClose={() => setQuickEntryOpen(false)}
       >
         <View style={styles.modalWrap}>
-          <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>
                 {quickEntryType === 'income' ? 'Быстрый доход офиса' : 'Быстрый расход офиса'}

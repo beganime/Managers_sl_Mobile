@@ -413,7 +413,7 @@ export default function AdminStaffScreen() {
             styles.searchBox,
             {
               borderColor: theme.border,
-              backgroundColor: theme.card,
+              backgroundColor: theme.surface,
             },
           ]}
         >
@@ -431,7 +431,7 @@ export default function AdminStaffScreen() {
             styles.infoCard,
             {
               borderColor: theme.border,
-              backgroundColor: theme.card,
+              backgroundColor: theme.surface,
             },
           ]}
         >
@@ -446,7 +446,7 @@ export default function AdminStaffScreen() {
             styles.list,
             {
               borderColor: theme.border,
-              backgroundColor: theme.card,
+              backgroundColor: theme.surface,
             },
           ]}
         >
@@ -543,7 +543,7 @@ export default function AdminStaffScreen() {
                 styles.modalCard,
                 {
                   borderColor: theme.border,
-                  backgroundColor: theme.card,
+                  backgroundColor: theme.surface,
                 },
               ]}
             >

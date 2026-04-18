@@ -79,6 +79,7 @@ type CashflowItem = {
   entry_type?: 'income' | 'expense' | string;
   title?: string;
   category?: string;
+  category_label?: string;
   comment?: string;
   amount?: number | string;
   amount_usd?: number | string;
@@ -87,6 +88,20 @@ type CashflowItem = {
 };
 
 const GREEN = '#1AAE6F';
+
+const FINANCE_CATEGORIES: Array<{
+  key: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}> = [
+  { key: 'custom', label: 'Другое', icon: 'apps-outline' },
+  { key: 'visa', label: 'Виза', icon: 'document-text-outline' },
+  { key: 'air_tickets', label: 'Авиабилеты', icon: 'airplane-outline' },
+  { key: 'salary', label: 'Зарплата', icon: 'business-outline' },
+  { key: 'office', label: 'Офис', icon: 'home-outline' },
+  { key: 'utilities', label: 'Коммуналка', icon: 'flash-outline' },
+  { key: 'marketing', label: 'Маркетинг', icon: 'megaphone-outline' },
+];
 
 function toNumber(value: unknown) {
   const n = Number(value ?? 0);
@@ -131,6 +146,10 @@ function methodLabel(method?: string) {
   return map[method || ''] || method || '—';
 }
 
+function categoryLabel(category?: string) {
+  return FINANCE_CATEGORIES.find((item) => item.key === category)?.label || category || 'Другое';
+}
+
 function extractError(error: any) {
   return (
     error?.response?.data?.detail ||
@@ -138,6 +157,7 @@ function extractError(error: any) {
     error?.response?.data?.title?.[0] ||
     error?.response?.data?.office?.[0] ||
     error?.response?.data?.currency?.[0] ||
+    error?.response?.data?.entry_type?.[0] ||
     'Не удалось выполнить действие.'
   );
 }
@@ -190,7 +210,7 @@ export default function AdminPaymentsScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [payments, setPayments] = useState<PaymentItem[]>([]);
-  const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
+  const [legacyExpenses, setLegacyExpenses] = useState<ExpenseItem[]>([]);
   const [cashflow, setCashflow] = useState<CashflowItem[]>([]);
 
   const [currencies, setCurrencies] = useState<CurrencyItem[]>([]);
@@ -198,6 +218,7 @@ export default function AdminPaymentsScreen() {
   const [cashflowEnabled, setCashflowEnabled] = useState(true);
 
   const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [workingId, setWorkingId] = useState<string | null>(null);
 
   const [fabOpen, setFabOpen] = useState(false);
@@ -207,6 +228,7 @@ export default function AdminPaymentsScreen() {
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [comment, setComment] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('custom');
   const [selectedCurrencyId, setSelectedCurrencyId] = useState<number | null>(null);
   const [selectedOfficeId, setSelectedOfficeId] = useState<number | null>(null);
 
@@ -218,6 +240,7 @@ export default function AdminPaymentsScreen() {
     setTitle('');
     setAmount('');
     setComment('');
+    setSelectedCategory('custom');
     setModalType(null);
     setFabOpen(false);
   }, []);
@@ -228,6 +251,7 @@ export default function AdminPaymentsScreen() {
     setTitle('');
     setAmount('');
     setComment('');
+    setSelectedCategory('custom');
     setFabOpen(false);
   }, []);
 
@@ -235,7 +259,7 @@ export default function AdminPaymentsScreen() {
     if (!cashflowEnabled) {
       Alert.alert(
         'Доходы пока не готовы',
-        'На этом сервере пока не найден endpoint analytics/cashflow/. Расходы уже работают, а свободные доходы вне сделки заработают сразу после backend-обновления.'
+        'На этом сервере пока не найден endpoint analytics/cashflow/.'
       );
       setFabOpen(false);
       return;
@@ -243,11 +267,12 @@ export default function AdminPaymentsScreen() {
 
     setModalType('income');
     setTab('income');
-    setTitle(isAdmin ? 'Зарплата' : '');
+    setTitle('');
     setAmount('');
     setComment('');
+    setSelectedCategory('custom');
     setFabOpen(false);
-  }, [cashflowEnabled, isAdmin]);
+  }, [cashflowEnabled]);
 
   const load = useCallback(async () => {
     try {
@@ -258,7 +283,7 @@ export default function AdminPaymentsScreen() {
       ]);
 
       setPayments((paymentsData || []) as PaymentItem[]);
-      setExpenses((expensesData || []) as ExpenseItem[]);
+      setLegacyExpenses((expensesData || []) as ExpenseItem[]);
       setCurrencies((currenciesData || []) as CurrencyItem[]);
 
       const usd =
@@ -319,6 +344,7 @@ export default function AdminPaymentsScreen() {
       setTitle('');
       setAmount('');
       setComment('');
+      setSelectedCategory('custom');
       return;
     }
 
@@ -333,15 +359,17 @@ export default function AdminPaymentsScreen() {
         return;
       }
 
+      const paramTitle = String(params.title || '').trim();
+      const salary = paramTitle.toLowerCase() === 'зарплата';
+
       setModalType('income');
       setFabOpen(false);
-      setTitle(String(params.title || '').trim() || (isAdmin ? 'Зарплата' : ''));
+      setTitle(paramTitle || '');
       setAmount('');
-      setComment(String(params.title || '').trim().toLowerCase() === 'зарплата'
-        ? 'Пополнение баланса офиса'
-        : '');
+      setComment(salary ? 'Пополнение баланса офиса' : '');
+      setSelectedCategory(salary ? 'salary' : 'custom');
     }
-  }, [params.open, params.title, params.officeId, cashflowEnabled, isAdmin]);
+  }, [params.open, params.title, params.officeId, cashflowEnabled]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -383,13 +411,33 @@ export default function AdminPaymentsScreen() {
     }
 
     setSubmitting(true);
+
     try {
-      await apiClient.post('analytics/expenses/', {
-        title: title.trim(),
-        amount: toNumber(amount),
-        currency: selectedCurrencyId,
-        date: new Date().toISOString().slice(0, 10),
-      });
+      if (cashflowEnabled) {
+        const officeId = Number(selectedOfficeId || userOfficeId || 0);
+        if (!officeId) {
+          Alert.alert('Ошибка', 'Не удалось определить офис.');
+          return;
+        }
+
+        await apiClient.post('analytics/cashflow/', {
+          office: officeId,
+          entry_type: 'expense',
+          title: title.trim(),
+          category: selectedCategory,
+          comment: comment.trim(),
+          amount: toNumber(amount),
+          currency: selectedCurrencyId,
+          entry_date: new Date().toISOString().slice(0, 10),
+        });
+      } else {
+        await apiClient.post('analytics/expenses/', {
+          title: title.trim(),
+          amount: toNumber(amount),
+          currency: selectedCurrencyId,
+          date: new Date().toISOString().slice(0, 10),
+        });
+      }
 
       resetForm();
       await load();
@@ -432,12 +480,13 @@ export default function AdminPaymentsScreen() {
     }
 
     setSubmitting(true);
+
     try {
       await apiClient.post('analytics/cashflow/', {
         office: officeId,
         entry_type: 'income',
         title: title.trim(),
-        category: title.trim().toLowerCase().includes('зарплат') ? 'salary' : 'custom',
+        category: selectedCategory,
         comment: comment.trim(),
         amount: toNumber(amount),
         currency: selectedCurrencyId,
@@ -453,6 +502,14 @@ export default function AdminPaymentsScreen() {
       setSubmitting(false);
     }
   };
+
+  const cashflowExpenses = useMemo(() => {
+    return cashflow.filter((item) => String(item.entry_type || '').toLowerCase() === 'expense');
+  }, [cashflow]);
+
+  const cashflowIncomes = useMemo(() => {
+    return cashflow.filter((item) => String(item.entry_type || '').toLowerCase() === 'income');
+  }, [cashflow]);
 
   const visibleItems = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -471,29 +528,46 @@ export default function AdminPaymentsScreen() {
     }
 
     if (tab === 'expenses') {
-      return expenses.filter((item) => {
+      const combined: any[] = cashflowEnabled ? cashflowExpenses : legacyExpenses;
+
+      return combined.filter((item) => {
+        if (categoryFilter !== 'all' && cashflowEnabled && item.category !== categoryFilter) return false;
+
         if (!q) return true;
+
         return (
           String(item.id).includes(q) ||
           String(item.title || '').toLowerCase().includes(q) ||
+          String(item.category_label || categoryLabel(item.category)).toLowerCase().includes(q) ||
           managerName(item).toLowerCase().includes(q) ||
           officeName(item).toLowerCase().includes(q)
         );
       });
     }
 
-    return cashflow.filter((item) => {
-      if (String(item.entry_type || '').toLowerCase() !== 'income') return false;
+    return cashflowIncomes.filter((item) => {
+      if (categoryFilter !== 'all' && item.category !== categoryFilter) return false;
+
       if (!q) return true;
 
       return (
         String(item.id).includes(q) ||
         String(item.title || '').toLowerCase().includes(q) ||
+        String(item.category_label || categoryLabel(item.category)).toLowerCase().includes(q) ||
         String(item.office_name || '').toLowerCase().includes(q) ||
         String(item.created_by_name || '').toLowerCase().includes(q)
       );
     });
-  }, [tab, payments, expenses, cashflow, search]);
+  }, [
+    tab,
+    payments,
+    legacyExpenses,
+    cashflowEnabled,
+    cashflowExpenses,
+    cashflowIncomes,
+    search,
+    categoryFilter,
+  ]);
 
   const totals = useMemo(() => {
     if (tab === 'payments') {
@@ -509,22 +583,23 @@ export default function AdminPaymentsScreen() {
     }
 
     if (tab === 'expenses') {
+      const expenses = cashflowEnabled ? cashflowExpenses : legacyExpenses;
+
       return {
         primary: expenses.length,
         secondary: 0,
-        amount: expenses.reduce((sum, x) => sum + toNumber(x.amount_usd ?? x.amount), 0),
+        amount: expenses.reduce((sum, x: any) => sum + toNumber(x.amount_usd ?? x.amount), 0),
         secondaryAmount: 0,
       };
     }
 
-    const incomes = cashflow.filter((x) => String(x.entry_type) === 'income');
     return {
-      primary: incomes.length,
+      primary: cashflowIncomes.length,
       secondary: 0,
-      amount: incomes.reduce((sum, x) => sum + toNumber(x.amount_usd ?? x.amount), 0),
+      amount: cashflowIncomes.reduce((sum, x) => sum + toNumber(x.amount_usd ?? x.amount), 0),
       secondaryAmount: 0,
     };
-  }, [tab, payments, expenses, cashflow]);
+  }, [tab, payments, legacyExpenses, cashflowEnabled, cashflowExpenses, cashflowIncomes]);
 
   if (loading) {
     return (
@@ -548,7 +623,7 @@ export default function AdminPaymentsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.title, { color: theme.text }]}>Финансы</Text>
               <Text style={[styles.sub, { color: theme.textSecondary }]}>
-                Платежи по сделкам, расходы и свободные доходы
+                Платежи, расходы, доходы, виза и авиабилеты
               </Text>
             </View>
           </View>
@@ -564,7 +639,7 @@ export default function AdminPaymentsScreen() {
             <KpiCard
               title={tab === 'payments' ? 'Подтверждено' : 'Режим'}
               value={tab === 'payments' ? String(totals.secondary) : tab === 'expenses' ? 'Expense' : 'Income'}
-              hint={tab === 'payments' ? money(totals.secondaryAmount) : cashflowEnabled ? 'Online' : 'Backend pending'}
+              hint={tab === 'payments' ? money(totals.secondaryAmount) : cashflowEnabled ? 'Cashflow online' : 'Legacy'}
               theme={theme}
             />
           </View>
@@ -595,6 +670,7 @@ export default function AdminPaymentsScreen() {
               { key: 'income', label: 'Доходы' },
             ].map((item) => {
               const active = tab === item.key;
+
               return (
                 <Pressable
                   key={item.key}
@@ -615,6 +691,48 @@ export default function AdminPaymentsScreen() {
             })}
           </ScrollView>
 
+          {(tab === 'expenses' || tab === 'income') && cashflowEnabled && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryFilterRow}>
+              <Pressable
+                onPress={() => setCategoryFilter('all')}
+                style={[
+                  styles.categoryFilterChip,
+                  {
+                    backgroundColor: categoryFilter === 'all' ? theme.blue : theme.surface,
+                    borderColor: categoryFilter === 'all' ? theme.blue : theme.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.categoryFilterText, { color: categoryFilter === 'all' ? '#fff' : theme.text }]}>
+                  Все
+                </Text>
+              </Pressable>
+
+              {FINANCE_CATEGORIES.map((cat) => {
+                const active = categoryFilter === cat.key;
+
+                return (
+                  <Pressable
+                    key={cat.key}
+                    onPress={() => setCategoryFilter(cat.key)}
+                    style={[
+                      styles.categoryFilterChip,
+                      {
+                        backgroundColor: active ? theme.blue : theme.surface,
+                        borderColor: active ? theme.blue : theme.border,
+                      },
+                    ]}
+                  >
+                    <Ionicons name={cat.icon} size={14} color={active ? '#fff' : theme.text} />
+                    <Text style={[styles.categoryFilterText, { color: active ? '#fff' : theme.text }]}>
+                      {cat.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+
           {tab === 'income' && !cashflowEnabled && (
             <View
               style={[
@@ -625,7 +743,9 @@ export default function AdminPaymentsScreen() {
                 },
               ]}
             >
-              <Text style={[styles.warningTitle, { color: '#8E5A00' }]}>Доходы ещё не подключены на backend</Text>
+              <Text style={[styles.warningTitle, { color: '#8E5A00' }]}>
+                Доходы ещё не подключены на backend
+              </Text>
               <Text style={[styles.warningText, { color: '#8E5A00' }]}>
                 Свободные доходы вне сделки будут работать сразу, как только на сервере появится `analytics/cashflow/`.
               </Text>
@@ -669,6 +789,7 @@ export default function AdminPaymentsScreen() {
                           Сделка #{item.deal || '-'} · {methodLabel(item.method)}
                         </Text>
                       </View>
+
                       <Text style={[styles.amount, { color: theme.text }]}>
                         {money(toNumber(item.amount_usd ?? item.amount))}
                       </Text>
@@ -677,6 +798,7 @@ export default function AdminPaymentsScreen() {
                     <Text style={[styles.line, { color: theme.textSecondary }]}>
                       {managerName(item)} · {officeName(item)}
                     </Text>
+
                     <Text style={[styles.line, { color: theme.textSecondary }]}>
                       Дата: {formatDate(item.payment_date)}
                     </Text>
@@ -720,6 +842,9 @@ export default function AdminPaymentsScreen() {
               }
 
               if (tab === 'expenses') {
+                const isCashflow = cashflowEnabled;
+                const date = isCashflow ? item.entry_date : item.date;
+
                 return (
                   <View
                     key={`expense-${item.id}`}
@@ -741,13 +866,28 @@ export default function AdminPaymentsScreen() {
                           {managerName(item)} · {officeName(item)}
                         </Text>
                       </View>
+
                       <Text style={[styles.amount, { color: theme.red }]}>
                         - {money(toNumber(item.amount_usd ?? item.amount))}
                       </Text>
                     </View>
 
+                    {isCashflow && (
+                      <View style={[styles.categoryPill, { backgroundColor: theme.redSoft }]}>
+                        <Text style={[styles.categoryPillText, { color: theme.red }]}>
+                          {item.category_label || categoryLabel(item.category)}
+                        </Text>
+                      </View>
+                    )}
+
+                    {!!item.comment && (
+                      <Text style={[styles.line, { color: theme.textSecondary }]}>
+                        Комментарий: {item.comment}
+                      </Text>
+                    )}
+
                     <Text style={[styles.line, { color: theme.textSecondary }]}>
-                      Дата: {formatDate(item.date)}
+                      Дата: {formatDate(date)}
                     </Text>
                   </View>
                 );
@@ -774,8 +914,15 @@ export default function AdminPaymentsScreen() {
                         {item.created_by_name || 'Сотрудник'} · {item.office_name || 'Офис'}
                       </Text>
                     </View>
+
                     <Text style={[styles.amount, { color: GREEN }]}>
                       + {money(toNumber(item.amount_usd ?? item.amount))}
+                    </Text>
+                  </View>
+
+                  <View style={[styles.categoryPill, { backgroundColor: '#E7F8EC' }]}>
+                    <Text style={[styles.categoryPillText, { color: '#157347' }]}>
+                      {item.category_label || categoryLabel(item.category)}
                     </Text>
                   </View>
 
@@ -824,6 +971,7 @@ export default function AdminPaymentsScreen() {
                     setTitle('Зарплата');
                     setAmount('');
                     setComment('Пополнение баланса офиса');
+                    setSelectedCategory('salary');
                     setFabOpen(false);
                   }}
                   style={styles.fabMenuItem}
@@ -864,7 +1012,11 @@ export default function AdminPaymentsScreen() {
               <TextInput
                 value={title}
                 onChangeText={setTitle}
-                placeholder={modalType === 'expense' ? 'Например: Wi-Fi, вода, свет' : 'Например: зарплата, вода, офис'}
+                placeholder={
+                  modalType === 'expense'
+                    ? 'Например: виза, билет, офис'
+                    : 'Например: виза, авиабилеты'
+                }
                 placeholderTextColor={theme.textMuted}
                 style={[
                   styles.modalInput,
@@ -892,6 +1044,37 @@ export default function AdminPaymentsScreen() {
                 ]}
               />
 
+              <Text style={[styles.modalLabel, { color: theme.textSecondary }]}>Категория</Text>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectorRow}>
+                {FINANCE_CATEGORIES.map((category) => {
+                  const active = selectedCategory === category.key;
+
+                  return (
+                    <Pressable
+                      key={category.key}
+                      onPress={() => setSelectedCategory(category.key)}
+                      style={[
+                        styles.selectorChip,
+                        {
+                          backgroundColor: active ? theme.blue : theme.surface,
+                          borderColor: active ? theme.blue : theme.border,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={category.icon}
+                        size={15}
+                        color={active ? '#fff' : theme.text}
+                      />
+                      <Text style={[styles.selectorChipText, { color: active ? '#fff' : theme.text }]}>
+                        {category.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
               <TextInput
                 value={comment}
                 onChangeText={setComment}
@@ -910,9 +1093,11 @@ export default function AdminPaymentsScreen() {
               />
 
               <Text style={[styles.modalLabel, { color: theme.textSecondary }]}>Валюта</Text>
+
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectorRow}>
                 {currencies.map((currency) => {
                   const active = selectedCurrencyId === currency.id;
+
                   return (
                     <Pressable
                       key={currency.id}
@@ -933,17 +1118,24 @@ export default function AdminPaymentsScreen() {
                 })}
               </ScrollView>
 
-              {modalType === 'income' && cashflowEnabled && (
+              {cashflowEnabled && (
                 <>
                   <Text style={[styles.modalLabel, { color: theme.textSecondary }]}>Офис</Text>
+
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectorRow}>
                     {(offices.length
                       ? offices
                       : userOfficeId
-                      ? [{ id: Number(userOfficeId), city: user?.office?.city || user?.access_profile?.managed_office?.city }]
+                      ? [
+                          {
+                            id: Number(userOfficeId),
+                            city: user?.office?.city || user?.access_profile?.managed_office?.city,
+                          },
+                        ]
                       : []
                     ).map((office) => {
                       const active = selectedOfficeId === office.id;
+
                       return (
                         <Pressable
                           key={office.id}
@@ -982,7 +1174,13 @@ export default function AdminPaymentsScreen() {
 
                 <Pressable
                   onPress={modalType === 'expense' ? submitExpense : submitIncome}
-                  style={[styles.modalPrimaryBtn, { backgroundColor: theme.blue, opacity: submitting ? 0.7 : 1 }]}
+                  style={[
+                    styles.modalPrimaryBtn,
+                    {
+                      backgroundColor: theme.blue,
+                      opacity: submitting ? 0.7 : 1,
+                    },
+                  ]}
                   disabled={submitting}
                 >
                   {submitting ? (
@@ -1085,6 +1283,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 13,
   },
+  categoryFilterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+    paddingRight: 16,
+  },
+  categoryFilterChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  categoryFilterText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
   warningCard: {
     marginTop: 14,
     borderWidth: 1,
@@ -1159,6 +1376,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
   },
+  categoryPill: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  categoryPillText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
   actionsRow: {
     flexDirection: 'row',
     gap: 10,
@@ -1224,6 +1452,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.14,
     shadowRadius: 18,
     elevation: 8,
+    maxHeight: '90%',
   },
   modalTitle: {
     fontSize: 20,
@@ -1261,6 +1490,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   selectorChipText: {
     fontSize: 13,

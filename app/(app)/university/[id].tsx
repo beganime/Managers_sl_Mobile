@@ -131,7 +131,7 @@ function InfoBlock({
       style={[
         styles.infoCard,
         {
-          backgroundColor: theme.card,
+          backgroundColor: theme.surface,
           borderColor: theme.border,
           shadowColor: theme.shadow,
         },
@@ -166,7 +166,7 @@ function ProgramCard({
       style={[
         styles.programCard,
         {
-          backgroundColor: theme.card,
+          backgroundColor: theme.surface,
           borderColor: theme.border,
           shadowColor: theme.shadow,
         },
@@ -285,7 +285,7 @@ export default function UniversityDetailScreen() {
           style={[
             styles.heroCard,
             {
-              backgroundColor: theme.card,
+              backgroundColor: theme.surface,
               borderColor: theme.border,
               shadowColor: theme.shadow,
             },
@@ -397,7 +397,7 @@ export default function UniversityDetailScreen() {
             style={[
               styles.emptyPrograms,
               {
-                backgroundColor: theme.card,
+                backgroundColor: theme.surface,
                 borderColor: theme.border,
               },
             ]}
