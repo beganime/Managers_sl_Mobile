@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import Markdown from 'react-native-markdown-display';
 
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
@@ -120,7 +121,8 @@ export default function AdminReportsScreen() {
 
       const response = await apiClient.get('reports/daily/ai_summary/', { params });
 
-      setAiSummary(stripHtml(response?.data?.summary || ''));
+      // Для AI мы НЕ используем stripHtml, чтобы сохранить Markdown разметку!
+      setAiSummary(response?.data?.summary || '');
       setAiProvider(String(response?.data?.provider || ''));
       setAiError(String(response?.data?.error || ''));
     } catch (error: any) {
@@ -187,6 +189,24 @@ export default function AdminReportsScreen() {
       employees,
     };
   }, [filteredReports, payments]);
+
+  // Стили для Markdown (автоматически подстраиваются под тему)
+  const mdStyles = useMemo(
+    () =>
+      StyleSheet.create({
+        body: { color: theme.text, fontSize: 15, lineHeight: 24 },
+        heading1: { color: theme.text, fontSize: 20, fontWeight: '900', marginTop: 16, marginBottom: 8 },
+        heading2: { color: theme.text, fontSize: 18, fontWeight: '800', marginTop: 14, marginBottom: 6 },
+        heading3: { color: theme.text, fontSize: 16, fontWeight: '700', marginTop: 12, marginBottom: 4 },
+        strong: { color: theme.text, fontWeight: '800' },
+        em: { color: theme.text, fontStyle: 'italic' },
+        bullet_list: { marginTop: 6, marginBottom: 6 },
+        ordered_list: { marginTop: 6, marginBottom: 6 },
+        paragraph: { marginTop: 6, marginBottom: 6 },
+        list_item: { marginTop: 4, marginBottom: 4 },
+      }),
+    [theme]
+  );
 
   if (!isAdmin) {
     return (
@@ -310,17 +330,18 @@ export default function AdminReportsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.aiTitle, { color: theme.text }]}>Ответ ИИ</Text>
               <Text style={[styles.aiSub, { color: theme.textSecondary }]}>
-                Отдельное поле с итоговой сводкой
+                Сводка на основе ваших данных
               </Text>
             </View>
 
             <Pressable
               onPress={() => void loadAiSummary(filter)}
-              style={[
+              style={({ pressed }) => [
                 styles.aiRefreshBtn,
                 {
                   backgroundColor: theme.surface,
                   borderColor: theme.border,
+                  opacity: pressed ? 0.7 : 1,
                 },
               ]}
             >
@@ -347,9 +368,15 @@ export default function AdminReportsScreen() {
               },
             ]}
           >
-            <Text style={[styles.aiBody, { color: theme.text }]}>
-              {aiSummary || aiError || 'AI summary пока не получен.'}
-            </Text>
+            {aiSummary ? (
+              <Markdown style={mdStyles}>
+                {aiSummary}
+              </Markdown>
+            ) : (
+              <Text style={[styles.aiBody, { color: theme.text }]}>
+                {aiError || 'AI summary пока не получен.'}
+              </Text>
+            )}
           </View>
         </View>
 
@@ -445,8 +472,12 @@ const styles = StyleSheet.create({
   aiCard: {
     marginTop: 18,
     borderWidth: 1,
-    borderRadius: 22,
-    padding: 16,
+    borderRadius: 24,
+    padding: 20,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
   },
   aiHeader: {
     flexDirection: 'row',
@@ -454,41 +485,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   aiTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '900',
   },
   aiSub: {
     marginTop: 4,
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '600',
   },
   aiRefreshBtn: {
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 12,
+    borderRadius: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    minWidth: 94,
+    minWidth: 100,
     alignItems: 'center',
   },
   aiRefreshText: {
-    fontSize: 12,
-    fontWeight: '900',
+    fontSize: 13,
+    fontWeight: '800',
   },
   aiProvider: {
-    marginTop: 12,
+    marginTop: 14,
     fontSize: 12,
     fontWeight: '900',
   },
   aiBodyWrap: {
-    marginTop: 10,
+    marginTop: 12,
     borderWidth: 1,
-    borderRadius: 18,
-    padding: 14,
+    borderRadius: 20,
+    padding: 16,
   },
   aiBody: {
-    fontSize: 14,
-    fontWeight: '600',
-    lineHeight: 22,
+    fontSize: 15,
+    fontWeight: '500',
+    lineHeight: 24,
   },
   card: {
     borderWidth: 1,
@@ -503,5 +534,5 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 11, fontWeight: '900' },
   moneyRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, gap: 12 },
   moneyText: { fontSize: 13, fontWeight: '900' },
-  preview: { marginTop: 12, fontSize: 13, fontWeight: '600', lineHeight: 19 },
+  preview: { marginTop: 12, fontSize: 14, fontWeight: '500', lineHeight: 21 },
 });

@@ -522,6 +522,13 @@ export default function ProfileScreen() {
               theme={theme}
             />
             <QuickLinkCard
+              title="Заявки"
+              subtitle="Лиды, фильтры и ответственные"
+              icon="file-tray-full-outline"
+              onPress={() => router.push('/(app)/leads' as any)}
+              theme={theme}
+            />
+            <QuickLinkCard
               title="Документы"
               subtitle="Шаблоны и генерация"
               icon="document-text-outline"

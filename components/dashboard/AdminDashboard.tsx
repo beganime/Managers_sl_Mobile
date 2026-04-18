@@ -755,7 +755,7 @@ export default function AdminDashboard({ user, onRefresh }: Props) {
 
           <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Text style={[styles.kpiValue, { color: theme.text }]}>{money(totalNetDeals)}</Text>
-            <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Net по сделкам</Text>
+            <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Доход по сделкам</Text>
           </View>
 
           <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
