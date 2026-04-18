@@ -950,7 +950,7 @@ export default function KnowledgeBaseScreen() {
           </View>
         </View>
 
-        <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border, marginBottom: 16 }]}>
           <Ionicons name="search" size={18} color={theme.textSecondary} />
           <TextInput
             value={search}
@@ -961,7 +961,32 @@ export default function KnowledgeBaseScreen() {
           />
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 14 }}>
+        {/* === КНОПКА AI ПОМОЩНИКА === */}
+        <Pressable
+          onPress={() => router.push('/(app)/kb-ai')}
+          style={({ pressed }) => [
+            {
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: theme.blue,
+              padding: 16,
+              borderRadius: 20,
+              marginBottom: 16,
+              opacity: pressed ? 0.8 : 1,
+            },
+          ]}
+        >
+          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#ffffff30', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
+            <Ionicons name="sparkles" size={22} color="#fff" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>AI Помощник</Text>
+            <Text style={{ color: '#ffffff90', fontSize: 13, fontWeight: '600', marginTop: 2 }}>Умный поиск по документам</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#ffffff80" />
+        </Pressable>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.tabRow}>
             {TABS.map((tab) => {
               const active = activeTab === tab;
@@ -1857,8 +1882,7 @@ export default function KnowledgeBaseScreen() {
 
                         <Pressable
                           onPress={() => removeQuestion(qIndex)}
-                          style={[styles.adminIconBtn, { backgroundColor: theme.redSoft, borderColor: theme.border }]}
-                        >
+                          style={[styles.adminIconBtn, { backgroundColor: theme.redSoft, borderColor: theme.border }]}>
                           <Ionicons name="trash-outline" size={17} color={theme.red} />
                         </Pressable>
                       </View>

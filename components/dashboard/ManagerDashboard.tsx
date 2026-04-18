@@ -1,3 +1,5 @@
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -13,7 +15,6 @@ import {
   View,
 } from 'react-native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
-import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import LeadCard, { LeadItem, LeadStatus } from '../../components/dashboard/LeadCard';
 import { CurrentUser } from '../../hooks/useCurrentUser';
@@ -62,10 +63,33 @@ type OfficeDashboardData = {
 type QuickOfficeEntryType = 'income' | 'expense';
 
 const LOCAL_NOTES_KEY = 'manager_dashboard_notes_v2';
+
 const LEAD_STATUSES: LeadStatus[] = ['new', 'contacted', 'converted', 'rejected'];
+
+const PREMIUM_TEXT = '#231F3A';
+const PREMIUM_MUTED = '#766F91';
+const GREEN = '#1AAE6F';
+const RED = '#EF4444';
+const ORANGE = '#F59E0B';
+const PURPLE = '#7B61FF';
+const BLUE = '#3A7AFE';
 
 function money(v: number) {
   return `$${Math.round(v || 0).toLocaleString('ru-RU')}`;
+}
+
+function compactMoney(v: number) {
+  const value = Number(v || 0);
+
+  if (Math.abs(value) >= 1000000) {
+    return `$${(value / 1000000).toFixed(1)}M`;
+  }
+
+  if (Math.abs(value) >= 1000) {
+    return `$${(value / 1000).toFixed(1)}K`;
+  }
+
+  return money(value);
 }
 
 function num(v: any) {
@@ -76,10 +100,18 @@ function num(v: any) {
 function isMineOrShared(client: any, userId: number) {
   if (!client) return false;
   if (client.manager === userId) return true;
-  if (Array.isArray(client.shared_with) && client.shared_with.includes(userId)) return true;
-  if (Array.isArray(client.shared_with_data) && client.shared_with_data.some((u: any) => u.id === userId)) {
+
+  if (Array.isArray(client.shared_with) && client.shared_with.includes(userId)) {
     return true;
   }
+
+  if (
+    Array.isArray(client.shared_with_data) &&
+    client.shared_with_data.some((u: any) => u.id === userId)
+  ) {
+    return true;
+  }
+
   return false;
 }
 
@@ -88,112 +120,6 @@ function sortNotes(items: LocalNote[]) {
     if (!!a.is_pinned !== !!b.is_pinned) return a.is_pinned ? -1 : 1;
     return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
   });
-}
-
-function QuickSvgIcon({
-  name,
-  color,
-}: {
-  name: 'workday' | 'tasks' | 'clients' | 'payments' | 'leads';
-  color: string;
-}) {
-  const common = {
-    stroke: color,
-    strokeWidth: 2,
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-    fill: 'none',
-  };
-
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24">
-      {name === 'workday' && (
-        <>
-          <Circle cx="12" cy="12" r="8" {...common} />
-          <Path d="M12 8v4l2.8 1.8" {...common} />
-        </>
-      )}
-
-      {name === 'tasks' && (
-        <>
-          <Rect x="5" y="4" width="14" height="16" rx="2.5" {...common} />
-          <Path d="M9 9h6M9 13h6M9 17h4" {...common} />
-        </>
-      )}
-
-      {name === 'clients' && (
-        <>
-          <Circle cx="9" cy="10" r="2.5" {...common} />
-          <Circle cx="16.5" cy="11" r="2" {...common} />
-          <Path d="M5.5 17.2c.8-2 2.5-3 3.5-3 1.4 0 2.8.7 3.8 2" {...common} />
-          <Path d="M14 17c.5-1.3 1.5-2 2.5-2 .8 0 1.6.3 2.2 1" {...common} />
-        </>
-      )}
-
-      {name === 'payments' && (
-        <>
-          <Rect x="4" y="6" width="16" height="12" rx="3" {...common} />
-          <Path d="M8 12h8M8 9.2h2.5M8 14.8h3" {...common} />
-        </>
-      )}
-
-      {name === 'leads' && (
-        <>
-          <Rect x="4" y="4.5" width="16" height="15" rx="3.5" {...common} />
-          <Path d="M8 9h8M8 12.5h8M8 16h4" {...common} />
-        </>
-      )}
-    </Svg>
-  );
-}
-
-function ActionSvgIcon({
-  name,
-  color,
-}: {
-  name: 'plus' | 'edit' | 'pin' | 'trash' | 'chevron' | 'arrowUpRight';
-  color: string;
-}) {
-  const common = {
-    stroke: color,
-    strokeWidth: 2,
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-    fill: 'none',
-  };
-
-  return (
-    <Svg width={20} height={20} viewBox="0 0 24 24">
-      {name === 'plus' && <Path d="M12 5v14M5 12h14" {...common} />}
-      {name === 'edit' && (
-        <>
-          <Path d="M4 20h4l10-10-4-4L4 16v4Z" {...common} />
-          <Path d="M12.5 5.5l4 4" {...common} />
-        </>
-      )}
-      {name === 'pin' && (
-        <>
-          <Path d="M9 4h6l-1.5 5 3 3H7.5l3-3L9 4Z" {...common} />
-          <Path d="M12 12v8" {...common} />
-        </>
-      )}
-      {name === 'trash' && (
-        <>
-          <Path d="M4 7h16" {...common} />
-          <Path d="M9 7V5h6v2" {...common} />
-          <Path d="M7 7l1 12h8l1-12" {...common} />
-          <Path d="M10 11v5M14 11v5" {...common} />
-        </>
-      )}
-      {name === 'chevron' && <Path d="M9 6l6 6-6 6" {...common} />}
-      {name === 'arrowUpRight' && (
-        <>
-          <Path d="M7 17L17 7" {...common} />
-          <Path d="M9 7h8v8" {...common} />
-        </>
-      )}
-    </Svg>
-  );
 }
 
 function statusTitle(status: LeadStatus) {
@@ -213,6 +139,7 @@ function statusTitle(status: LeadStatus) {
 
 function directionTitle(direction?: string) {
   if (!direction) return '—';
+
   const map: Record<string, string> = {
     admission: 'Поступление',
     translation: 'Переводы',
@@ -222,13 +149,87 @@ function directionTitle(direction?: string) {
     tours: 'Туры',
     work_visa: 'Рабочая виза',
   };
+
   return map[direction] || direction;
+}
+
+function employeeInitials(name: string) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+
+  if (!parts.length) return 'SL';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+
+  return `${parts[0].slice(0, 1)}${parts[1].slice(0, 1)}`.toUpperCase();
+}
+
+function balanceColor(value: number, positive = GREEN, negative = RED) {
+  return value >= 0 ? positive : negative;
+}
+
+function MiniIcon({
+  icon,
+  tint,
+  bg,
+  size = 38,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  tint: string;
+  bg: string;
+  size?: number;
+}) {
+  return (
+    <View
+      style={[
+        styles.iconBubble,
+        {
+          width: size,
+          height: size,
+          borderRadius: Math.round(size / 2.7),
+          backgroundColor: bg,
+        },
+      ]}
+    >
+      <Ionicons name={icon} size={Math.round(size * 0.5)} color={tint} />
+    </View>
+  );
+}
+
+function EmployeeAvatar({ name }: { name: string }) {
+  return (
+    <LinearGradient
+      colors={['rgba(123,97,255,0.22)', 'rgba(58,122,254,0.12)']}
+      style={styles.employeeAvatar}
+    >
+      <Text style={styles.employeeAvatarText}>{employeeInitials(name)}</Text>
+    </LinearGradient>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+  theme,
+}: {
+  label: string;
+  value: string;
+  theme: any;
+}) {
+  return (
+    <View style={[styles.infoRow, { borderBottomColor: theme.divider || theme.border }]}>
+      <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>{label}</Text>
+      <Text style={[styles.infoValue, { color: theme.text }]}>{value}</Text>
+    </View>
+  );
 }
 
 export default function ManagerDashboard({ user, onRefresh }: Props) {
   const { theme, themeMode } = useTheme();
   const router = useRouter();
+
   const dark = themeMode === 'dark';
+
+  const POSITIVE = theme.success || GREEN;
+  const NEGATIVE = theme.red || RED;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -246,6 +247,11 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
   const [officeEntryAmount, setOfficeEntryAmount] = useState('');
   const [officeEntryComment, setOfficeEntryComment] = useState('');
   const [officeEntrySaving, setOfficeEntrySaving] = useState(false);
+
+  const [officeExpanded, setOfficeExpanded] = useState(false);
+  const [leadsExpanded, setLeadsExpanded] = useState(true);
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [clientsExpanded, setClientsExpanded] = useState(false);
 
   const [leadModalOpen, setLeadModalOpen] = useState(false);
   const [leadSaving, setLeadSaving] = useState(false);
@@ -287,12 +293,14 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
           apiClient.get('users/users/me/office_dashboard/').catch(() => null),
         ]);
 
-      const myClients = (clientsResponse || []).filter((c: any) => isMineOrShared(c, user.id)).slice(0, 5);
+      const myClients = (clientsResponse || [])
+        .filter((c: any) => isMineOrShared(c, user.id))
+        .slice(0, 8);
 
       setNotes(sortNotes(storedNotes));
       setClients(myClients);
       setHasReport(!!reportResponse?.data);
-      setLeads((leadsResponse || []).slice(0, 10));
+      setLeads((leadsResponse || []).slice(0, 12));
       setOfficeDashboard((officeDashboardResponse?.data || null) as OfficeDashboardData | null);
     } catch (e) {
       console.log('Manager dashboard load error', e);
@@ -303,43 +311,39 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
   }, [readLocalNotes, user.id]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   const revenue = useMemo(
     () => parseFloat(String(user.managersalary?.current_month_revenue || 0)),
     [user.managersalary]
   );
+
   const plan = useMemo(
     () => parseFloat(String(user.managersalary?.monthly_plan || 0)),
     [user.managersalary]
   );
+
   const balance = useMemo(
     () => parseFloat(String(user.managersalary?.current_balance || 0)),
     [user.managersalary]
   );
+
   const progress = plan > 0 ? Math.min(Math.round((revenue / plan) * 100), 100) : 0;
 
-  const officeIncome = useMemo(
-    () => num(officeDashboard?.total_income_usd),
-    [officeDashboard]
-  );
-  const officeExpense = useMemo(
-    () => num(officeDashboard?.total_expense_usd),
-    [officeDashboard]
-  );
-  const officeNet = useMemo(
-    () => num(officeDashboard?.net_usd),
-    [officeDashboard]
-  );
-  const officePlan = useMemo(
-    () => num(officeDashboard?.monthly_plan_usd),
-    [officeDashboard]
-  );
+  const officeIncome = useMemo(() => num(officeDashboard?.total_income_usd), [officeDashboard]);
+
+  const officeExpense = useMemo(() => num(officeDashboard?.total_expense_usd), [officeDashboard]);
+
+  const officeNet = useMemo(() => num(officeDashboard?.net_usd), [officeDashboard]);
+
+  const officePlan = useMemo(() => num(officeDashboard?.monthly_plan_usd), [officeDashboard]);
+
   const officeRevenue = useMemo(
     () => num(officeDashboard?.monthly_revenue_usd),
     [officeDashboard]
   );
+
   const officeProgress = useMemo(
     () => Math.min(num(officeDashboard?.plan_progress_percent), 100),
     [officeDashboard]
@@ -356,11 +360,24 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
     const fresh = leads.filter((l) => l.status === 'new').length;
     const inWork = leads.filter((l) => l.status === 'contacted').length;
     const converted = leads.filter((l) => l.status === 'converted').length;
-    return { total, fresh, inWork, converted };
+    const rejected = leads.filter((l) => l.status === 'rejected').length;
+
+    return {
+      total,
+      fresh,
+      inWork,
+      converted,
+      rejected,
+    };
   }, [leads]);
+
+  const topOfficeManagers = useMemo(() => {
+    return officeManagers.slice(0, 3);
+  }, [officeManagers]);
 
   const openCreateNote = () => {
     const now = new Date().toISOString();
+
     setNoteForm({
       id: '',
       title: '',
@@ -369,6 +386,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
       created_at: now,
       updated_at: now,
     });
+
     setNoteModalOpen(true);
   };
 
@@ -398,6 +416,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
             }
           : item
       );
+
       await persistNotes(updated);
     } else {
       const created: LocalNote = {
@@ -408,6 +427,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
         created_at: now,
         updated_at: now,
       };
+
       await persistNotes([created, ...current]);
     }
 
@@ -416,17 +436,26 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
 
   const togglePinNote = async (note: LocalNote) => {
     const current = await readLocalNotes();
+
     const updated = current.map((item) =>
       item.id === note.id
-        ? { ...item, is_pinned: !item.is_pinned, updated_at: new Date().toISOString() }
+        ? {
+            ...item,
+            is_pinned: !item.is_pinned,
+            updated_at: new Date().toISOString(),
+          }
         : item
     );
+
     await persistNotes(updated);
   };
 
   const removeNote = async (note: LocalNote) => {
     Alert.alert('Удаление', `Удалить заметку "${note.title}"?`, [
-      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Отмена',
+        style: 'cancel',
+      },
       {
         text: 'Удалить',
         style: 'destructive',
@@ -440,7 +469,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
 
   const renderDeleteAction = (note: LocalNote) => (
     <Pressable onPress={() => removeNote(note)} style={styles.swipeDelete}>
-      <ActionSvgIcon name="trash" color="#fff" />
+      <Ionicons name="trash-outline" size={20} color="#fff" />
       <Text style={styles.swipeText}>Удалить</Text>
     </Pressable>
   );
@@ -448,26 +477,31 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
   const renderPinAction = (note: LocalNote) => (
     <Pressable
       onPress={() => togglePinNote(note)}
-      style={[styles.swipePin, { backgroundColor: note.is_pinned ? '#8B8FA3' : theme.blue }]}
+      style={[
+        styles.swipePin,
+        {
+          backgroundColor: note.is_pinned ? '#8B8FA3' : theme.blue,
+        },
+      ]}
     >
-      <ActionSvgIcon name="pin" color="#fff" />
+      <Ionicons name={note.is_pinned ? 'pin' : 'pin-outline'} size={20} color="#fff" />
       <Text style={styles.swipeText}>{note.is_pinned ? 'Открепить' : 'Закрепить'}</Text>
     </Pressable>
   );
 
-  const patchLead = useCallback(
-    async (leadId: number, payload: Partial<LeadItem>) => {
-      const response = await apiClient.patch(`leads/mobile/${leadId}/`, payload);
-      return response.data as LeadItem;
-    },
-    []
-  );
+  const patchLead = useCallback(async (leadId: number, payload: Partial<LeadItem>) => {
+    const response = await apiClient.patch(`leads/mobile/${leadId}/`, payload);
+    return response.data as LeadItem;
+  }, []);
 
   const updateLeadInList = useCallback((updatedLead: LeadItem) => {
     setLeads((prev) =>
       prev.map((item) => (item.id === updatedLead.id ? { ...item, ...updatedLead } : item))
     );
-    setSelectedLead((prev) => (prev && prev.id === updatedLead.id ? { ...prev, ...updatedLead } : prev));
+
+    setSelectedLead((prev) =>
+      prev && prev.id === updatedLead.id ? { ...prev, ...updatedLead } : prev
+    );
   }, []);
 
   const handleOpenLead = useCallback(
@@ -479,10 +513,17 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
         try {
           setLeadSaving(true);
 
-          const optimistic: LeadItem = { ...lead, status: 'contacted' };
+          const optimistic: LeadItem = {
+            ...lead,
+            status: 'contacted',
+          };
+
           updateLeadInList(optimistic);
 
-          const updated = await patchLead(lead.id, { status: 'contacted' });
+          const updated = await patchLead(lead.id, {
+            status: 'contacted',
+          });
+
           updateLeadInList(updated);
         } catch (e) {
           console.log('Lead auto-contact failed', e);
@@ -501,12 +542,20 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
       if (!selectedLead) return;
 
       const prev = selectedLead;
-      const optimistic = { ...selectedLead, status };
+
+      const optimistic = {
+        ...selectedLead,
+        status,
+      };
 
       try {
         setLeadSaving(true);
         updateLeadInList(optimistic);
-        const updated = await patchLead(selectedLead.id, { status });
+
+        const updated = await patchLead(selectedLead.id, {
+          status,
+        });
+
         updateLeadInList(updated);
       } catch (e) {
         console.log('Lead status update error', e);
@@ -600,7 +649,9 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
 
       Alert.alert(
         'Готово',
-        officeEntryType === 'income' ? 'Доход по офису добавлен.' : 'Расход по офису добавлен.'
+        officeEntryType === 'income'
+          ? 'Доход по офису добавлен.'
+          : 'Расход по офису добавлен.'
       );
     } catch (error: any) {
       const detail =
@@ -610,6 +661,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
         error?.response?.data?.title?.[0] ||
         error?.response?.data?.amount?.[0] ||
         'Не удалось создать офисную операцию.';
+
       Alert.alert('Ошибка', detail);
     } finally {
       setOfficeEntrySaving(false);
@@ -635,7 +687,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              load();
+              void load();
               onRefresh();
             }}
             tintColor={theme.blue}
@@ -643,312 +695,560 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
         }
         showsVerticalScrollIndicator={false}
       >
-        <View
-          style={[
-            styles.heroCard,
-            {
-              backgroundColor: dark ? 'rgba(18,24,36,0.92)' : '#FFFFFF',
-              borderColor: theme.border,
-              shadowColor: '#000',
-            },
-          ]}
+        <LinearGradient
+          colors={[theme.blue, '#6D5DFB', '#8F66FF']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.hero}
         >
-          <View style={styles.top}>
+          <View style={styles.heroGlowOne} />
+          <View style={styles.heroGlowTwo} />
+
+          <View style={styles.heroTop}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.caption, { color: theme.textSecondary }]}>Менеджерская панель</Text>
-              <Text style={[styles.title, { color: theme.text }]}>
+              <View style={styles.heroCaptionRow}>
+                <Ionicons name="sparkles-outline" size={15} color="rgba(255,255,255,0.86)" />
+                <Text style={styles.heroCaption}>Менеджерская панель</Text>
+              </View>
+
+              <Text style={styles.heroTitle}>
                 {user.first_name} {user.last_name}
               </Text>
-              <Text style={[styles.heroSub, { color: theme.textSecondary }]}>
-                Премиальный дашборд по клиентам, заявкам и ежедневной работе
+
+              <Text style={styles.heroSub}>
+                Клиенты, заявки, офисный баланс и рабочий день без лишнего шума
               </Text>
             </View>
 
-            <Pressable
-              onPress={() => setFabOpen(true)}
-              style={[
-                styles.fabMini,
-                {
-                  backgroundColor: dark ? 'rgba(255,255,255,0.06)' : theme.surface,
-                  borderColor: theme.border,
-                },
-              ]}
-            >
-              <Text style={[styles.fabMiniText, { color: theme.text }]}>＋</Text>
+            <Pressable onPress={() => setFabOpen(true)} style={styles.heroPlus}>
+              <Ionicons name="add" size={24} color="#fff" />
             </Pressable>
           </View>
 
-          <View style={styles.heroStatsRow}>
-            <View style={[styles.heroStat, { backgroundColor: theme.backgroundSoft }]}>
-              <Text style={[styles.heroStatValue, { color: theme.text }]}>{leadStats.fresh}</Text>
-              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Новых заявок</Text>
+          <View style={styles.heroStats}>
+            <View style={styles.heroStat}>
+              <View style={styles.heroStatTop}>
+                <Ionicons name="cash-outline" size={17} color="rgba(255,255,255,0.86)" />
+                <Text style={styles.heroLabel}>Выручка</Text>
+              </View>
+              <Text style={styles.heroValue}>{compactMoney(revenue)}</Text>
             </View>
 
-            <View style={[styles.heroStat, { backgroundColor: theme.backgroundSoft }]}>
-              <Text style={[styles.heroStatValue, { color: theme.text }]}>{clients.length}</Text>
-              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Моих клиентов</Text>
+            <View style={styles.heroDivider} />
+
+            <View style={styles.heroStat}>
+              <View style={styles.heroStatTop}>
+                <Ionicons name="wallet-outline" size={17} color="rgba(255,255,255,0.86)" />
+                <Text style={styles.heroLabel}>Бонус</Text>
+              </View>
+              <Text style={styles.heroValue}>{compactMoney(balance)}</Text>
+            </View>
+          </View>
+
+          <View style={styles.heroFooter}>
+            <View style={styles.heroChip}>
+              <Ionicons name="reader-outline" size={14} color="#fff" />
+              <Text style={styles.heroChipText}>{leadStats.fresh} новых заявок</Text>
             </View>
 
-            <View style={[styles.heroStat, { backgroundColor: theme.backgroundSoft }]}>
-              <Text style={[styles.heroStatValue, { color: theme.text }]}>{leadStats.converted}</Text>
-              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Конверсий</Text>
+            <View style={styles.heroChip}>
+              <Ionicons name="people-outline" size={14} color="#fff" />
+              <Text style={styles.heroChipText}>{clients.length} клиентов</Text>
             </View>
+
+            <View style={styles.heroChip}>
+              <Ionicons
+                name={hasReport ? 'checkmark-done-outline' : 'alert-circle-outline'}
+                size={14}
+                color="#fff"
+              />
+              <Text style={styles.heroChipText}>
+                {hasReport ? 'Отчёт сдан' : 'Отчёт не сдан'}
+              </Text>
+            </View>
+          </View>
+        </LinearGradient>
+
+        <View style={styles.sectionHeader}>
+          <View>
+            <Text style={[styles.section, { color: theme.text }]}>Быстрые действия</Text>
+            <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
+              Самые частые операции менеджера
+            </Text>
           </View>
         </View>
 
         <View style={styles.quickGrid}>
-          <Pressable
-            onPress={() => router.push('/(app)/workday' as any)}
-            style={[styles.quickCardPrimary, { backgroundColor: theme.blue }]}
-          >
-            <View style={styles.quickIconBoxDark}>
-              <QuickSvgIcon name="workday" color="#fff" />
-            </View>
-            <Text style={styles.quickPrimaryTitle}>Быстрый вход в Workday</Text>
-            <Text style={styles.quickPrimarySub}>Отметиться о приходе, уходе и проверить смены</Text>
+          <Pressable onPress={() => router.push('/(app)/workday' as any)} style={styles.quickMainPress}>
+            <LinearGradient
+              colors={['#EAF2FF', '#F5F0FF']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.quickMainCard}
+            >
+              <MiniIcon icon="time-outline" tint={BLUE} bg="rgba(58,122,254,0.13)" />
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.quickMainTitle}>Рабочий день</Text>
+                <Text style={styles.quickMainSub}>Начать, завершить и проверить смену</Text>
+              </View>
+
+              <Ionicons name="chevron-forward" size={20} color={PREMIUM_MUTED} />
+            </LinearGradient>
           </Pressable>
 
-          <View style={styles.quickRow}>
+          <View style={styles.quickSmallRow}>
             <Pressable
               onPress={() => router.push('/(app)/tasks' as any)}
-              style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              style={[
+                styles.quickSmallCard,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                },
+              ]}
             >
-              <View style={[styles.quickIconBox, { backgroundColor: theme.blueSoft }]}>
-                <QuickSvgIcon name="tasks" color={theme.blue} />
-              </View>
-              <Text style={[styles.quickTitle, { color: theme.text }]}>Портал задач</Text>
+              <MiniIcon icon="checkbox-outline" tint={PURPLE} bg="rgba(123,97,255,0.13)" />
+              <Text style={[styles.quickSmallTitle, { color: theme.text }]}>Задачи</Text>
             </Pressable>
 
             <Pressable
               onPress={() => router.push('/(app)/crm' as any)}
-              style={[styles.quickCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              style={[
+                styles.quickSmallCard,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                },
+              ]}
             >
-              <View style={[styles.quickIconBox, { backgroundColor: theme.blueSoft }]}>
-                <QuickSvgIcon name="clients" color={theme.blue} />
-              </View>
-              <Text style={[styles.quickTitle, { color: theme.text }]}>Клиенты</Text>
+              <MiniIcon icon="people-outline" tint={GREEN} bg="rgba(26,174,111,0.13)" />
+              <Text style={[styles.quickSmallTitle, { color: theme.text }]}>Клиенты</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.push('/(app)/payment/create' as any)}
+              style={[
+                styles.quickSmallCard,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                },
+              ]}
+            >
+              <MiniIcon icon="card-outline" tint={ORANGE} bg="rgba(245,158,11,0.14)" />
+              <Text style={[styles.quickSmallTitle, { color: theme.text }]}>Платёж</Text>
             </Pressable>
           </View>
         </View>
 
         <View style={styles.kpiGrid}>
-          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View
+            style={[
+              styles.kpiCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+                shadowColor: theme.shadow,
+              },
+            ]}
+          >
+            <View style={styles.kpiTop}>
+              <MiniIcon icon="trending-up-outline" tint={GREEN} bg="rgba(26,174,111,0.13)" />
+              <Text style={[styles.kpiTitle, { color: theme.textSecondary }]}>Выручка</Text>
+            </View>
+
             <Text style={[styles.kpiValue, { color: theme.text }]}>{money(revenue)}</Text>
-            <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Выручка за месяц</Text>
+            <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>за текущий месяц</Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View
+            style={[
+              styles.kpiCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+                shadowColor: theme.shadow,
+              },
+            ]}
+          >
+            <View style={styles.kpiTop}>
+              <MiniIcon icon="wallet-outline" tint={PURPLE} bg="rgba(123,97,255,0.13)" />
+              <Text style={[styles.kpiTitle, { color: theme.textSecondary }]}>Баланс</Text>
+            </View>
+
             <Text style={[styles.kpiValue, { color: theme.text }]}>{money(balance)}</Text>
-            <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>Бонусный баланс</Text>
+            <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>бонус к выплате</Text>
           </View>
         </View>
 
-        <View style={[styles.progressCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <View style={styles.progressRow}>
-            <Text style={[styles.progressTitle, { color: theme.text }]}>План</Text>
+        <View
+          style={[
+            styles.progressCard,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+              shadowColor: theme.shadow,
+            },
+          ]}
+        >
+          <View style={styles.progressHeader}>
+            <View style={styles.progressTitleRow}>
+              <MiniIcon icon="flag-outline" tint={theme.blue} bg={theme.blueSoft} size={34} />
+              <View>
+                <Text style={[styles.progressTitle, { color: theme.text }]}>Личный план</Text>
+                <Text style={[styles.progressSub, { color: theme.textSecondary }]}>
+                  {money(revenue)} из {money(plan)}
+                </Text>
+              </View>
+            </View>
+
             <Text style={[styles.progressValue, { color: theme.blue }]}>{progress}%</Text>
           </View>
 
-          <View style={[styles.progressBarBg, { backgroundColor: theme.backgroundSoft }]}>
-            <View style={[styles.progressBarFill, { width: `${progress}%`, backgroundColor: theme.blue }]} />
+          <View style={[styles.progressTrack, { backgroundColor: theme.backgroundSoft }]}>
+            <View
+              style={[
+                styles.progressFill,
+                {
+                  width: `${progress}%`,
+                  backgroundColor: theme.blue,
+                },
+              ]}
+            />
           </View>
-
-          <Text style={[styles.progressSub, { color: theme.textSecondary }]}>
-            {money(revenue)} из {money(plan)}
-          </Text>
         </View>
 
         {officeDashboard ? (
           <>
-            <View style={styles.sectionHead}>
-              <View>
-                <Text style={[styles.section, { color: theme.text }]}>Баланс офиса</Text>
+            <View style={styles.sectionHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.section, { color: theme.text }]}>Офис</Text>
                 <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
-                  Видно только сотрудникам, кому админ включил доступ к офисному дашборду
+                  Нажми на карточку, чтобы раскрыть подробности
                 </Text>
               </View>
             </View>
 
-            <View style={[styles.officeCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <View style={styles.officeCardHead}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.officeName, { color: theme.text }]}>
-                    {officeDashboard.office?.city || 'Офис'}
+            <LinearGradient
+              colors={['#F4F7FF', '#FFF3F7']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.officeCard}
+            >
+              <Pressable
+                onPress={() => setOfficeExpanded((v) => !v)}
+                style={styles.officeHeader}
+              >
+                <View style={styles.officeHeaderLeft}>
+                  <MiniIcon icon="business-outline" tint={PURPLE} bg="rgba(123,97,255,0.13)" size={44} />
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.officeTitle} numberOfLines={1}>
+                      {officeDashboard.office?.city || 'Офис'}
+                    </Text>
+                    <Text style={styles.officeMeta} numberOfLines={1}>
+                      {officeDashboard.office?.address || officeDashboard.office?.phone || 'Адрес не указан'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.officeRight}>
+                  <Text style={[styles.officeNet, { color: balanceColor(officeNet, POSITIVE, NEGATIVE) }]}>
+                    {compactMoney(officeNet)}
                   </Text>
-                  <Text style={[styles.officeMeta, { color: theme.textSecondary }]}>
-                    {officeDashboard.office?.address || 'Адрес не указан'}
+
+                  <View style={styles.expandBadge}>
+                    <Ionicons
+                      name={officeExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={18}
+                      color={PREMIUM_MUTED}
+                    />
+                  </View>
+                </View>
+              </Pressable>
+
+              <View style={styles.officeCompactStats}>
+                <View style={styles.officeCompactItem}>
+                  <Ionicons name="arrow-up-circle-outline" size={16} color={GREEN} />
+                  <Text style={styles.officeCompactLabel}>Доход</Text>
+                  <Text style={styles.officeCompactValue}>{compactMoney(officeIncome)}</Text>
+                </View>
+
+                <View style={styles.officeCompactItem}>
+                  <Ionicons name="arrow-down-circle-outline" size={16} color={NEGATIVE} />
+                  <Text style={styles.officeCompactLabel}>Расход</Text>
+                  <Text style={[styles.officeCompactValue, { color: NEGATIVE }]}>
+                    {compactMoney(officeExpense)}
                   </Text>
                 </View>
 
-                <Text
-                  style={[
-                    styles.officeNet,
-                    { color: officeNet >= 0 ? (theme.success || '#1AAE6F') : theme.red },
-                  ]}
-                >
-                  {money(officeNet)}
-                </Text>
-              </View>
-
-              <View style={styles.officeKpiGrid}>
-                <View style={[styles.officeKpiItem, { backgroundColor: theme.backgroundSoft }]}>
-                  <Text style={[styles.officeKpiValue, { color: theme.text }]}>{money(officeIncome)}</Text>
-                  <Text style={[styles.officeKpiLabel, { color: theme.textSecondary }]}>Доход</Text>
-                </View>
-
-                <View style={[styles.officeKpiItem, { backgroundColor: theme.backgroundSoft }]}>
-                  <Text style={[styles.officeKpiValue, { color: theme.text }]}>{money(officeExpense)}</Text>
-                  <Text style={[styles.officeKpiLabel, { color: theme.textSecondary }]}>Расход</Text>
-                </View>
-
-                <View style={[styles.officeKpiItem, { backgroundColor: theme.backgroundSoft }]}>
-                  <Text style={[styles.officeKpiValue, { color: theme.text }]}>{money(officeRevenue)}</Text>
-                  <Text style={[styles.officeKpiLabel, { color: theme.textSecondary }]}>Выручка</Text>
-                </View>
-
-                <View style={[styles.officeKpiItem, { backgroundColor: theme.backgroundSoft }]}>
-                  <Text style={[styles.officeKpiValue, { color: theme.blue }]}>{Math.round(officeProgress)}%</Text>
-                  <Text style={[styles.officeKpiLabel, { color: theme.textSecondary }]}>План офиса</Text>
-                </View>
-              </View>
-
-              <View style={[styles.officeProgressCard, { backgroundColor: theme.backgroundSoft }]}>
-                <View style={styles.progressRow}>
-                  <Text style={[styles.progressTitle, { color: theme.text }]}>План офиса</Text>
-                  <Text style={[styles.progressValue, { color: theme.blue }]}>
+                <View style={styles.officeCompactItem}>
+                  <Ionicons name="flag-outline" size={16} color={BLUE} />
+                  <Text style={styles.officeCompactLabel}>План</Text>
+                  <Text style={[styles.officeCompactValue, { color: BLUE }]}>
                     {Math.round(officeProgress)}%
                   </Text>
                 </View>
-
-                <View style={[styles.progressBarBg, { backgroundColor: '#DDE7FF' }]}>
-                  <View
-                    style={[
-                      styles.progressBarFill,
-                      {
-                        width: `${Math.min(officeProgress, 100)}%`,
-                        backgroundColor: theme.blue,
-                      },
-                    ]}
-                  />
-                </View>
-
-                <Text style={[styles.progressSub, { color: theme.textSecondary }]}>
-                  {money(officeRevenue)} из {money(officePlan)}
-                </Text>
               </View>
 
-              <View style={styles.officeQuickRow}>
-                <Pressable
-                  onPress={() => openOfficeEntry('income')}
-                  style={[styles.officeQuickBtn, { backgroundColor: '#EAF7EF', borderColor: '#CBE9D5' }]}
-                >
-                  <Text style={[styles.officeQuickBtnTitle, { color: '#157347' }]}>+ Доход офиса</Text>
-                  <Text style={[styles.officeQuickBtnSub, { color: '#157347' }]}>
-                    Быстро добавить офисный доход
-                  </Text>
-                </Pressable>
+              {officeExpanded && (
+                <View style={styles.officeExpanded}>
+                  <View style={styles.officeInfoStrip}>
+                    <View style={styles.officeInfoItem}>
+                      <Ionicons name="location-outline" size={16} color={PREMIUM_MUTED} />
+                      <Text style={styles.officeInfoText} numberOfLines={2}>
+                        {officeDashboard.office?.address || 'Адрес не указан'}
+                      </Text>
+                    </View>
 
-                <Pressable
-                  onPress={() => openOfficeEntry('expense')}
-                  style={[styles.officeQuickBtn, { backgroundColor: '#FDECEC', borderColor: '#F6CACA' }]}
-                >
-                  <Text style={[styles.officeQuickBtnTitle, { color: theme.red }]}>− Расход офиса</Text>
-                  <Text style={[styles.officeQuickBtnSub, { color: theme.red }]}>
-                    Быстро добавить офисный расход
-                  </Text>
-                </Pressable>
-              </View>
+                    <View style={styles.officeInfoItem}>
+                      <Ionicons name="call-outline" size={16} color={PREMIUM_MUTED} />
+                      <Text style={styles.officeInfoText}>
+                        {officeDashboard.office?.phone || 'Телефон не указан'}
+                      </Text>
+                    </View>
+                  </View>
 
-              {officeManagers.length > 0 && (
-                <View style={styles.officeManagersWrap}>
-                  <Text style={[styles.officeManagersTitle, { color: theme.text }]}>
-                    Команда офиса
-                  </Text>
+                  <View style={styles.officeSummaryGrid}>
+                    <View style={styles.officeSummaryCard}>
+                      <MiniIcon icon="cash-outline" tint={GREEN} bg="rgba(26,174,111,0.13)" size={34} />
+                      <Text style={styles.officeSummaryValue}>{money(officeIncome)}</Text>
+                      <Text style={styles.officeSummaryLabel}>Общий доход</Text>
+                    </View>
 
-                  {officeManagers.map((manager, index) => (
-                    <View
-                      key={`${manager.id}-${index}`}
-                      style={[
-                        styles.officeManagerRow,
-                        {
-                          borderBottomColor: theme.divider,
-                          borderBottomWidth: index === officeManagers.length - 1 ? 0 : 1,
-                        },
-                      ]}
-                    >
-                      <View style={{ flex: 1, paddingRight: 12 }}>
-                        <Text style={[styles.officeManagerName, { color: theme.text }]}>
-                          {manager.full_name || manager.email || `ID ${manager.id}`}
-                        </Text>
-                        <Text style={[styles.officeManagerMeta, { color: theme.textSecondary }]}>
-                          {money(num(manager.revenue_usd))} из {money(num(manager.plan_usd))}
+                    <View style={styles.officeSummaryCard}>
+                      <MiniIcon icon="cart-outline" tint={NEGATIVE} bg="rgba(239,68,68,0.11)" size={34} />
+                      <Text style={[styles.officeSummaryValue, { color: NEGATIVE }]}>
+                        {money(officeExpense)}
+                      </Text>
+                      <Text style={styles.officeSummaryLabel}>Общий расход</Text>
+                    </View>
+
+                    <View style={styles.officeSummaryCard}>
+                      <MiniIcon icon="ribbon-outline" tint={BLUE} bg="rgba(58,122,254,0.13)" size={34} />
+                      <Text style={styles.officeSummaryValue}>{money(officeRevenue)}</Text>
+                      <Text style={styles.officeSummaryLabel}>Выручка офиса</Text>
+                    </View>
+
+                    <View style={styles.officeSummaryCard}>
+                      <MiniIcon icon="flag-outline" tint={PURPLE} bg="rgba(123,97,255,0.13)" size={34} />
+                      <Text style={[styles.officeSummaryValue, { color: PURPLE }]}>
+                        {money(officePlan)}
+                      </Text>
+                      <Text style={styles.officeSummaryLabel}>План офиса</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.officeProgressCard}>
+                    <View style={styles.progressHeader}>
+                      <View>
+                        <Text style={styles.officeProgressTitle}>Выполнение плана офиса</Text>
+                        <Text style={styles.officeProgressSub}>
+                          {money(officeRevenue)} из {money(officePlan)}
                         </Text>
                       </View>
 
-                      <Text style={[styles.officeManagerProgress, { color: theme.blue }]}>
-                        {Math.round(num(manager.progress_percent))}%
+                      <Text style={[styles.progressValue, { color: BLUE }]}>
+                        {Math.round(officeProgress)}%
                       </Text>
                     </View>
-                  ))}
+
+                    <View style={styles.officeProgressTrack}>
+                      <View
+                        style={[
+                          styles.officeProgressFill,
+                          {
+                            width: `${Math.min(officeProgress, 100)}%`,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.officeQuickRow}>
+                    <Pressable
+                      onPress={() => openOfficeEntry('income')}
+                      style={[styles.officeQuickBtn, { backgroundColor: '#EAF7EF', borderColor: '#CBE9D5' }]}
+                    >
+                      <MiniIcon icon="add-circle-outline" tint={GREEN} bg="rgba(26,174,111,0.13)" size={32} />
+                      <Text style={[styles.officeQuickBtnTitle, { color: '#157347' }]}>Доход</Text>
+                      <Text style={[styles.officeQuickBtnSub, { color: '#157347' }]}>
+                        Добавить доход
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => openOfficeEntry('expense')}
+                      style={[styles.officeQuickBtn, { backgroundColor: '#FDECEC', borderColor: '#F6CACA' }]}
+                    >
+                      <MiniIcon icon="remove-circle-outline" tint={NEGATIVE} bg="rgba(239,68,68,0.11)" size={32} />
+                      <Text style={[styles.officeQuickBtnTitle, { color: NEGATIVE }]}>Расход</Text>
+                      <Text style={[styles.officeQuickBtnSub, { color: NEGATIVE }]}>
+                        Добавить расход
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  {topOfficeManagers.length > 0 && (
+                    <View style={styles.officeManagersBlock}>
+                      <View style={styles.blockTitleRow}>
+                        <Text style={styles.blockTitle}>Команда офиса</Text>
+                        <Ionicons name="trophy-outline" size={17} color={ORANGE} />
+                      </View>
+
+                      {topOfficeManagers.map((manager, index) => {
+                        const name = manager.full_name || manager.email || `ID ${manager.id}`;
+
+                        return (
+                          <View key={`${manager.id}-${index}`} style={styles.managerRow}>
+                            <View style={styles.managerRank}>
+                              <Text style={styles.managerRankText}>#{index + 1}</Text>
+                            </View>
+
+                            <EmployeeAvatar name={name} />
+
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.managerName} numberOfLines={1}>
+                                {name}
+                              </Text>
+                              <Text style={styles.managerMeta} numberOfLines={1}>
+                                {money(num(manager.revenue_usd))} из {money(num(manager.plan_usd))}
+                              </Text>
+                            </View>
+
+                            <Text style={[styles.managerProgress, { color: BLUE }]}>
+                              {Math.round(num(manager.progress_percent))}%
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
                 </View>
               )}
-            </View>
+            </LinearGradient>
           </>
         ) : null}
 
-        <View style={styles.sectionHead}>
-          <View>
+        <View style={styles.sectionHeader}>
+          <View style={{ flex: 1 }}>
             <Text style={[styles.section, { color: theme.text }]}>Заявки с сайта</Text>
             <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
-              Новые лиды падают сюда. При открытии заявка автоматически берётся в работу.
+              Новые лиды и заявки в работе
             </Text>
           </View>
 
-          <View style={styles.leadCounters}>
-            <View style={[styles.leadCounterChip, { backgroundColor: theme.blueSoft }]}>
-              <QuickSvgIcon name="leads" color={theme.blue} />
-              <Text style={[styles.leadCounterChipText, { color: theme.blue }]}>
-                {leadStats.total}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.leadsGrid}>
-          {leads.length === 0 ? (
-            <View style={[styles.emptyPremiumCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.emptyPremiumTitle, { color: theme.text }]}>Пока нет заявок</Text>
-              <Text style={[styles.emptyPremiumSub, { color: theme.textSecondary }]}>
-                Когда с сайта придёт новая заявка, она появится здесь.
-              </Text>
-            </View>
-          ) : (
-            leads.map((lead) => (
-              <LeadCard
-                key={lead.id}
-                lead={lead}
-                theme={theme}
-                onPress={handleOpenLead}
-              />
-            ))
-          )}
-        </View>
-
-        <View style={styles.sectionHead}>
-          <View>
-            <Text style={[styles.section, { color: theme.text }]}>Мои заметки</Text>
-            <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
-              Локально на устройстве, без сервера
-            </Text>
-          </View>
-
-          <Pressable onPress={openCreateNote} style={[styles.iconButton, { backgroundColor: theme.blue }]}>
-            <ActionSvgIcon name="plus" color="#fff" />
+          <Pressable
+            onPress={() => setLeadsExpanded((v) => !v)}
+            style={[styles.sectionIconBtn, { backgroundColor: theme.backgroundSoft }]}
+          >
+            <Ionicons
+              name={leadsExpanded ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={theme.blue}
+            />
           </Pressable>
         </View>
 
-        <View style={[styles.panel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {notes.length === 0 ? (
+        <View
+          style={[
+            styles.leadsPanel,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+              shadowColor: theme.shadow,
+            },
+          ]}
+        >
+          <View style={styles.leadStatsRow}>
+            <View style={styles.leadStatChip}>
+              <Ionicons name="reader-outline" size={15} color={BLUE} />
+              <Text style={styles.leadStatText}>{leadStats.total} всего</Text>
+            </View>
+
+            <View style={styles.leadStatChip}>
+              <Ionicons name="flash-outline" size={15} color={ORANGE} />
+              <Text style={styles.leadStatText}>{leadStats.fresh} новых</Text>
+            </View>
+
+            <View style={styles.leadStatChip}>
+              <Ionicons name="checkmark-done-outline" size={15} color={GREEN} />
+              <Text style={styles.leadStatText}>{leadStats.converted} клиентов</Text>
+            </View>
+          </View>
+
+          {leadsExpanded && (
+            <View style={styles.leadsList}>
+              {leads.length === 0 ? (
+                <View style={styles.emptyPremiumCard}>
+                  <MiniIcon icon="mail-open-outline" tint={BLUE} bg="rgba(58,122,254,0.13)" />
+                  <Text style={styles.emptyPremiumTitle}>Пока нет заявок</Text>
+                  <Text style={styles.emptyPremiumSub}>
+                    Когда с сайта придёт новая заявка, она появится здесь.
+                  </Text>
+                </View>
+              ) : (
+                leads.map((lead) => (
+                  <LeadCard key={lead.id} lead={lead} theme={theme} onPress={handleOpenLead} />
+                ))
+              )}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.section, { color: theme.text }]}>Мои заметки</Text>
+            <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
+              Локально на устройстве
+            </Text>
+          </View>
+
+          <View style={styles.sectionActions}>
+            <Pressable
+              onPress={openCreateNote}
+              style={[styles.sectionIconBtn, { backgroundColor: theme.blue }]}
+            >
+              <Ionicons name="add" size={20} color="#fff" />
+            </Pressable>
+
+            <Pressable
+              onPress={() => setNotesExpanded((v) => !v)}
+              style={[styles.sectionIconBtn, { backgroundColor: theme.backgroundSoft }]}
+            >
+              <Ionicons
+                name={notesExpanded ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={theme.blue}
+              />
+            </Pressable>
+          </View>
+        </View>
+
+        <View
+          style={[
+            styles.panel,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+              shadowColor: theme.shadow,
+            },
+          ]}
+        >
+          {!notesExpanded ? (
+            <View style={styles.collapsedSummary}>
+              <MiniIcon icon="document-text-outline" tint={PURPLE} bg="rgba(123,97,255,0.13)" />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.collapsedTitle, { color: theme.text }]}>
+                  {notes.length ? `${notes.length} заметок` : 'Нет заметок'}
+                </Text>
+                <Text style={[styles.collapsedSub, { color: theme.textSecondary }]}>
+                  {notes[0]?.title || 'Добавь первую заметку через плюс'}
+                </Text>
+              </View>
+            </View>
+          ) : notes.length === 0 ? (
             <Text style={[styles.empty, { color: theme.textSecondary }]}>
               Пока нет заметок. Нажми плюс и добавь первую.
             </Text>
@@ -964,7 +1264,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                 <Pressable
                   onPress={() => openEditNote(note)}
                   style={[
-                    styles.row,
+                    styles.noteRow,
                     {
                       backgroundColor: theme.surface,
                       borderBottomColor: theme.divider,
@@ -972,11 +1272,20 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                     },
                   ]}
                 >
-                  <View style={{ flex: 1, paddingRight: 12 }}>
+                  <View style={styles.noteIcon}>
+                    <Ionicons
+                      name={note.is_pinned ? 'pin' : 'document-text-outline'}
+                      size={18}
+                      color={note.is_pinned ? ORANGE : theme.blue}
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, paddingRight: 10 }}>
                     <View style={styles.noteTopRow}>
                       <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={1}>
                         {note.title}
                       </Text>
+
                       {note.is_pinned ? (
                         <View style={[styles.pinBadge, { backgroundColor: theme.blueSoft }]}>
                           <Text style={[styles.pinBadgeText, { color: theme.blue }]}>PIN</Text>
@@ -985,7 +1294,10 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                     </View>
 
                     {!!note.body && (
-                      <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={2}>
+                      <Text
+                        style={[styles.rowMeta, { color: theme.textSecondary }]}
+                        numberOfLines={2}
+                      >
                         {note.body}
                       </Text>
                     )}
@@ -995,25 +1307,120 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                     </Text>
                   </View>
 
-                  <View style={styles.rowIcons}>
-                    <Pressable onPress={() => openEditNote(note)} style={styles.rowIconBtn}>
-                      <ActionSvgIcon name="edit" color={theme.blue} />
-                    </Pressable>
-                    <ActionSvgIcon name="chevron" color={theme.textSecondary} />
-                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
                 </Pressable>
               </Swipeable>
             ))
           )}
         </View>
 
-        <View style={[styles.portalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={styles.sectionHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.section, { color: theme.text }]}>Мои клиенты</Text>
+            <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
+              Последние клиенты в видимой базе
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={() => setClientsExpanded((v) => !v)}
+            style={[styles.sectionIconBtn, { backgroundColor: theme.backgroundSoft }]}
+          >
+            <Ionicons
+              name={clientsExpanded ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={theme.blue}
+            />
+          </Pressable>
+        </View>
+
+        <View
+          style={[
+            styles.panel,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+              shadowColor: theme.shadow,
+            },
+          ]}
+        >
+          {!clientsExpanded ? (
+            <View style={styles.collapsedSummary}>
+              <MiniIcon icon="people-outline" tint={GREEN} bg="rgba(26,174,111,0.13)" />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.collapsedTitle, { color: theme.text }]}>
+                  {clients.length ? `${clients.length} клиентов` : 'Нет клиентов'}
+                </Text>
+                <Text style={[styles.collapsedSub, { color: theme.textSecondary }]}>
+                  {clients[0]?.full_name || 'Клиенты появятся после добавления'}
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() => router.push('/(app)/add-client' as any)}
+                style={[styles.smallAddBtn, { backgroundColor: theme.blue }]}
+              >
+                <Ionicons name="add" size={18} color="#fff" />
+              </Pressable>
+            </View>
+          ) : clients.length === 0 ? (
+            <Text style={[styles.empty, { color: theme.textSecondary }]}>
+              Нет клиентов в видимой базе.
+            </Text>
+          ) : (
+            clients.map((client, index) => (
+              <Pressable
+                key={String(client.id)}
+                onPress={() => router.push(`/(app)/client/${client.id}` as any)}
+                style={[
+                  styles.clientRow,
+                  {
+                    borderBottomColor: theme.divider,
+                    borderBottomWidth: index === clients.length - 1 ? 0 : 1,
+                  },
+                ]}
+              >
+                <EmployeeAvatar name={client.full_name || 'Клиент'} />
+
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={[styles.rowTitle, { color: theme.text }]} numberOfLines={1}>
+                    {client.full_name}
+                  </Text>
+
+                  <Text style={[styles.rowMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                    {client.phone || 'Без телефона'} · {client.city || 'Без города'}
+                  </Text>
+                </View>
+
+                <View style={[styles.statusPill, { backgroundColor: theme.backgroundSoft }]}>
+                  <Text style={[styles.statusPillText, { color: theme.blue }]}>
+                    {client.status || 'new'}
+                  </Text>
+                </View>
+              </Pressable>
+            ))
+          )}
+        </View>
+
+        <View
+          style={[
+            styles.portalCard,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+              shadowColor: theme.shadow,
+            },
+          ]}
+        >
+          <MiniIcon icon="checkbox-outline" tint={PURPLE} bg="rgba(123,97,255,0.13)" />
+
           <View style={{ flex: 1, paddingRight: 12 }}>
             <Text style={[styles.portalTitle, { color: theme.text }]}>Общий портал задач</Text>
             <Text style={[styles.portalSub, { color: theme.textSecondary }]}>
-              Здесь уже серверные задачи для всей команды: создание, выполнение, закрепление и удаление.
+              Серверные задачи для всей команды: создание, выполнение и контроль.
             </Text>
           </View>
+
           <Pressable
             onPress={() => router.push('/(app)/tasks' as any)}
             style={[styles.portalButton, { backgroundColor: theme.blueSoft }]}
@@ -1022,45 +1429,32 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
           </Pressable>
         </View>
 
-        <Text style={[styles.section, { color: theme.text, marginTop: 18 }]}>Мои клиенты</Text>
-        <View style={[styles.panel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {clients.length === 0 ? (
-            <Text style={[styles.empty, { color: theme.textSecondary }]}>Нет клиентов в видимой базе.</Text>
-          ) : (
-            clients.map((client, index) => (
-              <Pressable
-                key={String(client.id)}
-                onPress={() => router.push(`/(app)/client/${client.id}` as any)}
-                style={[
-                  styles.row,
-                  {
-                    borderBottomColor: theme.divider,
-                    borderBottomWidth: index === clients.length - 1 ? 0 : 1,
-                  },
-                ]}
-              >
-                <View style={{ flex: 1, paddingRight: 10 }}>
-                  <Text style={[styles.rowTitle, { color: theme.text }]}>{client.full_name}</Text>
-                  <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
-                    {client.phone || 'Без телефона'} · {client.city || 'Без города'}
-                  </Text>
-                </View>
+        <View
+          style={[
+            styles.reportCard,
+            {
+              backgroundColor: hasReport ? 'rgba(26,174,111,0.10)' : 'rgba(245,158,11,0.11)',
+              borderColor: hasReport ? 'rgba(26,174,111,0.22)' : 'rgba(245,158,11,0.22)',
+            },
+          ]}
+        >
+          <MiniIcon
+            icon={hasReport ? 'checkmark-done-outline' : 'alert-circle-outline'}
+            tint={hasReport ? GREEN : ORANGE}
+            bg={hasReport ? 'rgba(26,174,111,0.13)' : 'rgba(245,158,11,0.14)'}
+          />
 
-                <Text style={[styles.rowValue, { color: theme.blue }]}>{client.status || 'new'}</Text>
-              </Pressable>
-            ))
-          )}
-        </View>
-
-        <View style={[styles.reportCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={[styles.reportTitle, { color: theme.text }]}>
-            {hasReport ? 'Отчёт за сегодня уже отправлен' : 'Отчёт за сегодня ещё не отправлен'}
-          </Text>
-          <Pressable onPress={() => router.push('/(app)/profile' as any)}>
-            <Text style={[styles.reportAction, { color: theme.blue }]}>
-              {hasReport ? 'Проверить' : 'Открыть и заполнить'}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.reportTitle}>
+              {hasReport ? 'Отчёт за сегодня уже отправлен' : 'Отчёт за сегодня ещё не отправлен'}
             </Text>
-          </Pressable>
+
+            <Pressable onPress={() => router.push('/(app)/profile' as any)}>
+              <Text style={[styles.reportAction, { color: hasReport ? GREEN : ORANGE }]}>
+                {hasReport ? 'Проверить' : 'Открыть и заполнить'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
 
@@ -1074,6 +1468,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
               }}
               style={styles.fabAction}
             >
+              <MiniIcon icon="time-outline" tint={BLUE} bg="rgba(58,122,254,0.13)" size={34} />
               <Text style={[styles.fabActionText, { color: theme.text }]}>Учет времени</Text>
             </Pressable>
 
@@ -1084,7 +1479,8 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
               }}
               style={styles.fabAction}
             >
-              <Text style={[styles.fabActionText, { color: theme.text }]}>Быстрый доход / платёж</Text>
+              <MiniIcon icon="card-outline" tint={GREEN} bg="rgba(26,174,111,0.13)" size={34} />
+              <Text style={[styles.fabActionText, { color: theme.text }]}>Быстрый платёж</Text>
             </Pressable>
 
             {officeDashboard ? (
@@ -1096,7 +1492,8 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                   }}
                   style={styles.fabAction}
                 >
-                  <Text style={[styles.fabActionText, { color: theme.text }]}>Быстрый доход офиса</Text>
+                  <MiniIcon icon="add-circle-outline" tint={GREEN} bg="rgba(26,174,111,0.13)" size={34} />
+                  <Text style={[styles.fabActionText, { color: theme.text }]}>Доход офиса</Text>
                 </Pressable>
 
                 <Pressable
@@ -1106,7 +1503,8 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                   }}
                   style={styles.fabAction}
                 >
-                  <Text style={[styles.fabActionText, { color: theme.text }]}>Быстрый расход офиса</Text>
+                  <MiniIcon icon="remove-circle-outline" tint={NEGATIVE} bg="rgba(239,68,68,0.11)" size={34} />
+                  <Text style={[styles.fabActionText, { color: theme.text }]}>Расход офиса</Text>
                 </Pressable>
               </>
             ) : null}
@@ -1118,17 +1516,8 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
               }}
               style={styles.fabAction}
             >
-              <Text style={[styles.fabActionText, { color: theme.text }]}>Новая локальная заметка</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => {
-                setFabOpen(false);
-                router.push('/(app)/tasks' as any);
-              }}
-              style={styles.fabAction}
-            >
-              <Text style={[styles.fabActionText, { color: theme.text }]}>Открыть портал задач</Text>
+              <MiniIcon icon="document-text-outline" tint={PURPLE} bg="rgba(123,97,255,0.13)" size={34} />
+              <Text style={[styles.fabActionText, { color: theme.text }]}>Новая заметка</Text>
             </Pressable>
 
             <Pressable
@@ -1138,6 +1527,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
               }}
               style={styles.fabAction}
             >
+              <MiniIcon icon="person-add-outline" tint={ORANGE} bg="rgba(245,158,11,0.14)" size={34} />
               <Text style={[styles.fabActionText, { color: theme.text }]}>Добавить клиента</Text>
             </Pressable>
           </View>
@@ -1152,13 +1542,36 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
       >
         <View style={styles.modalWrap}>
           <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>
-              {officeEntryType === 'income' ? 'Быстрый доход офиса' : 'Быстрый расход офиса'}
-            </Text>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <MiniIcon
+                  icon={officeEntryType === 'income' ? 'add-circle-outline' : 'remove-circle-outline'}
+                  tint={officeEntryType === 'income' ? GREEN : NEGATIVE}
+                  bg={
+                    officeEntryType === 'income'
+                      ? 'rgba(26,174,111,0.13)'
+                      : 'rgba(239,68,68,0.11)'
+                  }
+                  size={38}
+                />
 
-            <Text style={[styles.officeFormLabel, { color: theme.textSecondary }]}>
-              Офис: {officeDashboard?.office?.city || '—'}
-            </Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.modalTitle, { color: theme.text }]}>
+                    {officeEntryType === 'income' ? 'Быстрый доход офиса' : 'Быстрый расход офиса'}
+                  </Text>
+
+                  <Text style={[styles.modalSub, { color: theme.textSecondary }]}>
+                    Офис: {officeDashboard?.office?.city || '—'}
+                  </Text>
+                </View>
+              </View>
+
+              <Pressable onPress={() => setOfficeEntryOpen(false)} style={styles.modalCloseBtn}>
+                <Ionicons name="close" size={20} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название</Text>
 
             <TextInput
               value={officeEntryTitle}
@@ -1175,6 +1588,8 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
               ]}
             />
 
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Сумма</Text>
+
             <TextInput
               value={officeEntryAmount}
               onChangeText={setOfficeEntryAmount}
@@ -1190,6 +1605,8 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                 },
               ]}
             />
+
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Комментарий</Text>
 
             <TextInput
               value={officeEntryComment}
@@ -1213,7 +1630,10 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                 onPress={() => setOfficeEntryOpen(false)}
                 style={[
                   styles.secondaryBtn,
-                  { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                  {
+                    backgroundColor: theme.backgroundSoft,
+                    borderColor: theme.border,
+                  },
                 ]}
               >
                 <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Отмена</Text>
@@ -1225,7 +1645,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                 style={[
                   styles.primaryBtn,
                   {
-                    backgroundColor: officeEntryType === 'income' ? (theme.success || '#1AAE6F') : theme.red,
+                    backgroundColor: officeEntryType === 'income' ? POSITIVE : NEGATIVE,
                     opacity: officeEntrySaving ? 0.7 : 1,
                   },
                 ]}
@@ -1249,6 +1669,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                 <Text style={[styles.modalTitle, { color: theme.text }]}>
                   {selectedLead?.full_name || 'Заявка'}
                 </Text>
+
                 <Text style={[styles.leadModalSubTitle, { color: theme.textSecondary }]}>
                   {selectedLead?.phone || 'Без телефона'}
                   {selectedLead?.country ? ` · ${selectedLead.country}` : ''}
@@ -1258,8 +1679,8 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
               {leadSaving ? (
                 <ActivityIndicator color={theme.blue} />
               ) : (
-                <Pressable onPress={() => setLeadModalOpen(false)} style={styles.closeBtn}>
-                  <Text style={[styles.closeBtnText, { color: theme.textSecondary }]}>✕</Text>
+                <Pressable onPress={() => setLeadModalOpen(false)} style={styles.modalCloseBtn}>
+                  <Ionicons name="close" size={20} color={theme.textSecondary} />
                 </Pressable>
               )}
             </View>
@@ -1268,6 +1689,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
               <View style={styles.statusRowWrap}>
                 {LEAD_STATUSES.map((status) => {
                   const active = selectedLead?.status === status;
+
                   return (
                     <Pressable
                       key={status}
@@ -1283,7 +1705,9 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                       <Text
                         style={[
                           styles.statusChipText,
-                          { color: active ? '#fff' : theme.textSecondary },
+                          {
+                            color: active ? '#fff' : theme.textSecondary,
+                          },
                         ]}
                       >
                         {statusTitle(status)}
@@ -1330,10 +1754,7 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
               </View>
 
               <View style={styles.leadActions}>
-                <Pressable
-                  onPress={openAddClientFromLead}
-                  style={[styles.primaryWideBtn, { backgroundColor: theme.blue }]}
-                >
+                <Pressable onPress={openAddClientFromLead} style={[styles.primaryWideBtn, { backgroundColor: theme.blue }]}>
                   <Text style={styles.primaryWideBtnText}>Добавить как клиента</Text>
                 </Pressable>
 
@@ -1341,15 +1762,14 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                   onPress={() => setLeadModalOpen(false)}
                   style={[
                     styles.secondaryWideBtn,
-                    { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                    {
+                      backgroundColor: theme.backgroundSoft,
+                      borderColor: theme.border,
+                    },
                   ]}
                 >
-                  <View style={styles.secondaryWideBtnInner}>
-                    <Text style={[styles.secondaryWideBtnText, { color: theme.text }]}>
-                      Закрыть
-                    </Text>
-                    <ActionSvgIcon name="arrowUpRight" color={theme.textSecondary} />
-                  </View>
+                  <Text style={[styles.secondaryWideBtnText, { color: theme.text }]}>Закрыть</Text>
+                  <Ionicons name="arrow-forward-outline" size={18} color={theme.textSecondary} />
                 </Pressable>
               </View>
             </ScrollView>
@@ -1360,9 +1780,27 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
       <Modal visible={noteModalOpen} transparent animationType="slide" onRequestClose={() => setNoteModalOpen(false)}>
         <View style={styles.modalWrap}>
           <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>
-              {noteForm.id ? 'Редактировать заметку' : 'Новая заметка'}
-            </Text>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <MiniIcon icon="document-text-outline" tint={PURPLE} bg="rgba(123,97,255,0.13)" size={38} />
+
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.modalTitle, { color: theme.text }]}>
+                    {noteForm.id ? 'Редактировать заметку' : 'Новая заметка'}
+                  </Text>
+
+                  <Text style={[styles.modalSub, { color: theme.textSecondary }]}>
+                    Заметка хранится локально на устройстве
+                  </Text>
+                </View>
+              </View>
+
+              <Pressable onPress={() => setNoteModalOpen(false)} style={styles.modalCloseBtn}>
+                <Ionicons name="close" size={20} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название</Text>
 
             <TextInput
               value={noteForm.title}
@@ -1378,6 +1816,8 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
                 },
               ]}
             />
+
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Текст</Text>
 
             <TextInput
               value={noteForm.body}
@@ -1396,12 +1836,35 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
               ]}
             />
 
+            <Pressable
+              onPress={() =>
+                setNoteForm((prev) => ({
+                  ...prev,
+                  is_pinned: !prev.is_pinned,
+                }))
+              }
+              style={[styles.pinToggle, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}
+            >
+              <Ionicons
+                name={noteForm.is_pinned ? 'pin' : 'pin-outline'}
+                size={18}
+                color={noteForm.is_pinned ? ORANGE : theme.textSecondary}
+              />
+
+              <Text style={[styles.pinToggleText, { color: theme.text }]}>
+                {noteForm.is_pinned ? 'Закреплено' : 'Закрепить заметку'}
+              </Text>
+            </Pressable>
+
             <View style={styles.modalActions}>
               <Pressable
                 onPress={() => setNoteModalOpen(false)}
                 style={[
                   styles.secondaryBtn,
-                  { backgroundColor: theme.backgroundSoft, borderColor: theme.border },
+                  {
+                    backgroundColor: theme.backgroundSoft,
+                    borderColor: theme.border,
+                  },
                 ]}
               >
                 <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Отмена</Text>
@@ -1418,381 +1881,1047 @@ export default function ManagerDashboard({ user, onRefresh }: Props) {
   );
 }
 
-function InfoRow({
-  label,
-  value,
-  theme,
-}: {
-  label: string;
-  value: string;
-  theme: any;
-}) {
-  return (
-    <View style={[styles.infoRow, { borderBottomColor: theme.divider || theme.border }]}>
-      <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>{label}</Text>
-      <Text style={[styles.infoValue, { color: theme.text }]}>{value}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-
-  container: { padding: 20, paddingBottom: 120 },
-
-  heroCard: {
-    borderWidth: 1,
-    borderRadius: 30,
-    padding: 18,
-    marginBottom: 18,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.1,
-    shadowRadius: 24,
-    elevation: 3,
-  },
-  heroSub: {
-    marginTop: 8,
-    fontSize: 13,
-    lineHeight: 19,
-    fontWeight: '600',
-  },
-  heroStatsRow: {
-    marginTop: 18,
-    flexDirection: 'row',
-    gap: 10,
-  },
-  heroStat: {
+  center: {
     flex: 1,
-    borderRadius: 18,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-  },
-  heroStatValue: {
-    fontSize: 20,
-    fontWeight: '900',
-  },
-  heroStatLabel: {
-    marginTop: 6,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-
-  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  caption: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
-  title: { fontSize: 26, fontWeight: '900', marginTop: 4 },
-
-  fabMini: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    alignItems: 'center',
   },
-  fabMiniText: { fontSize: 24, fontWeight: '900', marginTop: -2 },
 
-  quickGrid: { gap: 12 },
-  quickCardPrimary: { borderRadius: 24, padding: 18 },
-  quickIconBoxDark: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+  container: {
+    padding: 18,
+    paddingBottom: 124,
+  },
+
+  hero: {
+    borderRadius: 30,
+    padding: 20,
+    overflow: 'hidden',
+    shadowColor: '#3A2F8F',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+
+  heroGlowOne: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    right: -50,
+    top: -42,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+
+  heroGlowTwo: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    left: -38,
+    bottom: -38,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+
+  heroTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+
+  heroCaptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+
+  heroCaption: {
+    color: 'rgba(255,255,255,0.86)',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+
+  heroTitle: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '900',
+    marginTop: 7,
+  },
+
+  heroSub: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+  },
+
+  heroPlus: {
+    width: 44,
+    height: 44,
+    borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
   },
-  quickPrimaryTitle: { marginTop: 14, color: '#fff', fontSize: 18, fontWeight: '900' },
-  quickPrimarySub: {
-    marginTop: 6,
-    color: 'rgba(255,255,255,0.92)',
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '600',
+
+  heroStats: {
+    marginTop: 22,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  quickRow: { flexDirection: 'row', gap: 12 },
-  quickCard: { flex: 1, borderWidth: 1, borderRadius: 22, padding: 16 },
-  quickIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+
+  heroStat: {
+    flex: 1,
+  },
+
+  heroStatTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+
+  heroDivider: {
+    width: 1,
+    height: 48,
+    marginHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+
+  heroValue: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '900',
+    marginTop: 7,
+  },
+
+  heroLabel: {
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  heroFooter: {
+    marginTop: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  heroChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+
+  heroChipText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  sectionHeader: {
+    marginTop: 26,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+
+  section: {
+    fontSize: 19,
+    fontWeight: '900',
+  },
+
+  sectionSub: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+
+  sectionActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  sectionIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quickTitle: { marginTop: 12, fontSize: 15, fontWeight: '800' },
 
-  kpiGrid: { flexDirection: 'row', gap: 12, marginTop: 22 },
-  kpiCard: { flex: 1, borderRadius: 22, borderWidth: 1, padding: 18 },
-  kpiValue: { fontSize: 22, fontWeight: '900' },
-  kpiLabel: { marginTop: 8, fontSize: 13, fontWeight: '700' },
+  iconBubble: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
-  progressCard: { marginTop: 14, borderRadius: 22, borderWidth: 1, padding: 18 },
-  officeProgressCard: { marginTop: 12, borderRadius: 20, padding: 14 },
-  progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  progressTitle: { fontSize: 15, fontWeight: '900' },
-  progressValue: { fontSize: 14, fontWeight: '900' },
-  progressBarBg: { marginTop: 12, height: 10, borderRadius: 999, overflow: 'hidden' },
-  progressBarFill: { height: 10, borderRadius: 999 },
-  progressSub: { marginTop: 10, fontSize: 13, fontWeight: '700' },
+  quickGrid: {
+    gap: 12,
+  },
 
-  officeCard: {
+  quickMainPress: {
+    borderRadius: 24,
+  },
+
+  quickMainCard: {
+    minHeight: 96,
+    borderRadius: 24,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.08)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  quickMainTitle: {
+    color: PREMIUM_TEXT,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+
+  quickMainSub: {
+    marginTop: 4,
+    color: PREMIUM_MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+
+  quickSmallRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  quickSmallCard: {
+    flex: 1,
+    minHeight: 102,
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 13,
+    justifyContent: 'space-between',
+  },
+
+  quickSmallTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  kpiGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 18,
+  },
+
+  kpiCard: {
+    flex: 1,
     borderWidth: 1,
     borderRadius: 24,
-    padding: 16,
-    marginBottom: 4,
+    padding: 15,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 2,
   },
-  officeCardHead: {
+
+  kpiTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  kpiTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+
+  kpiValue: {
+    marginTop: 14,
+    fontSize: 21,
+    fontWeight: '900',
+  },
+
+  kpiLabel: {
+    marginTop: 5,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+
+  progressCard: {
+    marginTop: 14,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 16,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.055,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+
+  progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 12,
-    alignItems: 'flex-start',
   },
-  officeName: {
+
+  progressTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  progressTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  progressValue: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  progressSub: {
+    marginTop: 3,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  progressTrack: {
+    marginTop: 14,
+    height: 10,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+
+  progressFill: {
+    height: 10,
+    borderRadius: 999,
+  },
+
+  officeCard: {
+    borderRadius: 26,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.08)',
+  },
+
+  officeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+
+  officeHeaderLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  officeRight: {
+    alignItems: 'flex-end',
+    gap: 7,
+  },
+
+  officeTitle: {
+    color: PREMIUM_TEXT,
     fontSize: 18,
     fontWeight: '900',
   },
+
   officeMeta: {
-    marginTop: 6,
+    marginTop: 4,
+    color: PREMIUM_MUTED,
     fontSize: 12,
-    lineHeight: 18,
-    fontWeight: '600',
+    fontWeight: '700',
+    lineHeight: 17,
   },
+
   officeNet: {
     fontSize: 18,
     fontWeight: '900',
   },
-  officeKpiGrid: {
+
+  expandBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.76)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  officeCompactStats: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+  },
+
+  officeCompactItem: {
+    flex: 1,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.06)',
+  },
+
+  officeCompactLabel: {
+    marginTop: 5,
+    color: PREMIUM_MUTED,
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+
+  officeCompactValue: {
+    marginTop: 3,
+    color: PREMIUM_TEXT,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  officeExpanded: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(47,42,69,0.08)',
+  },
+
+  officeInfoStrip: {
+    gap: 8,
+  },
+
+  officeInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.68)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+
+  officeInfoText: {
+    flex: 1,
+    color: PREMIUM_MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+
+  officeSummaryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-    marginTop: 14,
+    marginTop: 12,
   },
-  officeKpiItem: {
+
+  officeSummaryCard: {
     width: '48%',
-    borderRadius: 18,
-    padding: 14,
+    borderRadius: 20,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.06)',
   },
-  officeKpiValue: {
-    fontSize: 18,
+
+  officeSummaryValue: {
+    marginTop: 10,
+    color: PREMIUM_TEXT,
+    fontSize: 16,
     fontWeight: '900',
   },
-  officeKpiLabel: {
-    marginTop: 6,
+
+  officeSummaryLabel: {
+    marginTop: 5,
+    color: PREMIUM_MUTED,
+    fontSize: 11.5,
+    fontWeight: '800',
+    lineHeight: 16,
+  },
+
+  officeProgressCard: {
+    marginTop: 12,
+    borderRadius: 20,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.70)',
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.06)',
+  },
+
+  officeProgressTitle: {
+    color: PREMIUM_TEXT,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  officeProgressSub: {
+    marginTop: 4,
+    color: PREMIUM_MUTED,
     fontSize: 12,
     fontWeight: '700',
   },
+
+  officeProgressTrack: {
+    marginTop: 12,
+    height: 9,
+    borderRadius: 999,
+    backgroundColor: 'rgba(58,122,254,0.12)',
+    overflow: 'hidden',
+  },
+
+  officeProgressFill: {
+    height: 9,
+    borderRadius: 999,
+    backgroundColor: BLUE,
+  },
+
   officeQuickRow: {
     flexDirection: 'row',
     gap: 10,
     marginTop: 14,
   },
+
   officeQuickBtn: {
     flex: 1,
     borderWidth: 1,
     borderRadius: 18,
-    padding: 14,
+    padding: 12,
   },
+
   officeQuickBtnTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  officeQuickBtnSub: {
-    marginTop: 6,
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '700',
-  },
-  officeManagersWrap: {
-    marginTop: 16,
-  },
-  officeManagersTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-    marginBottom: 8,
-  },
-  officeManagerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 11,
-  },
-  officeManagerName: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  officeManagerMeta: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  officeManagerProgress: {
+    marginTop: 8,
     fontSize: 14,
     fontWeight: '900',
   },
 
-  sectionHead: {
-    marginTop: 24,
-    marginBottom: 12,
+  officeQuickBtnSub: {
+    marginTop: 4,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+
+  officeManagersBlock: {
+    marginTop: 16,
+  },
+
+  blockTitleRow: {
+    marginBottom: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 12,
   },
-  section: { fontSize: 18, fontWeight: '900' },
-  sectionSub: { marginTop: 4, fontSize: 12, fontWeight: '600', lineHeight: 17 },
 
-  leadCounters: {
+  blockTitle: {
+    color: PREMIUM_TEXT,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  managerRow: {
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.06)',
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
   },
-  leadCounterChip: {
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flexDirection: 'row',
+
+  managerRank: {
+    width: 32,
+    height: 32,
+    borderRadius: 13,
+    backgroundColor: 'rgba(245,158,11,0.14)',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
   },
-  leadCounterChipText: {
+
+  managerRankText: {
+    color: ORANGE,
     fontSize: 12,
     fontWeight: '900',
   },
 
-  leadsGrid: {
-    gap: 0,
+  employeeAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  emptyPremiumCard: {
+
+  employeeAvatarText: {
+    color: PREMIUM_TEXT,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  managerName: {
+    color: PREMIUM_TEXT,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  managerMeta: {
+    marginTop: 3,
+    color: PREMIUM_MUTED,
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+
+  managerProgress: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  leadsPanel: {
     borderWidth: 1,
     borderRadius: 24,
-    padding: 18,
+    padding: 14,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.055,
+    shadowRadius: 14,
+    elevation: 2,
   },
+
+  leadStatsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  leadStatChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(123,97,255,0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+
+  leadStatText: {
+    color: PREMIUM_TEXT,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+
+  leadsList: {
+    marginTop: 10,
+  },
+
+  emptyPremiumCard: {
+    borderRadius: 20,
+    padding: 16,
+    backgroundColor: 'rgba(255,255,255,0.70)',
+    borderWidth: 1,
+    borderColor: 'rgba(123,97,255,0.06)',
+    alignItems: 'flex-start',
+  },
+
   emptyPremiumTitle: {
+    marginTop: 10,
+    color: PREMIUM_TEXT,
     fontSize: 16,
     fontWeight: '900',
   },
+
   emptyPremiumSub: {
     marginTop: 6,
+    color: PREMIUM_MUTED,
     fontSize: 13,
     lineHeight: 19,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 
-  iconButton: {
-    width: 42,
-    height: 42,
+  panel: {
+    borderWidth: 1,
+    borderRadius: 24,
+    overflow: 'hidden',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.055,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+
+  collapsedSummary: {
+    minHeight: 74,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  collapsedTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  collapsedSub: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  smallAddBtn: {
+    width: 34,
+    height: 34,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  panel: { borderWidth: 1, borderRadius: 22, overflow: 'hidden' },
-  row: {
-    paddingHorizontal: 16,
+  noteRow: {
+    paddingHorizontal: 14,
     paddingVertical: 14,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 10,
   },
-  rowTitle: { fontSize: 15, fontWeight: '800' },
-  rowMeta: { marginTop: 4, fontSize: 12, fontWeight: '600' },
-  rowValue: { fontSize: 13, fontWeight: '900' },
-  rowIcons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  rowIconBtn: { padding: 4 },
 
-  noteTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  pinBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  pinBadgeText: { fontSize: 10, fontWeight: '900' },
-  noteTime: { marginTop: 8, fontSize: 11, fontWeight: '600' },
+  noteIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 15,
+    backgroundColor: 'rgba(58,122,254,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  rowTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  rowMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  noteTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  pinBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+
+  pinBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+  },
+
+  noteTime: {
+    marginTop: 7,
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
 
   swipeDelete: {
     width: 112,
-    backgroundColor: '#E5484D',
+    backgroundColor: RED,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 6,
   },
+
   swipePin: {
     width: 126,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 6,
   },
-  swipeText: { color: '#fff', fontSize: 12, fontWeight: '900' },
+
+  swipeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  clientRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+
+  statusPillText: {
+    fontSize: 11,
+    fontWeight: '900',
+  },
+
+  empty: {
+    padding: 16,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+  },
 
   portalCard: {
     marginTop: 18,
     borderWidth: 1,
-    borderRadius: 22,
+    borderRadius: 24,
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.055,
+    shadowRadius: 14,
+    elevation: 2,
   },
-  portalTitle: { fontSize: 15, fontWeight: '900' },
-  portalSub: { marginTop: 6, fontSize: 13, lineHeight: 18, fontWeight: '600' },
-  portalButton: { borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 },
-  portalButtonText: { fontSize: 13, fontWeight: '900' },
 
-  empty: { padding: 16, fontSize: 14, lineHeight: 20 },
+  portalTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
 
-  reportCard: { marginTop: 20, borderWidth: 1, borderRadius: 22, padding: 16 },
-  reportTitle: { fontSize: 15, fontWeight: '900' },
-  reportAction: { marginTop: 8, fontSize: 14, fontWeight: '900' },
+  portalSub: {
+    marginTop: 6,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+
+  portalButton: {
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+
+  portalButtonText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  reportCard: {
+    marginTop: 18,
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  reportTitle: {
+    color: PREMIUM_TEXT,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  reportAction: {
+    marginTop: 7,
+    fontSize: 13,
+    fontWeight: '900',
+  },
 
   modalBg: {
     flex: 1,
-    backgroundColor: 'rgba(10,20,30,0.28)',
-    justifyContent: 'flex-end',
-    padding: 20,
-  },
-  fabMenu: {
-    borderRadius: 24,
-    borderWidth: 1,
-    paddingVertical: 8,
-    marginBottom: 90,
-  },
-  fabAction: { paddingHorizontal: 16, paddingVertical: 16 },
-  fabActionText: { fontSize: 15, fontWeight: '800' },
-
-  modalWrap: {
-    flex: 1,
-    backgroundColor: 'rgba(7, 12, 20, 0.35)',
+    backgroundColor: 'rgba(7, 12, 20, 0.38)',
     justifyContent: 'flex-end',
     padding: 16,
   },
-  modalCard: { borderWidth: 1, borderRadius: 24, padding: 18 },
+
+  fabMenu: {
+    borderRadius: 26,
+    borderWidth: 1,
+    padding: 8,
+    marginBottom: 88,
+  },
+
+  fabAction: {
+    minHeight: 62,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  fabActionText: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  modalWrap: {
+    flex: 1,
+    backgroundColor: 'rgba(7, 12, 20, 0.38)',
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+
+  modalCard: {
+    borderWidth: 1,
+    borderRadius: 28,
+    padding: 18,
+  },
+
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 8,
+  },
+
+  modalTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+
+  modalSub: {
+    marginTop: 3,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  inputLabel: {
+    marginTop: 12,
+    marginBottom: 7,
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.35,
+  },
+
+  input: {
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  textarea: {
+    minHeight: 104,
+    textAlignVertical: 'top',
+  },
+
+  pinToggle: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  pinToggleText: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+
+  secondaryBtn: {
+    flex: 1,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+
+  secondaryBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  primaryBtn: {
+    flex: 1,
+    borderRadius: 18,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  primaryBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
   leadModalCard: {
     borderWidth: 1,
     borderRadius: 28,
     padding: 18,
     maxHeight: '86%',
   },
+
   leadModalHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: 12,
   },
+
   leadModalSubTitle: {
     marginTop: 6,
     fontSize: 13,
-    fontWeight: '600',
-  },
-  modalTitle: { fontSize: 18, fontWeight: '900' },
-
-  officeFormLabel: {
-    marginTop: 10,
-    marginBottom: 2,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-
-  closeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeBtnText: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   statusRowWrap: {
@@ -1801,12 +2930,14 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 14,
   },
+
   statusChip: {
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderWidth: 1,
   },
+
   statusChipText: {
     fontSize: 12,
     fontWeight: '900',
@@ -1817,16 +2948,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
+
   infoRow: {
     paddingVertical: 11,
     borderBottomWidth: 1,
   },
+
   infoLabel: {
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '900',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+
   infoValue: {
     marginTop: 5,
     fontSize: 14,
@@ -1838,57 +2972,31 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 16,
   },
+
   primaryWideBtn: {
     borderRadius: 18,
     paddingVertical: 16,
     alignItems: 'center',
   },
+
   primaryWideBtnText: {
     color: '#fff',
     fontSize: 15,
     fontWeight: '900',
   },
+
   secondaryWideBtn: {
     borderRadius: 18,
     borderWidth: 1,
     paddingVertical: 15,
     paddingHorizontal: 14,
-  },
-  secondaryWideBtnInner: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  secondaryWideBtnText: {
-    fontSize: 14,
-    fontWeight: '800',
+    justifyContent: 'space-between',
   },
 
-  input: {
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    fontWeight: '600',
-    marginTop: 10,
+  secondaryWideBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
   },
-  textarea: { minHeight: 110, textAlignVertical: 'top' as const },
-  modalActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  secondaryBtn: {
-    flex: 1,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  secondaryBtnText: { fontSize: 14, fontWeight: '800' },
-  primaryBtn: {
-    flex: 1,
-    borderRadius: 16,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '900' },
 });

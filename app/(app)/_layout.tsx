@@ -262,6 +262,7 @@ export default function AppTabsLayout() {
         <Tabs.Screen name="admin-payments" options={{ href: null, headerShown: false }} />
         <Tabs.Screen name="tasks" options={{ href: null, headerShown: false }} />
         <Tabs.Screen name="workday" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="kb-ai" options={{ href: null, headerShown: false }} />
       </Tabs>
 
       {shouldShowGlobalFab && (
