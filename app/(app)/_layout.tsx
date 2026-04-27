@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppTabIcon from '../../components/ui/AppTabIcon';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useTheme } from '../../src/context/ThemeContext';
+import { ensurePushNotificationsRegistered } from '../../src/notifications/pushNotifications';
 import { ensureWorkdayRemindersScheduled } from '../../src/notifications/workdayReminders';
 
 const TAB_HEIGHT = Platform.OS === 'ios' ? 86 : 72;
@@ -19,7 +20,7 @@ function canShowFabOnRoute(segments: string[]) {
 
   const screen = segments[1];
 
-  return ['index', 'crm', 'leaderboard', 'catalog', 'profile', 'leads'].includes(screen);
+  return ['index', 'crm', 'leaderboard', 'catalog', 'profile', 'leads', 'projects'].includes(screen);
 }
 
 export default function AppTabsLayout() {
@@ -47,6 +48,10 @@ export default function AppTabsLayout() {
   useEffect(() => {
     ensureWorkdayRemindersScheduled();
   }, []);
+
+  useEffect(() => {
+    ensurePushNotificationsRegistered(user?.id);
+  }, [user?.id]);
 
   useEffect(() => {
     setFabOpen(false);
@@ -81,6 +86,16 @@ export default function AppTabsLayout() {
         title: 'Зарплата',
       },
     } as any);
+  };
+
+  const openProjects = () => {
+    setFabOpen(false);
+    router.push('/(app)/projects' as any);
+  };
+
+  const openSupport = () => {
+    setFabOpen(false);
+    router.push('/(app)/support' as any);
   };
 
   return (
@@ -263,6 +278,9 @@ export default function AppTabsLayout() {
         <Tabs.Screen name="tasks" options={{ href: null, headerShown: false }} />
         <Tabs.Screen name="workday" options={{ href: null, headerShown: false }} />
         <Tabs.Screen name="kb-ai" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="projects" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="project/[id]" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="support" options={{ href: null, headerShown: false }} />
       </Tabs>
 
       {shouldShowGlobalFab && (
@@ -279,6 +297,52 @@ export default function AppTabsLayout() {
               ]}
             >
               <Pressable
+                onPress={openProjects}
+                style={({ pressed }) => [
+                  styles.fabMenuItem,
+                  {
+                    backgroundColor: pressed ? theme.backgroundSoft : 'transparent',
+                  },
+                ]}
+              >
+                <View style={[styles.fabMenuIcon, { backgroundColor: theme.blueSoft }]}>
+                  <Ionicons name="folder-open-outline" size={20} color={theme.blue} />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Проекты</Text>
+                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>Задачи, дедлайны, файлы</Text>
+                </View>
+
+                <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+              </Pressable>
+
+              <View style={[styles.fabDivider, { backgroundColor: theme.border }]} />
+
+              <Pressable
+                onPress={openSupport}
+                style={({ pressed }) => [
+                  styles.fabMenuItem,
+                  {
+                    backgroundColor: pressed ? theme.backgroundSoft : 'transparent',
+                  },
+                ]}
+              >
+                <View style={[styles.fabMenuIcon, { backgroundColor: 'rgba(26,174,111,0.12)' }]}>
+                  <Ionicons name="chatbox-ellipses-outline" size={20} color="#1AAE6F" />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Поддержка</Text>
+                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>Написать администратору</Text>
+                </View>
+
+                <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+              </Pressable>
+
+              <View style={[styles.fabDivider, { backgroundColor: theme.border }]} />
+
+              <Pressable
                 onPress={openExpenseFromTemplate}
                 style={({ pressed }) => [
                   styles.fabMenuItem,
@@ -293,9 +357,7 @@ export default function AppTabsLayout() {
 
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Добавить расход</Text>
-                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>
-                    Виза, авиабилеты, офисные расходы
-                  </Text>
+                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>Виза, авиабилеты, офисные расходы</Text>
                 </View>
 
                 <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
@@ -318,9 +380,7 @@ export default function AppTabsLayout() {
 
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Добавить доход</Text>
-                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>
-                    Виза, авиабилеты или другой доход
-                  </Text>
+                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>Виза, авиабилеты или другой доход</Text>
                 </View>
 
                 <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
@@ -344,12 +404,8 @@ export default function AppTabsLayout() {
                     </View>
 
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.fabMenuTitle, { color: theme.text }]}>
-                        Пополнить баланс офиса
-                      </Text>
-                      <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>
-                        Только для админов · категория “Зарплата”
-                      </Text>
+                      <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Пополнить баланс офиса</Text>
+                      <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>Только для админов · категория “Зарплата”</Text>
                     </View>
 
                     <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
@@ -394,7 +450,6 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     borderWidth: 1,
   },
-
   fabHost: {
     position: 'absolute',
     right: 18,

@@ -1,13 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
-import { ResizeMode, Video } from 'expo-av';
 import * as Clipboard from 'expo-clipboard';
+import * as DocumentPicker from 'expo-document-picker';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -16,20 +21,48 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Markdown from 'react-native-markdown-display';
 
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
-import apiClient from '../../src/api/apiClient';
+import apiClient, { extractList, fetchAllPages } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
 import { getToken, saveToken } from '../../src/utils/storage';
+
+type UserMini = {
+  id: number;
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  full_name?: string;
+};
+
+type KnowledgeAttachment = {
+  id: number;
+  section: number;
+  title?: string;
+  attachment_type: 'file' | 'image' | 'link';
+  file_url?: string | null;
+  url?: string;
+  note?: string;
+  order?: number;
+  created_at?: string;
+};
 
 type KnowledgeSection = {
   id: number;
   parent?: number | null;
   title: string;
   slug?: string;
+  description?: string;
   icon?: string;
   color?: string;
+  cover_image_url?: string | null;
+  file_url?: string | null;
+  external_url?: string;
+  responsible_users?: number[];
+  responsible_users_data?: UserMini[];
+  attachments?: KnowledgeAttachment[];
   order?: number;
   is_active?: boolean;
   full_path?: string;
@@ -42,8 +75,10 @@ type Snippet = {
   id: number;
   section?: number | null;
   section_data?: KnowledgeSection | null;
+  section_title?: string;
   title: string;
   content: string;
+  content_format?: 'markdown' | 'plain' | 'html';
   category: string;
   order?: number;
   updated_at?: string;
@@ -63,7 +98,7 @@ type Question = {
   id?: number;
   text: string;
   options: string[] | string;
-  correct: number;
+  correct?: number;
   order?: number;
 };
 
@@ -76,55 +111,58 @@ type TestItem = {
   questions: Question[];
 };
 
-type TestAttempt = {
-  id: number;
-  test: number;
-  test_title: string;
-  user: number;
-  user_name: string;
-  score: number;
-  total: number;
-  percent: number;
-  answers: Record<string, number>;
-  started_at: string;
-  completed_at: string;
-};
-
-type TabKey = 'snippets' | 'videos' | 'tests';
+type TabKey = 'knowledge' | 'videos' | 'tests';
+type EditorEntity = 'section' | 'snippet' | 'attachment';
 type EditorMode = 'create' | 'edit';
-type EditorEntity = 'section' | 'snippet' | 'video' | 'test';
 
-const TABS: TabKey[] = ['snippets', 'videos', 'tests'];
-
-const TAB_META: Record<TabKey, { label: string; icon: keyof typeof Ionicons.glyphMap }> = {
-  snippets: { label: 'База знаний', icon: 'library' },
-  videos: { label: 'Видео', icon: 'play-circle' },
-  tests: { label: 'Тесты', icon: 'checkmark-done-circle' },
-};
-
-const CATEGORY_LABELS: Record<string, { label: string; icon: keyof typeof Ionicons.glyphMap }> = {
-  script: { label: 'Скрипты', icon: 'chatbubbles' },
-  faq: { label: 'FAQ', icon: 'help-circle' },
-  requisites: { label: 'Реквизиты', icon: 'card' },
-  links: { label: 'Ссылки', icon: 'link' },
-};
-
-const SECTION_ICONS: Array<{ key: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
-  { key: 'folder', label: 'Папка', icon: 'folder' },
-  { key: 'book', label: 'Книга', icon: 'book' },
-  { key: 'school', label: 'Обучение', icon: 'school' },
-  { key: 'chatbubbles', label: 'Скрипты', icon: 'chatbubbles' },
-  { key: 'airplane', label: 'Авиабилеты', icon: 'airplane' },
-  { key: 'document-text', label: 'Документы', icon: 'document-text' },
-  { key: 'card', label: 'Оплаты', icon: 'card' },
+const TABS: Array<{ key: TabKey; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+  { key: 'knowledge', label: 'База', icon: 'library-outline' },
+  { key: 'videos', label: 'Видео', icon: 'play-circle-outline' },
+  { key: 'tests', label: 'Тесты', icon: 'checkmark-done-circle-outline' },
 ];
 
+const CATEGORIES: Array<{ key: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+  { key: '', label: 'Все', icon: 'albums-outline' },
+  { key: 'faq', label: 'FAQ', icon: 'help-circle-outline' },
+  { key: 'script', label: 'Скрипты', icon: 'chatbubbles-outline' },
+  { key: 'requisites', label: 'Реквизиты', icon: 'card-outline' },
+  { key: 'links', label: 'Ссылки', icon: 'link-outline' },
+];
+
+const SECTION_ICONS: Array<{ key: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+  { key: 'folder', label: 'Папка', icon: 'folder-outline' },
+  { key: 'book', label: 'Книга', icon: 'book-outline' },
+  { key: 'school', label: 'Обучение', icon: 'school-outline' },
+  { key: 'chatbubbles', label: 'Скрипты', icon: 'chatbubbles-outline' },
+  { key: 'airplane', label: 'Авиабилеты', icon: 'airplane-outline' },
+  { key: 'document-text', label: 'Документы', icon: 'document-text-outline' },
+  { key: 'card', label: 'Оплаты', icon: 'card-outline' },
+  { key: 'globe', label: 'Международное', icon: 'globe-outline' },
+];
+
+function iconOf(key?: string): keyof typeof Ionicons.glyphMap {
+  return SECTION_ICONS.find((item) => item.key === key)?.icon || 'folder-outline';
+}
+
+function userName(user?: UserMini | null) {
+  if (!user) return '—';
+  return user.full_name || [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.email;
+}
+
+function initials(user?: UserMini | null) {
+  const name = userName(user);
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'U';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0].slice(0, 1)}${parts[1].slice(0, 1)}`.toUpperCase();
+}
+
 function normalizeOptions(options: any): string[] {
-  if (Array.isArray(options)) return options.map((x) => String(x));
+  if (Array.isArray(options)) return options.map(String);
   if (typeof options === 'string') {
     try {
       const parsed = JSON.parse(options);
-      if (Array.isArray(parsed)) return parsed.map((x) => String(x));
+      if (Array.isArray(parsed)) return parsed.map(String);
     } catch {}
   }
   return [];
@@ -138,66 +176,16 @@ function stripHtml(value?: string) {
     .trim();
 }
 
-function getYoutubeMeta(url?: string | null) {
-  if (!url) return null;
-
-  const cleanUrl = String(url).trim();
-
-  const shortsMatch = cleanUrl.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{6,})/i);
-  if (shortsMatch?.[1]) {
-    return {
-      videoId: shortsMatch[1],
-      isShort: true,
-      embedUrl: `https://www.youtube.com/embed/${shortsMatch[1]}?playsinline=1&modestbranding=1&rel=0`,
-    };
-  }
-
-  const watchMatch = cleanUrl.match(/[?&]v=([a-zA-Z0-9_-]{6,})/i);
-  if (watchMatch?.[1]) {
-    return {
-      videoId: watchMatch[1],
-      isShort: false,
-      embedUrl: `https://www.youtube.com/embed/${watchMatch[1]}?playsinline=1&modestbranding=1&rel=0`,
-    };
-  }
-
-  const shortLinkMatch = cleanUrl.match(/youtu\.be\/([a-zA-Z0-9_-]{6,})/i);
-  if (shortLinkMatch?.[1]) {
-    return {
-      videoId: shortLinkMatch[1],
-      isShort: false,
-      embedUrl: `https://www.youtube.com/embed/${shortLinkMatch[1]}?playsinline=1&modestbranding=1&rel=0`,
-    };
-  }
-
-  const embedMatch = cleanUrl.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]{6,})/i);
-  if (embedMatch?.[1]) {
-    return {
-      videoId: embedMatch[1],
-      isShort: false,
-      embedUrl: `https://www.youtube.com/embed/${embedMatch[1]}?playsinline=1&modestbranding=1&rel=0`,
-    };
-  }
-
-  return null;
-}
-
-function sectionIconName(icon?: string): keyof typeof Ionicons.glyphMap {
-  const found = SECTION_ICONS.find((x) => x.key === icon);
-  return found?.icon || 'folder';
-}
-
 function buildSectionPath(sectionId: number | null, sections: KnowledgeSection[]) {
   if (!sectionId) return [];
-
   const byId = new Map<number, KnowledgeSection>();
-  sections.forEach((s) => byId.set(s.id, s));
+  sections.forEach((section) => byId.set(section.id, section));
 
   const path: KnowledgeSection[] = [];
   let current = byId.get(sectionId);
   let guard = 0;
 
-  while (current && guard < 20) {
+  while (current && guard < 30) {
     path.unshift(current);
     current = current.parent ? byId.get(current.parent) : undefined;
     guard += 1;
@@ -206,30 +194,68 @@ function buildSectionPath(sectionId: number | null, sections: KnowledgeSection[]
   return path;
 }
 
-function AdminActions({
-  theme,
-  onEdit,
-  onDelete,
-}: {
-  theme: any;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <View style={styles.adminActions}>
-      <Pressable
-        onPress={onEdit}
-        style={[styles.adminIconBtn, { backgroundColor: theme.blueSoft, borderColor: theme.border }]}
-      >
-        <Ionicons name="create-outline" size={17} color={theme.blue} />
-      </Pressable>
+function getYoutubeUrl(url?: string | null) {
+  if (!url) return null;
+  const clean = String(url).trim();
+  const shorts = clean.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{6,})/i)?.[1];
+  const watch = clean.match(/[?&]v=([a-zA-Z0-9_-]{6,})/i)?.[1];
+  const shortLink = clean.match(/youtu\.be\/([a-zA-Z0-9_-]{6,})/i)?.[1];
+  const embed = clean.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]{6,})/i)?.[1];
+  const id = shorts || watch || shortLink || embed;
+  return id ? `https://www.youtube.com/watch?v=${id}` : clean;
+}
 
-      <Pressable
-        onPress={onDelete}
-        style={[styles.adminIconBtn, { backgroundColor: theme.redSoft, borderColor: theme.border }]}
-      >
-        <Ionicons name="trash-outline" size={17} color={theme.red} />
-      </Pressable>
+function markdownStyles(theme: any) {
+  return {
+    body: { color: theme.textSecondary, fontSize: 14, lineHeight: 21, fontWeight: '600' },
+    paragraph: { marginTop: 0, marginBottom: 8 },
+    strong: { color: theme.text, fontWeight: '900' },
+    heading1: { color: theme.text, fontSize: 22, fontWeight: '900', marginBottom: 8 },
+    heading2: { color: theme.text, fontSize: 19, fontWeight: '900', marginBottom: 6 },
+    heading3: { color: theme.text, fontSize: 17, fontWeight: '900', marginBottom: 6 },
+    bullet_list: { marginBottom: 8 },
+    ordered_list: { marginBottom: 8 },
+    code_inline: { color: theme.blue, fontWeight: '900' },
+    link: { color: theme.blue, fontWeight: '900' },
+  };
+}
+
+function fileNameFromPicker(asset: any) {
+  return asset?.name || asset?.fileName || asset?.uri?.split('/').pop() || 'file';
+}
+
+function fileTypeFromPicker(asset: any, fallback = 'application/octet-stream') {
+  return asset?.mimeType || asset?.type || fallback;
+}
+
+function MiniAvatarStack({ users, theme }: { users?: UserMini[]; theme: any }) {
+  const visible = (users || []).slice(0, 4);
+  const extra = Math.max((users || []).length - visible.length, 0);
+
+  if (!visible.length) return null;
+
+  return (
+    <View style={styles.avatarStack}>
+      {visible.map((item, index) => (
+        <View
+          key={item.id}
+          style={[
+            styles.avatarMini,
+            {
+              backgroundColor: index % 2 === 0 ? theme.blue : '#1AAE6F',
+              borderColor: theme.surface,
+              marginLeft: index === 0 ? 0 : -8,
+            },
+          ]}
+        >
+          <Text style={styles.avatarMiniText}>{initials(item)}</Text>
+        </View>
+      ))}
+      {extra > 0 && (
+        <View style={[styles.avatarMini, { backgroundColor: theme.backgroundSoft, borderColor: theme.surface, marginLeft: -8 }]}>
+          <Text style={[styles.avatarExtraText, { color: theme.text }]}>+{extra}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -239,229 +265,169 @@ export default function KnowledgeBaseScreen() {
   const { theme, themeMode } = useTheme();
   const { user } = useCurrentUser();
 
-  const isAdmin = !!user && (user.is_superuser || user.is_staff || user.role === 'admin');
+  const isAdmin = Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
+  const canEdit = Boolean(user);
   const dark = themeMode === 'dark';
 
-  const [activeTab, setActiveTab] = useState<TabKey>('snippets');
+  const [tab, setTab] = useState<TabKey>('knowledge');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  const [search, setSearch] = useState('');
-  const [activeCategory, setActiveCategory] = useState('');
-  const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
 
   const [sections, setSections] = useState<KnowledgeSection[]>([]);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [tests, setTests] = useState<TestItem[]>([]);
+  const [users, setUsers] = useState<UserMini[]>([]);
 
-  const [activeTest, setActiveTest] = useState<TestItem | null>(null);
-  const [answers, setAnswers] = useState<Record<number, number>>({});
-  const [showResult, setShowResult] = useState(false);
-  const [submittingTest, setSubmittingTest] = useState(false);
-  const [lastAttempt, setLastAttempt] = useState<TestAttempt | null>(null);
-
-  const [activeVideo, setActiveVideo] = useState<VideoItem | null>(null);
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('');
+  const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
 
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editorMode, setEditorMode] = useState<EditorMode>('create');
   const [editorEntity, setEditorEntity] = useState<EditorEntity>('snippet');
+  const [editorMode, setEditorMode] = useState<EditorMode>('create');
   const [editingId, setEditingId] = useState<number | null>(null);
 
   const [sectionTitle, setSectionTitle] = useState('');
+  const [sectionDescription, setSectionDescription] = useState('');
   const [sectionIcon, setSectionIcon] = useState('folder');
-  const [sectionParentId, setSectionParentId] = useState<number | null>(null);
+  const [sectionParent, setSectionParent] = useState<number | null>(null);
+  const [sectionUrl, setSectionUrl] = useState('');
+  const [sectionResponsibles, setSectionResponsibles] = useState<number[]>([]);
+  const [sectionCover, setSectionCover] = useState<any>(null);
+  const [sectionFile, setSectionFile] = useState<any>(null);
 
   const [snippetTitle, setSnippetTitle] = useState('');
-  const [snippetCategory, setSnippetCategory] = useState('faq');
   const [snippetContent, setSnippetContent] = useState('');
-  const [snippetSectionId, setSnippetSectionId] = useState<number | null>(null);
+  const [snippetCategory, setSnippetCategory] = useState('faq');
+  const [snippetSection, setSnippetSection] = useState<number | null>(null);
 
-  const [videoTitle, setVideoTitle] = useState('');
-  const [videoDescription, setVideoDescription] = useState('');
-  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [attachmentType, setAttachmentType] = useState<'link' | 'image' | 'file'>('link');
+  const [attachmentTitle, setAttachmentTitle] = useState('');
+  const [attachmentUrl, setAttachmentUrl] = useState('');
+  const [attachmentNote, setAttachmentNote] = useState('');
+  const [attachmentFile, setAttachmentFile] = useState<any>(null);
 
-  const [testTitle, setTestTitle] = useState('');
-  const [testDescription, setTestDescription] = useState('');
-  const [testSectionId, setTestSectionId] = useState<number | null>(null);
-  const [questions, setQuestions] = useState<Question[]>([
-    { text: '', options: ['', '', '', ''], correct: 0, order: 0 },
-  ]);
-
-  const activeVideoMeta = useMemo(
-    () => getYoutubeMeta(activeVideo?.youtube_url),
-    [activeVideo?.youtube_url]
-  );
-
-  const sectionPath = useMemo(
-    () => buildSectionPath(activeSectionId, sections),
-    [activeSectionId, sections]
-  );
-
-  const currentChildSections = useMemo(() => {
-    return sections
-      .filter((section) => {
-        const parent = section.parent ?? null;
-        return parent === activeSectionId && section.is_active !== false;
-      })
-      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || a.title.localeCompare(b.title));
-  }, [sections, activeSectionId]);
+  const [activeTest, setActiveTest] = useState<TestItem | null>(null);
+  const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [testResult, setTestResult] = useState<{ score: number; total: number } | null>(null);
+  const [submittingTest, setSubmittingTest] = useState(false);
 
   const activeSection = useMemo(
     () => sections.find((section) => section.id === activeSectionId) || null,
     [sections, activeSectionId]
   );
 
-  const resetEditor = () => {
-    setEditorMode('create');
-    setEditorEntity('snippet');
-    setEditingId(null);
+  const sectionPath = useMemo(() => buildSectionPath(activeSectionId, sections), [activeSectionId, sections]);
 
-    setSectionTitle('');
-    setSectionIcon('folder');
-    setSectionParentId(activeSectionId);
+  const childSections = useMemo(() => {
+    const list = sections.filter((section) => (section.parent ?? null) === activeSectionId && section.is_active !== false);
+    return list.sort((a, b) => Number(a.order || 0) - Number(b.order || 0) || a.title.localeCompare(b.title));
+  }, [sections, activeSectionId]);
 
-    setSnippetTitle('');
-    setSnippetCategory('faq');
-    setSnippetContent('');
-    setSnippetSectionId(activeSectionId);
+  const filteredSnippets = useMemo(() => {
+    let list = snippets;
 
-    setVideoTitle('');
-    setVideoDescription('');
-    setYoutubeUrl('');
-
-    setTestTitle('');
-    setTestDescription('');
-    setTestSectionId(activeSectionId);
-    setQuestions([{ text: '', options: ['', '', '', ''], correct: 0, order: 0 }]);
-  };
-
-  const openCreate = (entity?: EditorEntity) => {
-    resetEditor();
-
-    if (entity) {
-      setEditorEntity(entity);
-    } else if (activeTab === 'snippets') {
-      setEditorEntity('snippet');
-    } else if (activeTab === 'videos') {
-      setEditorEntity('video');
-    } else if (activeTab === 'tests') {
-      setEditorEntity('test');
+    if (activeSectionId) {
+      list = list.filter((item) => (item.section ?? item.section_data?.id ?? null) === activeSectionId);
+    } else if (sections.length > 0) {
+      list = list.filter((item) => !(item.section ?? item.section_data?.id));
     }
 
-    setEditorMode('create');
-    setEditorOpen(true);
-  };
+    if (category) list = list.filter((item) => item.category === category);
 
-  const openEditSection = (item: KnowledgeSection) => {
-    resetEditor();
-    setEditorMode('edit');
-    setEditorEntity('section');
-    setEditingId(item.id);
-    setSectionTitle(item.title || '');
-    setSectionIcon(item.icon || 'folder');
-    setSectionParentId(item.parent ?? null);
-    setEditorOpen(true);
-  };
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = snippets.filter(
+        (item) =>
+          item.title.toLowerCase().includes(q) ||
+          stripHtml(item.content).toLowerCase().includes(q) ||
+          String(item.section_title || item.section_data?.title || '').toLowerCase().includes(q)
+      );
+    }
 
-  const openEditSnippet = (item: Snippet) => {
-    resetEditor();
-    setEditorMode('edit');
-    setEditorEntity('snippet');
-    setEditingId(item.id);
-    setSnippetTitle(item.title || '');
-    setSnippetCategory(item.category || 'faq');
-    setSnippetContent(item.content || '');
-    setSnippetSectionId(item.section ?? item.section_data?.id ?? null);
-    setEditorOpen(true);
-  };
+    return list;
+  }, [snippets, activeSectionId, category, search, sections.length]);
 
-  const openEditVideo = (item: VideoItem) => {
-    resetEditor();
-    setEditorMode('edit');
-    setEditorEntity('video');
-    setEditingId(item.id);
-    setVideoTitle(item.title || '');
-    setVideoDescription(item.description || '');
-    setYoutubeUrl(item.youtube_url || '');
-    setEditorOpen(true);
-  };
+  const filteredVideos = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return videos;
+    return videos.filter((item) => item.title.toLowerCase().includes(q) || String(item.description || '').toLowerCase().includes(q));
+  }, [videos, search]);
 
-  const openEditTest = (item: TestItem) => {
-    resetEditor();
-    setEditorMode('edit');
-    setEditorEntity('test');
-    setEditingId(item.id);
-    setTestTitle(item.title || '');
-    setTestDescription(item.description || '');
-    setTestSectionId(item.section ?? item.section_data?.id ?? null);
-    setQuestions(
-      (item.questions || []).length
-        ? item.questions.map((q, index) => ({
-            id: q.id,
-            text: q.text || '',
-            options: normalizeOptions(q.options).length
-              ? normalizeOptions(q.options)
-              : ['', '', '', ''],
-            correct: typeof q.correct === 'number' ? q.correct : 0,
-            order: typeof q.order === 'number' ? q.order : index,
-          }))
-        : [{ text: '', options: ['', '', '', ''], correct: 0, order: 0 }]
-    );
-    setEditorOpen(true);
-  };
+  const filteredTests = useMemo(() => {
+    let list = tests;
+
+    if (activeSectionId) {
+      list = list.filter((item) => (item.section ?? item.section_data?.id ?? null) === activeSectionId);
+    } else if (sections.length > 0) {
+      list = list.filter((item) => !(item.section ?? item.section_data?.id));
+    }
+
+    const q = search.trim().toLowerCase();
+    if (q) {
+      list = tests.filter(
+        (item) => item.title.toLowerCase().includes(q) || String(item.description || '').toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [tests, activeSectionId, search, sections.length]);
 
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
 
     try {
-      const cachedSections = await getToken('cache_knowledge_sections');
-      const cachedSnippets = await getToken('cache_snippets');
-      const cachedVideos = await getToken('cache_videos');
-      const cachedTests = await getToken('cache_tests');
+      const [cachedSections, cachedSnippets, cachedVideos, cachedTests] = await Promise.all([
+        getToken('cache_knowledge_sections_v2'),
+        getToken('cache_snippets_v2'),
+        getToken('cache_videos_v2'),
+        getToken('cache_tests_v2'),
+      ]);
 
       if (cachedSections) setSections(JSON.parse(cachedSections));
       if (cachedSnippets) setSnippets(JSON.parse(cachedSnippets));
       if (cachedVideos) setVideos(JSON.parse(cachedVideos));
       if (cachedTests) setTests(JSON.parse(cachedTests));
 
-      const [sectionsRes, snipRes, videoRes, testsRes] = await Promise.allSettled([
-        apiClient.get('documents/knowledge-sections/'),
-        apiClient.get('documents/snippets/'),
-        apiClient.get('gamification/tutorials/'),
-        apiClient.get('documents/knowledge-tests/'),
+      const [sectionsRes, snippetsRes, videosRes, testsRes, usersRes] = await Promise.allSettled([
+        apiClient.get('documents/knowledge-sections/?limit=300&offset=0'),
+        apiClient.get('documents/snippets/?limit=300&offset=0'),
+        apiClient.get('gamification/tutorials/?limit=100&offset=0'),
+        apiClient.get('documents/knowledge-tests/?limit=100&offset=0'),
+        fetchAllPages('users/users/?limit=100&offset=0'),
       ]);
 
       if (sectionsRes.status === 'fulfilled') {
-        const data = sectionsRes.value.data.results ?? sectionsRes.value.data ?? [];
+        const data = extractList(sectionsRes.value.data);
         setSections(data);
-        await saveToken('cache_knowledge_sections', JSON.stringify(data));
-      } else {
-        setSections([]);
+        await saveToken('cache_knowledge_sections_v2', JSON.stringify(data));
       }
 
-      if (snipRes.status === 'fulfilled') {
-        const data = snipRes.value.data.results ?? snipRes.value.data ?? [];
+      if (snippetsRes.status === 'fulfilled') {
+        const data = extractList(snippetsRes.value.data);
         setSnippets(data);
-        await saveToken('cache_snippets', JSON.stringify(data));
+        await saveToken('cache_snippets_v2', JSON.stringify(data));
       }
 
-      if (videoRes.status === 'fulfilled') {
-        const data = videoRes.value.data.results ?? videoRes.value.data ?? [];
+      if (videosRes.status === 'fulfilled') {
+        const data = extractList(videosRes.value.data);
         setVideos(data);
-        await saveToken('cache_videos', JSON.stringify(data));
-      } else {
-        setVideos([]);
+        await saveToken('cache_videos_v2', JSON.stringify(data));
       }
 
       if (testsRes.status === 'fulfilled') {
-        const data = testsRes.value.data.results ?? testsRes.value.data ?? [];
+        const data = extractList(testsRes.value.data);
         setTests(data);
-        await saveToken('cache_tests', JSON.stringify(data));
+        await saveToken('cache_tests_v2', JSON.stringify(data));
       }
-    } catch (e) {
-      console.log('Knowledge base load error', e);
+
+      if (usersRes.status === 'fulfilled') {
+        setUsers(usersRes.value as UserMini[]);
+      }
+    } catch (error) {
+      console.log('Knowledge base load error', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -472,216 +438,144 @@ export default function KnowledgeBaseScreen() {
     loadData();
   }, []);
 
-  const categories = useMemo(
-    () => Array.from(new Set(snippets.map((s) => s.category))).filter(Boolean),
-    [snippets]
-  );
-
-  const filteredSnippets = useMemo(() => {
-    let res = snippets;
-
-    if (activeSectionId) {
-      res = res.filter((s) => (s.section ?? s.section_data?.id ?? null) === activeSectionId);
-    } else if (activeCategory) {
-      res = res.filter((s) => s.category === activeCategory);
-    } else if (sections.length > 0) {
-      res = res.filter((s) => !(s.section ?? s.section_data?.id));
-    }
-
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      res = res.filter(
-        (s) =>
-          String(s.title || '').toLowerCase().includes(q) ||
-          stripHtml(s.content).toLowerCase().includes(q) ||
-          String(s.section_data?.full_path || s.section_data?.title || '').toLowerCase().includes(q)
-      );
-    }
-
-    return res;
-  }, [snippets, sections.length, activeSectionId, activeCategory, search]);
-
-  const filteredVideos = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return videos;
-    return videos.filter(
-      (v) =>
-        String(v.title || '').toLowerCase().includes(q) ||
-        String(v.description || '').toLowerCase().includes(q)
-    );
-  }, [videos, search]);
-
-  const filteredTests = useMemo(() => {
-    let res = tests;
-
-    if (activeSectionId) {
-      res = res.filter((t) => (t.section ?? t.section_data?.id ?? null) === activeSectionId);
-    } else if (sections.length > 0) {
-      res = res.filter((t) => !(t.section ?? t.section_data?.id));
-    }
-
-    const q = search.trim().toLowerCase();
-    if (q) {
-      res = res.filter(
-        (t) =>
-          String(t.title || '').toLowerCase().includes(q) ||
-          String(t.description || '').toLowerCase().includes(q) ||
-          String(t.section_data?.full_path || t.section_data?.title || '').toLowerCase().includes(q)
-      );
-    }
-
-    return res;
-  }, [tests, sections.length, activeSectionId, search]);
-
-  const copySnippet = async (item: Snippet) => {
-    await Clipboard.setStringAsync(stripHtml(item.content));
-    Alert.alert('Скопировано', `"${item.title}" скопировано в буфер обмена.`);
+  const resetEditor = () => {
+    setEditorMode('create');
+    setEditingId(null);
+    setSectionTitle('');
+    setSectionDescription('');
+    setSectionIcon('folder');
+    setSectionParent(activeSectionId);
+    setSectionUrl('');
+    setSectionResponsibles([]);
+    setSectionCover(null);
+    setSectionFile(null);
+    setSnippetTitle('');
+    setSnippetContent('');
+    setSnippetCategory('faq');
+    setSnippetSection(activeSectionId);
+    setAttachmentType('link');
+    setAttachmentTitle('');
+    setAttachmentUrl('');
+    setAttachmentNote('');
+    setAttachmentFile(null);
   };
 
-  const openVideoInBrowser = async (video?: VideoItem | null) => {
-    const url = String(video?.youtube_url || '').trim();
+  const openCreate = (entity: EditorEntity) => {
+    resetEditor();
+    setEditorEntity(entity);
+    setEditorMode('create');
+    setEditorOpen(true);
+  };
 
-    if (!url) {
-      Alert.alert('Видео', 'У этого материала нет ссылки YouTube.');
+  const openEditSection = (section: KnowledgeSection) => {
+    resetEditor();
+    setEditorEntity('section');
+    setEditorMode('edit');
+    setEditingId(section.id);
+    setSectionTitle(section.title || '');
+    setSectionDescription(section.description || '');
+    setSectionIcon(section.icon || 'folder');
+    setSectionParent(section.parent ?? null);
+    setSectionUrl(section.external_url || '');
+    setSectionResponsibles(section.responsible_users || section.responsible_users_data?.map((u) => u.id) || []);
+    setEditorOpen(true);
+  };
+
+  const openEditSnippet = (snippet: Snippet) => {
+    resetEditor();
+    setEditorEntity('snippet');
+    setEditorMode('edit');
+    setEditingId(snippet.id);
+    setSnippetTitle(snippet.title || '');
+    setSnippetContent(snippet.content || '');
+    setSnippetCategory(snippet.category || 'faq');
+    setSnippetSection(snippet.section ?? snippet.section_data?.id ?? null);
+    setEditorOpen(true);
+  };
+
+  const pickSectionCover = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Нет доступа', 'Разреши доступ к галерее.');
       return;
     }
 
-    try {
-      await WebBrowser.openBrowserAsync(url);
-    } catch {
-      Alert.alert('Ошибка', 'Не удалось открыть видео.');
-    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.85,
+      selectionLimit: 1,
+    });
+
+    if (result.canceled || !result.assets?.length) return;
+
+    const asset = result.assets[0];
+    setSectionCover({
+      uri: asset.uri,
+      name: asset.fileName || asset.uri.split('/').pop() || 'cover.jpg',
+      type: asset.mimeType || 'image/jpeg',
+    });
   };
 
-  const openVideo = (video: VideoItem) => {
-    if (!video.youtube_url && !video.video_file) {
-      Alert.alert('Видео', 'У этого материала нет источника.');
+  const pickSectionFile = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, multiple: false });
+    if (result.canceled || !result.assets?.length) return;
+    const asset = result.assets[0];
+    setSectionFile({ uri: asset.uri, name: fileNameFromPicker(asset), type: fileTypeFromPicker(asset) });
+  };
+
+  const pickAttachmentImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Нет доступа', 'Разреши доступ к галерее.');
       return;
     }
 
-    const yt = getYoutubeMeta(video.youtube_url);
-    if (!yt && !video.video_file) {
-      Alert.alert('Видео', 'У этого материала нет источника.');
-      return;
-    }
-
-    setActiveVideo(video);
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85, selectionLimit: 1 });
+    if (result.canceled || !result.assets?.length) return;
+    const asset = result.assets[0];
+    setAttachmentFile({ uri: asset.uri, name: asset.fileName || 'image.jpg', type: asset.mimeType || 'image/jpeg' });
+    setAttachmentType('image');
   };
 
-  const startTest = (test: TestItem) => {
-    setActiveTest(test);
-    setAnswers({});
-    setShowResult(false);
-    setLastAttempt(null);
+  const pickAttachmentFile = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, multiple: false });
+    if (result.canceled || !result.assets?.length) return;
+    const asset = result.assets[0];
+    setAttachmentFile({ uri: asset.uri, name: fileNameFromPicker(asset), type: fileTypeFromPicker(asset) });
+    setAttachmentType('file');
   };
 
-  const score = useMemo(() => {
-    if (!activeTest) return 0;
-
-    let result = 0;
-
-    for (const [index, question] of (activeTest.questions || []).entries()) {
-      const key = question.id ?? index + 100000;
-      if (answers[key] === question.correct) result += 1;
-    }
-
-    return result;
-  }, [activeTest, answers]);
-
-  const submitTestAttempt = async () => {
-    if (!activeTest) return;
-
-    try {
-      setSubmittingTest(true);
-
-      const payloadAnswers: Record<string, number> = {};
-
-      (activeTest.questions || []).forEach((q, index) => {
-        const key = q.id ?? index + 100000;
-        if (typeof answers[key] === 'number' && q.id) {
-          payloadAnswers[String(q.id)] = answers[key];
-        }
-      });
-
-      const response = await apiClient.post(
-        `documents/knowledge-tests/${activeTest.id}/submit/`,
-        { answers: payloadAnswers }
-      );
-
-      setShowResult(true);
-      setLastAttempt(response.data?.attempt || null);
-    } catch (e: any) {
-      Alert.alert('Ошибка', e?.response?.data?.detail || 'Не удалось отправить результат теста.');
-    } finally {
-      setSubmittingTest(false);
-    }
-  };
-
-  const addQuestion = () => {
-    setQuestions((prev) => [
-      ...prev,
-      { text: '', options: ['', '', '', ''], correct: 0, order: prev.length },
-    ]);
-  };
-
-  const removeQuestion = (index: number) => {
-    setQuestions((prev) => {
-      const next = prev.filter((_, i) => i !== index);
-      return next.length ? next : [{ text: '', options: ['', '', '', ''], correct: 0, order: 0 }];
-    });
-  };
-
-  const updateQuestionText = (index: number, value: string) => {
-    setQuestions((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], text: value };
-      return next;
-    });
-  };
-
-  const updateQuestionOption = (qIndex: number, oIndex: number, value: string) => {
-    setQuestions((prev) => {
-      const next = [...prev];
-      const currentOptions = normalizeOptions(next[qIndex].options);
-      while (currentOptions.length < 4) currentOptions.push('');
-      currentOptions[oIndex] = value;
-      next[qIndex] = { ...next[qIndex], options: currentOptions };
-      return next;
-    });
-  };
-
-  const updateQuestionCorrect = (qIndex: number, correctIndex: number) => {
-    setQuestions((prev) => {
-      const next = [...prev];
-      next[qIndex] = { ...next[qIndex], correct: correctIndex };
-      return next;
-    });
+  const toggleResponsible = (id: number) => {
+    setSectionResponsibles((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
   const submitEditor = async () => {
-    if (!isAdmin) return;
-
+    if (!canEdit) return;
     setSaving(true);
 
     try {
       if (editorEntity === 'section') {
         if (!sectionTitle.trim()) {
-          Alert.alert('Ошибка', 'Заполни название раздела.');
+          Alert.alert('Ошибка', 'Напиши название раздела.');
           return;
         }
 
-        const payload = {
-          title: sectionTitle.trim(),
-          icon: sectionIcon,
-          parent: sectionParentId || null,
-          is_active: true,
-          order: 0,
-        };
+        const fd = new FormData();
+        fd.append('title', sectionTitle.trim());
+        fd.append('description', sectionDescription.trim());
+        fd.append('icon', sectionIcon || 'folder');
+        fd.append('parent', sectionParent ? String(sectionParent) : '');
+        fd.append('external_url', sectionUrl.trim());
+        fd.append('is_active', 'true');
+        sectionResponsibles.forEach((id) => fd.append('responsible_users', String(id)));
+        if (sectionCover?.uri) fd.append('cover_image', sectionCover as any);
+        if (sectionFile?.uri) fd.append('file', sectionFile as any);
 
         if (editorMode === 'create') {
-          await apiClient.post('documents/knowledge-sections/', payload);
+          await apiClient.post('documents/knowledge-sections/', fd, { headers: { Accept: 'application/json' } });
         } else {
-          await apiClient.patch(`documents/knowledge-sections/${editingId}/`, payload);
+          await apiClient.patch(`documents/knowledge-sections/${editingId}/`, fd, { headers: { Accept: 'application/json' } });
         }
       }
 
@@ -692,10 +586,11 @@ export default function KnowledgeBaseScreen() {
         }
 
         const payload = {
-          section: snippetSectionId || null,
           title: snippetTitle.trim(),
-          category: snippetCategory || 'faq',
           content: snippetContent.trim(),
+          content_format: 'markdown',
+          category: snippetCategory || 'faq',
+          section: snippetSection || null,
           order: 0,
         };
 
@@ -706,158 +601,125 @@ export default function KnowledgeBaseScreen() {
         }
       }
 
-      if (editorEntity === 'video') {
-        if (!videoTitle.trim() || !youtubeUrl.trim()) {
-          Alert.alert('Ошибка', 'Заполни название и ссылку YouTube.');
+      if (editorEntity === 'attachment') {
+        if (!activeSectionId) {
+          Alert.alert('Ошибка', 'Сначала открой раздел.');
           return;
         }
 
-        const yt = getYoutubeMeta(youtubeUrl.trim());
-        if (!yt) {
-          Alert.alert('Ошибка', 'Ссылка YouTube или Shorts некорректна.');
+        if (attachmentType === 'link' && !attachmentUrl.trim()) {
+          Alert.alert('Ошибка', 'Укажи ссылку.');
           return;
         }
 
-        const payload = {
-          title: videoTitle.trim(),
-          description: videoDescription.trim(),
-          youtube_url: youtubeUrl.trim(),
-        };
-
-        if (editorMode === 'create') {
-          await apiClient.post('gamification/tutorials/', payload);
-        } else {
-          await apiClient.patch(`gamification/tutorials/${editingId}/`, payload);
-        }
-      }
-
-      if (editorEntity === 'test') {
-        if (!testTitle.trim()) {
-          Alert.alert('Ошибка', 'Укажи название теста.');
+        if ((attachmentType === 'image' || attachmentType === 'file') && !attachmentFile?.uri) {
+          Alert.alert('Ошибка', 'Выбери файл или фото.');
           return;
         }
 
-        const preparedQuestions = questions.map((q, index) => ({
-          text: q.text.trim(),
-          options: normalizeOptions(q.options),
-          correct: q.correct,
-          order: index,
-        }));
+        const fd = new FormData();
+        fd.append('section', String(activeSectionId));
+        fd.append('attachment_type', attachmentType);
+        fd.append('title', attachmentTitle.trim());
+        fd.append('note', attachmentNote.trim());
+        if (attachmentType === 'link') fd.append('url', attachmentUrl.trim());
+        else fd.append('file', attachmentFile as any);
 
-        const hasInvalid = preparedQuestions.some(
-          (q) => !q.text || q.options.length < 2 || q.options.some((o) => !String(o).trim())
-        );
-
-        if (hasInvalid) {
-          Alert.alert('Ошибка', 'Заполни вопросы и варианты ответов полностью.');
-          return;
-        }
-
-        const payload = {
-          section: testSectionId || null,
-          title: testTitle.trim(),
-          description: testDescription.trim(),
-          questions: preparedQuestions,
-        };
-
-        if (editorMode === 'create') {
-          await apiClient.post('documents/knowledge-tests/', payload);
-        } else {
-          await apiClient.patch(`documents/knowledge-tests/${editingId}/`, payload);
-        }
+        await apiClient.post('documents/knowledge-section-attachments/', fd, { headers: { Accept: 'application/json' } });
       }
 
       setEditorOpen(false);
       resetEditor();
       await loadData(true);
-      Alert.alert('Готово', editorMode === 'create' ? 'Материал добавлен.' : 'Материал обновлён.');
-    } catch (e: any) {
-      const data = e?.response?.data;
-      const detail =
-        data?.detail ||
-        data?.title?.[0] ||
-        data?.parent?.[0] ||
-        data?.section?.[0] ||
-        data?.questions?.[0] ||
-        'Не удалось сохранить материал.';
-      Alert.alert('Ошибка', detail);
+      Alert.alert('Готово', editorMode === 'create' ? 'Добавлено.' : 'Обновлено.');
+    } catch (error: any) {
+      const data = error?.response?.data;
+      const detail = data?.detail || data?.title?.[0] || data?.file?.[0] || data?.url?.[0] || data?.parent?.[0] || 'Не удалось сохранить.';
+      Alert.alert('Ошибка', String(detail));
     } finally {
       setSaving(false);
     }
   };
 
-  const deleteSection = async (item: KnowledgeSection) => {
-    Alert.alert('Удаление', `Удалить раздел "${item.title}"?`, [
+  const deleteSection = (section: KnowledgeSection) => {
+    if (!isAdmin) return;
+    Alert.alert('Удалить раздел?', section.title, [
       { text: 'Отмена', style: 'cancel' },
       {
         text: 'Удалить',
         style: 'destructive',
         onPress: async () => {
           try {
-            await apiClient.delete(`documents/knowledge-sections/${item.id}/`);
-            if (activeSectionId === item.id) setActiveSectionId(item.parent ?? null);
+            await apiClient.delete(`documents/knowledge-sections/${section.id}/`);
+            if (activeSectionId === section.id) setActiveSectionId(section.parent ?? null);
             await loadData(true);
-          } catch (e: any) {
-            Alert.alert('Ошибка', e?.response?.data?.detail || 'Не удалось удалить раздел.');
+          } catch (error: any) {
+            Alert.alert('Ошибка', error?.response?.data?.detail || 'Удалять может только администратор.');
           }
         },
       },
     ]);
   };
 
-  const deleteSnippet = async (item: Snippet) => {
-    Alert.alert('Удаление', `Удалить "${item.title}"?`, [
+  const deleteSnippet = (snippet: Snippet) => {
+    if (!isAdmin) return;
+    Alert.alert('Удалить запись?', snippet.title, [
       { text: 'Отмена', style: 'cancel' },
       {
         text: 'Удалить',
         style: 'destructive',
         onPress: async () => {
           try {
-            await apiClient.delete(`documents/snippets/${item.id}/`);
-            setSnippets((prev) => prev.filter((x) => x.id !== item.id));
-          } catch (e: any) {
-            Alert.alert('Ошибка', e?.response?.data?.detail || 'Не удалось удалить запись.');
+            await apiClient.delete(`documents/snippets/${snippet.id}/`);
+            await loadData(true);
+          } catch (error: any) {
+            Alert.alert('Ошибка', error?.response?.data?.detail || 'Удалять может только администратор.');
           }
         },
       },
     ]);
   };
 
-  const deleteVideo = async (item: VideoItem) => {
-    Alert.alert('Удаление', `Удалить "${item.title}"?`, [
-      { text: 'Отмена', style: 'cancel' },
-      {
-        text: 'Удалить',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await apiClient.delete(`gamification/tutorials/${item.id}/`);
-            setVideos((prev) => prev.filter((x) => x.id !== item.id));
-          } catch (e: any) {
-            Alert.alert('Ошибка', e?.response?.data?.detail || 'Не удалось удалить видео.');
-          }
-        },
-      },
-    ]);
+  const copySnippet = async (snippet: Snippet) => {
+    await Clipboard.setStringAsync(stripHtml(snippet.content));
+    Alert.alert('Скопировано', snippet.title);
   };
 
-  const deleteTest = async (item: TestItem) => {
-    Alert.alert('Удаление', `Удалить "${item.title}"?`, [
-      { text: 'Отмена', style: 'cancel' },
-      {
-        text: 'Удалить',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await apiClient.delete(`documents/knowledge-tests/${item.id}/`);
-            setTests((prev) => prev.filter((x) => x.id !== item.id));
-          } catch (e: any) {
-            Alert.alert('Ошибка', e?.response?.data?.detail || 'Не удалось удалить тест.');
-          }
-        },
-      },
-    ]);
+  const openUrl = async (url?: string | null) => {
+    if (!url) return;
+    try {
+      await WebBrowser.openBrowserAsync(url);
+    } catch {
+      Alert.alert('Ошибка', 'Не удалось открыть ссылку.');
+    }
   };
+
+  const startTest = (test: TestItem) => {
+    setActiveTest(test);
+    setAnswers({});
+    setTestResult(null);
+  };
+
+  const submitTest = async () => {
+    if (!activeTest) return;
+    setSubmittingTest(true);
+
+    try {
+      const payloadAnswers: Record<string, number> = {};
+      activeTest.questions.forEach((q, index) => {
+        const key = q.id ?? index + 100000;
+        if (q.id && typeof answers[key] === 'number') payloadAnswers[String(q.id)] = answers[key];
+      });
+
+      const response = await apiClient.post(`documents/knowledge-tests/${activeTest.id}/submit/`, { answers: payloadAnswers });
+      setTestResult({ score: response.data?.score ?? 0, total: response.data?.total ?? activeTest.questions.length });
+    } catch (error: any) {
+      Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось отправить тест.');
+    } finally {
+      setSubmittingTest(false);
+    }
+  };
+
   if (loading) {
     return (
       <ScreenWrapper>
@@ -870,30 +732,9 @@ export default function KnowledgeBaseScreen() {
 
   return (
     <ScreenWrapper>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={[styles.backBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
-        >
-          <Ionicons name="arrow-back" size={22} color={theme.text} />
-        </Pressable>
-
-        <Text style={[styles.title, { color: theme.text }]}>База знаний</Text>
-
-        {isAdmin ? (
-          <Pressable
-            onPress={() => openCreate()}
-            style={[styles.addBtn, { backgroundColor: theme.blue }]}
-          >
-            <Ionicons name="add" size={18} color="#fff" />
-          </Pressable>
-        ) : (
-          <View style={{ width: 44 }} />
-        )}
-      </View>
-
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -906,1355 +747,641 @@ export default function KnowledgeBaseScreen() {
           />
         }
       >
-        <View
-          style={[
-            styles.heroCard,
-            {
-              backgroundColor: dark ? 'rgba(18,24,36,0.94)' : '#FFFFFF',
-              borderColor: theme.border,
-              shadowColor: theme.shadow || '#000',
-            },
-          ]}
+        <LinearGradient
+          colors={dark ? ['#111827', '#1E3A8A'] : ['#2563EB', '#60A5FA']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.hero}
         >
           <View style={styles.heroTop}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.heroTitle, { color: theme.text }]}>Материалы для команды</Text>
-              <Text style={[styles.heroSub, { color: theme.textSecondary }]}>
-                Разделы, подразделы, быстрые тексты, видео и тесты в одном месте
-              </Text>
-            </View>
-
-            {isAdmin && (
-              <Pressable
-                onPress={() => openCreate('section')}
-                style={[styles.smallAddSection, { backgroundColor: theme.blueSoft }]}
-              >
-                <Ionicons name="folder-open" size={18} color={theme.blue} />
+            <Pressable onPress={() => router.back()} style={styles.heroBackBtn}>
+              <Ionicons name="arrow-back" size={21} color="#fff" />
+            </Pressable>
+            {canEdit && (
+              <Pressable onPress={() => openCreate('section')} style={styles.heroAddBtn}>
+                <Ionicons name="folder-open-outline" size={17} color="#fff" />
+                <Text style={styles.heroAddText}>Раздел</Text>
               </Pressable>
             )}
           </View>
+
+          <Text style={styles.heroKicker}>Students Life</Text>
+          <Text style={styles.heroTitle}>База знаний</Text>
+          <Text style={styles.heroSubtitle}>Разделы, markdown-инструкции, файлы, фото, ссылки и ответственные сотрудники.</Text>
 
           <View style={styles.heroStats}>
-            <View style={[styles.heroStat, { backgroundColor: theme.backgroundSoft }]}>
-              <Text style={[styles.heroStatValue, { color: theme.text }]}>{sections.length}</Text>
-              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Разделов</Text>
+            <View style={styles.heroStatItem}>
+              <Text style={styles.heroStatValue}>{sections.length}</Text>
+              <Text style={styles.heroStatLabel}>Разделов</Text>
             </View>
-            <View style={[styles.heroStat, { backgroundColor: theme.backgroundSoft }]}>
-              <Text style={[styles.heroStatValue, { color: theme.text }]}>{snippets.length}</Text>
-              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Записей</Text>
+            <View style={styles.heroLine} />
+            <View style={styles.heroStatItem}>
+              <Text style={styles.heroStatValue}>{snippets.length}</Text>
+              <Text style={styles.heroStatLabel}>Материалов</Text>
             </View>
-            <View style={[styles.heroStat, { backgroundColor: theme.backgroundSoft }]}>
-              <Text style={[styles.heroStatValue, { color: theme.text }]}>{tests.length}</Text>
-              <Text style={[styles.heroStatLabel, { color: theme.textSecondary }]}>Тестов</Text>
+            <View style={styles.heroLine} />
+            <View style={styles.heroStatItem}>
+              <Text style={styles.heroStatValue}>{tests.length}</Text>
+              <Text style={styles.heroStatLabel}>Тестов</Text>
             </View>
           </View>
+        </LinearGradient>
+
+        <View style={[styles.tabsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {TABS.map((item) => {
+            const active = tab === item.key;
+            return (
+              <Pressable
+                key={item.key}
+                onPress={() => setTab(item.key)}
+                style={[styles.tabBtn, { backgroundColor: active ? theme.blue : 'transparent' }]}
+              >
+                <Ionicons name={item.icon} size={17} color={active ? '#fff' : theme.blue} />
+                <Text style={[styles.tabText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
+              </Pressable>
+            );
+          })}
         </View>
 
-        <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border, marginBottom: 16 }]}>
-          <Ionicons name="search" size={18} color={theme.textSecondary} />
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Поиск по базе знаний"
-            placeholderTextColor={theme.textMuted}
-            style={[styles.searchInput, { color: theme.text }]}
-          />
-        </View>
-
-        {/* === КНОПКА AI ПОМОЩНИКА === */}
-        <Pressable
-          onPress={() => router.push('/(app)/kb-ai')}
-          style={({ pressed }) => [
-            {
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: theme.blue,
-              padding: 16,
-              borderRadius: 20,
-              marginBottom: 16,
-              opacity: pressed ? 0.8 : 1,
-            },
-          ]}
-        >
-          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#ffffff30', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-            <Ionicons name="sparkles" size={22} color="#fff" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>AI Помощник</Text>
-            <Text style={{ color: '#ffffff90', fontSize: 13, fontWeight: '600', marginTop: 2 }}>Умный поиск по документам</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#ffffff80" />
-        </Pressable>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.tabRow}>
-            {TABS.map((tab) => {
-              const active = activeTab === tab;
-              return (
-                <Pressable
-                  key={tab}
-                  onPress={() => setActiveTab(tab)}
-                  style={[
-                    styles.tabBtn,
-                    {
-                      backgroundColor: active ? theme.blue : theme.surface,
-                      borderColor: active ? theme.blue : theme.border,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={TAB_META[tab].icon}
-                    size={16}
-                    color={active ? '#fff' : theme.textSecondary}
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
-                    {TAB_META[tab].label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
-
-        {(activeTab === 'snippets' || activeTab === 'tests') && sections.length > 0 && (
-          <View style={{ marginTop: 16 }}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.breadcrumbs}>
-                <Pressable
-                  onPress={() => setActiveSectionId(null)}
-                  style={[
-                    styles.breadcrumbChip,
-                    {
-                      backgroundColor: !activeSectionId ? theme.blue : theme.surface,
-                      borderColor: !activeSectionId ? theme.blue : theme.border,
-                    },
-                  ]}
-                >
-                  <Ionicons name="home" size={14} color={!activeSectionId ? '#fff' : theme.text} />
-                  <Text style={[styles.breadcrumbText, { color: !activeSectionId ? '#fff' : theme.text }]}>
-                    Главная
-                  </Text>
-                </Pressable>
-
-                {sectionPath.map((section) => {
-                  const active = section.id === activeSectionId;
-                  return (
-                    <Pressable
-                      key={section.id}
-                      onPress={() => setActiveSectionId(section.id)}
-                      style={[
-                        styles.breadcrumbChip,
-                        {
-                          backgroundColor: active ? theme.blue : theme.surface,
-                          borderColor: active ? theme.blue : theme.border,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name={sectionIconName(section.icon)}
-                        size={14}
-                        color={active ? '#fff' : theme.text}
-                      />
-                      <Text style={[styles.breadcrumbText, { color: active ? '#fff' : theme.text }]}>
-                        {section.title}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
-
-            {!!activeSection && isAdmin && (
-              <View style={styles.sectionAdminRow}>
-                <Pressable
-                  onPress={() => openCreate('section')}
-                  style={[styles.sectionAdminBtn, { backgroundColor: theme.blueSoft, borderColor: theme.border }]}
-                >
-                  <Ionicons name="add" size={16} color={theme.blue} />
-                  <Text style={[styles.sectionAdminText, { color: theme.blue }]}>Подраздел</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => openEditSection(activeSection)}
-                  style={[styles.sectionAdminBtn, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}
-                >
-                  <Ionicons name="create-outline" size={16} color={theme.text} />
-                  <Text style={[styles.sectionAdminText, { color: theme.text }]}>Изменить</Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
-        )}
-
-        {(activeTab === 'snippets' || activeTab === 'tests') && currentChildSections.length > 0 && (
-          <View style={styles.sectionGrid}>
-            {currentChildSections.map((section) => (
-              <Pressable
-                key={section.id}
-                onPress={() => setActiveSectionId(section.id)}
-                style={[
-                  styles.sectionCard,
-                  {
-                    backgroundColor: theme.surface,
-                    borderColor: theme.border,
-                    shadowColor: theme.shadow || '#000',
-                  },
-                ]}
-              >
-                <View style={[styles.sectionIcon, { backgroundColor: theme.blueSoft }]}>
-                  <Ionicons name={sectionIconName(section.icon)} size={22} color={theme.blue} />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.sectionTitle, { color: theme.text }]} numberOfLines={2}>
-                    {section.title}
-                  </Text>
-                  <Text style={[styles.sectionMeta, { color: theme.textSecondary }]}>
-                    Раздел
-                  </Text>
-                </View>
-
-                {isAdmin && (
-                  <AdminActions
-                    theme={theme}
-                    onEdit={() => openEditSection(section)}
-                    onDelete={() => deleteSection(section)}
-                  />
-                )}
+        <View style={[styles.searchCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={[styles.searchBox, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+            <Ionicons name="search" size={18} color={theme.textMuted} />
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Поиск по базе знаний"
+              placeholderTextColor={theme.textMuted}
+              style={[styles.searchInput, { color: theme.text }]}
+            />
+            {!!search && (
+              <Pressable onPress={() => setSearch('')}>
+                <Ionicons name="close-circle" size={18} color={theme.textMuted} />
               </Pressable>
-            ))}
-          </View>
-        )}
-
-        {activeTab === 'snippets' && sections.length === 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
-            <View style={styles.tabRow}>
-              <Pressable
-                onPress={() => setActiveCategory('')}
-                style={[
-                  styles.catBtn,
-                  {
-                    backgroundColor: activeCategory === '' ? theme.blue : theme.surface,
-                    borderColor: activeCategory === '' ? theme.blue : theme.border,
-                  },
-                ]}
-              >
-                <Text style={{ color: activeCategory === '' ? '#fff' : theme.text, fontWeight: '900' }}>
-                  Все
-                </Text>
-              </Pressable>
-
-              {categories.map((cat) => {
-                const active = activeCategory === cat;
-                const meta = CATEGORY_LABELS[cat] || {
-                  label: cat,
-                  icon: 'folder' as keyof typeof Ionicons.glyphMap,
-                };
-
-                return (
-                  <Pressable
-                    key={cat}
-                    onPress={() => setActiveCategory(cat)}
-                    style={[
-                      styles.catBtn,
-                      {
-                        backgroundColor: active ? theme.blue : theme.surface,
-                        borderColor: active ? theme.blue : theme.border,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name={meta.icon}
-                      size={15}
-                      color={active ? '#fff' : theme.textSecondary}
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
-                      {meta.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </ScrollView>
-        )}
-
-        {activeTab === 'snippets' && (
-          <View style={{ gap: 12, marginTop: 16 }}>
-            {filteredSnippets.length === 0 ? (
-              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={{ color: theme.textSecondary }}>В этом разделе пока нет записей.</Text>
-              </View>
-            ) : (
-              filteredSnippets.map((item) => (
-                <View key={item.id} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <View style={styles.cardTopRow}>
-                    <Text style={[styles.cardTitle, { color: theme.text, flex: 1 }]}>{item.title}</Text>
-                    {isAdmin ? (
-                      <AdminActions
-                        theme={theme}
-                        onEdit={() => openEditSnippet(item)}
-                        onDelete={() => deleteSnippet(item)}
-                      />
-                    ) : null}
-                  </View>
-
-                  <Pressable onPress={() => copySnippet(item)}>
-                    <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                      {stripHtml(item.content)}
-                    </Text>
-
-                    <View style={styles.cardFooter}>
-                      <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
-                        {item.section_data?.full_path ||
-                          item.section_data?.title ||
-                          CATEGORY_LABELS[item.category]?.label ||
-                          item.category}
-                      </Text>
-                      <Text style={[styles.copyText, { color: theme.blue }]}>
-                        Нажми, чтобы скопировать
-                      </Text>
-                    </View>
-                  </Pressable>
-                </View>
-              ))
             )}
           </View>
-        )}
 
-        {activeTab === 'videos' && (
-          <View style={{ gap: 12, marginTop: 16 }}>
-            {filteredVideos.length === 0 ? (
-              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={{ color: theme.textSecondary }}>Видео пока нет.</Text>
-              </View>
-            ) : (
-              filteredVideos.map((item) => {
-                const yt = getYoutubeMeta(item.youtube_url);
-                const isShort = !!yt?.isShort;
-
-                return (
-                  <View key={item.id} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                    <View style={styles.cardTopRow}>
-                      <View style={{ flex: 1, paddingRight: 8 }}>
-                        <View style={styles.videoHead}>
-                          <View style={[styles.videoIcon, { backgroundColor: theme.redSoft }]}>
-                            <Ionicons name="play" size={18} color={theme.red} />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.cardTitle, { color: theme.text }]}>{item.title}</Text>
-                            <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
-                              {item.youtube_url
-                                ? isShort
-                                  ? 'YouTube Shorts'
-                                  : 'YouTube'
-                                : item.video_file
-                                ? 'Встроенное видео'
-                                : 'Без ссылки'}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-
-                      {isAdmin ? (
-                        <AdminActions
-                          theme={theme}
-                          onEdit={() => openEditVideo(item)}
-                          onDelete={() => deleteVideo(item)}
-                        />
-                      ) : null}
-                    </View>
-
-                    <Pressable onPress={() => openVideo(item)}>
-                      {!!item.description && (
-                        <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                          {item.description}
-                        </Text>
-                      )}
-                      <Text style={[styles.copyText, { color: theme.blue }]}>Открыть видео</Text>
-                    </Pressable>
-                  </View>
-                );
-              })
-            )}
-          </View>
-        )}
-
-        {activeTab === 'tests' && (
-          <View style={{ gap: 12, marginTop: 16 }}>
-            {filteredTests.length === 0 ? (
-              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={{ color: theme.textSecondary }}>В этом разделе пока нет тестов.</Text>
-              </View>
-            ) : (
-              filteredTests.map((item) => (
-                <Pressable
-                  key={item.id}
-                  onPress={() => startTest(item)}
-                  style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                >
-                  <View style={styles.cardTopRow}>
-                    <View style={{ flex: 1, paddingRight: 8 }}>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>{item.title}</Text>
-                      {!!item.description && (
-                        <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                          {item.description}
-                        </Text>
-                      )}
-                      <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
-                        {item.section_data?.full_path || item.section_data?.title || 'Без раздела'}
-                      </Text>
-                      <Text style={[styles.copyText, { color: theme.blue }]}>Открыть тест</Text>
-                    </View>
-
-                    {isAdmin ? (
-                      <AdminActions
-                        theme={theme}
-                        onEdit={() => openEditTest(item)}
-                        onDelete={() => deleteTest(item)}
-                      />
-                    ) : null}
-                  </View>
-                </Pressable>
-              ))
-            )}
-          </View>
-        )}
-
-        <View style={{ height: 50 }} />
-      </ScrollView>
-
-      <Modal visible={!!activeVideo} animationType="slide" onRequestClose={() => setActiveVideo(null)}>
-        <ScreenWrapper>
-          <View style={styles.header}>
-            <Pressable
-              onPress={() => setActiveVideo(null)}
-              style={[styles.backBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            >
-              <Ionicons name="close" size={22} color={theme.text} />
-            </Pressable>
-
-            <Text style={[styles.title, { color: theme.text }]}>Видео</Text>
-            <View style={{ width: 44 }} />
-          </View>
-
-          <ScrollView contentContainerStyle={styles.videoModalContent} showsVerticalScrollIndicator={false}>
-            {!!activeVideo?.title && (
-              <Text style={[styles.cardTitle, { color: theme.text, marginBottom: 12 }]}>
-                {activeVideo.title}
-              </Text>
-            )}
-
-            {activeVideoMeta ? (
-              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                  YouTube и Shorts открываются через встроенный браузер приложения. Так стабильнее на телефоне.
-                </Text>
-
-                <Pressable
-                  onPress={() => openVideoInBrowser(activeVideo)}
-                  style={[styles.submitBtn, { backgroundColor: theme.blue, marginTop: 14 }]}
-                >
-                  <Text style={styles.submitBtnText}>Открыть видео</Text>
-                </Pressable>
-              </View>
-            ) : activeVideo?.video_file ? (
-              <Video
-                source={{ uri: activeVideo.video_file }}
-                style={styles.nativeVideo}
-                useNativeControls
-                resizeMode={ResizeMode.CONTAIN}
-                shouldPlay={false}
-              />
-            ) : (
-              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <Text style={{ color: theme.textSecondary }}>У видео нет источника.</Text>
-              </View>
-            )}
-
-            {!!activeVideo?.description && (
-              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 16 }]}>
-                <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                  {activeVideo.description}
-                </Text>
-              </View>
-            )}
-          </ScrollView>
-        </ScreenWrapper>
-      </Modal>
-
-      <Modal visible={!!activeTest} animationType="slide" onRequestClose={() => setActiveTest(null)}>
-        <ScreenWrapper>
-          <View style={styles.header}>
-            <Pressable
-              onPress={() => {
-                setActiveTest(null);
-                setShowResult(false);
-                setLastAttempt(null);
-              }}
-              style={[styles.backBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            >
-              <Ionicons name="close" size={22} color={theme.text} />
-            </Pressable>
-
-            <Text style={[styles.title, { color: theme.text }]}>Тест</Text>
-            <View style={{ width: 44 }} />
-          </View>
-
-          <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-            {activeTest && (
-              <>
-                <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <Text style={[styles.cardTitle, { color: theme.text }]}>{activeTest.title}</Text>
-                  {!!activeTest.description && (
-                    <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                      {activeTest.description}
-                    </Text>
-                  )}
-                </View>
-
-                {(activeTest.questions || []).map((q, index) => {
-                  const options = normalizeOptions(q.options);
-                  const questionKey = q.id ?? index + 100000;
-
-                  return (
-                    <View
-                      key={questionKey}
-                      style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                    >
-                      <Text style={[styles.questionIndex, { color: theme.blue }]}>
-                        Вопрос {index + 1}
-                      </Text>
-                      <Text style={[styles.questionText, { color: theme.text }]}>{q.text}</Text>
-
-                      <View style={{ gap: 10, marginTop: 14 }}>
-                        {options.map((opt, optIndex) => {
-                          const chosen = answers[questionKey] === optIndex;
-                          const reveal = showResult;
-                          const correct = q.correct === optIndex;
-
-                          return (
-                            <Pressable
-                              key={`${questionKey}-${optIndex}`}
-                              onPress={() =>
-                                !showResult &&
-                                setAnswers((prev) => ({ ...prev, [questionKey]: optIndex }))
-                              }
-                              style={[
-                                styles.optionBtn,
-                                {
-                                  backgroundColor: chosen ? theme.blueSoft : theme.backgroundSoft,
-                                  borderColor: chosen ? theme.blue : theme.border,
-                                },
-                                reveal &&
-                                  correct && {
-                                    backgroundColor: '#EAF8EF',
-                                    borderColor: theme.success,
-                                  },
-                                reveal &&
-                                  chosen &&
-                                  !correct && {
-                                    backgroundColor: theme.redSoft,
-                                    borderColor: theme.red,
-                                  },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.optionText,
-                                  { color: chosen ? theme.blue : theme.text },
-                                  reveal && correct && { color: theme.success },
-                                  reveal && chosen && !correct && { color: theme.red },
-                                ]}
-                              >
-                                {opt}
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    </View>
-                  );
-                })}
-
-                {!showResult ? (
-                  <Pressable
-                    onPress={submitTestAttempt}
-                    style={[styles.submitBtn, { backgroundColor: theme.blue }]}
-                  >
-                    <Text style={styles.submitBtnText}>
-                      {submittingTest ? 'Отправка...' : 'Проверить ответы'}
-                    </Text>
-                  </Pressable>
-                ) : (
-                  <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                    <Text style={[styles.cardTitle, { color: theme.text }]}>
-                      Результат: {lastAttempt?.score ?? score} / {lastAttempt?.total ?? (activeTest.questions?.length || 0)}
-                    </Text>
-                    <Text style={[styles.cardText, { color: theme.textSecondary }]}>
-                      {(lastAttempt?.score ?? score) ===
-                      (lastAttempt?.total ?? (activeTest.questions?.length || 0))
-                        ? 'Отлично. Всё правильно.'
-                        : 'Проверь ошибки и попробуй ещё раз.'}
-                    </Text>
-
-                    {lastAttempt ? (
-                      <Text style={[styles.cardMeta, { color: theme.textSecondary, marginTop: 10 }]}>
-                        Сохранено: {lastAttempt.percent}% ·{' '}
-                        {new Date(lastAttempt.completed_at).toLocaleString('ru-RU')}
-                      </Text>
-                    ) : null}
-                  </View>
-                )}
-              </>
-            )}
-          </ScrollView>
-        </ScreenWrapper>
-      </Modal>
-
-      <Modal visible={editorOpen} animationType="slide" onRequestClose={() => setEditorOpen(false)}>
-        <ScreenWrapper>
-          <View style={styles.header}>
-            <Pressable
-              onPress={() => {
-                setEditorOpen(false);
-                resetEditor();
-              }}
-              style={[styles.backBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            >
-              <Ionicons name="close" size={22} color={theme.text} />
-            </Pressable>
-
-            <Text style={[styles.title, { color: theme.text }]}>
-              {editorMode === 'create' ? 'Создать' : 'Редактировать'}
-            </Text>
-            <View style={{ width: 44 }} />
-          </View>
-
-          <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-            <View style={styles.tabRow}>
-              {[
-                { key: 'section', label: 'Раздел' },
-                { key: 'snippet', label: 'Инфа' },
-                { key: 'video', label: 'Видео' },
-                { key: 'test', label: 'Тест' },
-              ].map((item) => {
-                const active = editorEntity === item.key;
+          {tab === 'knowledge' && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+              {CATEGORIES.map((item) => {
+                const active = category === item.key;
                 return (
                   <Pressable
                     key={item.key}
-                    onPress={() =>
-                      editorMode === 'create' && setEditorEntity(item.key as EditorEntity)
-                    }
-                    style={[
-                      styles.tabBtn,
-                      {
-                        backgroundColor: active ? theme.blue : theme.surface,
-                        borderColor: active ? theme.blue : theme.border,
-                        opacity: editorMode === 'edit' && !active ? 0.45 : 1,
-                      },
-                    ]}
+                    onPress={() => setCategory(item.key)}
+                    style={[styles.filterPill, { backgroundColor: active ? theme.blue : theme.backgroundSoft, borderColor: active ? theme.blue : theme.border }]}
                   >
-                    <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
-                      {item.label}
-                    </Text>
+                    <Ionicons name={item.icon} size={15} color={active ? '#fff' : theme.blue} />
+                    <Text style={[styles.filterText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
                   </Pressable>
                 );
               })}
+            </ScrollView>
+          )}
+        </View>
+
+        {sectionPath.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.breadcrumbRow}>
+            <Pressable onPress={() => setActiveSectionId(null)} style={[styles.breadcrumbPill, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+              <Text style={[styles.breadcrumbText, { color: theme.textSecondary }]}>Главная</Text>
+            </Pressable>
+            {sectionPath.map((section) => (
+              <Pressable key={section.id} onPress={() => setActiveSectionId(section.id)} style={[styles.breadcrumbPill, { backgroundColor: theme.blueSoft, borderColor: theme.border }]}>
+                <Text style={[styles.breadcrumbText, { color: theme.blue }]}>{section.title}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+
+        {tab === 'knowledge' && activeSection && (
+          <View style={[styles.sectionInfoCard, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
+            {activeSection.cover_image_url ? <Image source={{ uri: activeSection.cover_image_url }} style={styles.sectionCover} contentFit="cover" /> : null}
+            <View style={styles.sectionInfoTop}>
+              <View style={[styles.sectionInfoIcon, { backgroundColor: theme.blueSoft }]}>
+                <Ionicons name={iconOf(activeSection.icon)} size={22} color={theme.blue} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionInfoTitle, { color: theme.text }]}>{activeSection.title}</Text>
+                {!!activeSection.full_path && <Text style={[styles.sectionInfoSub, { color: theme.textSecondary }]}>{activeSection.full_path}</Text>}
+              </View>
+              {canEdit && (
+                <Pressable onPress={() => openEditSection(activeSection)} style={[styles.smallIconBtn, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                  <Ionicons name="create-outline" size={17} color={theme.blue} />
+                </Pressable>
+              )}
             </View>
 
-            {editorEntity === 'section' && (
-              <View style={{ marginTop: 16, gap: 12 }}>
-                <TextInput
-                  value={sectionTitle}
-                  onChangeText={setSectionTitle}
-                  placeholder="Название раздела"
-                  placeholderTextColor={theme.textMuted}
-                  style={[
-                    styles.input,
-                    { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface },
-                  ]}
-                />
+            {!!activeSection.description && <Markdown style={markdownStyles(theme) as any}>{activeSection.description}</Markdown>}
 
-                <Text style={[styles.editorLabel, { color: theme.textSecondary }]}>Иконка</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.tabRow}>
+            {(activeSection.responsible_users_data || []).length > 0 && (
+              <View style={styles.responsibleRow}>
+                <MiniAvatarStack users={activeSection.responsible_users_data} theme={theme} />
+                <Text style={[styles.responsibleText, { color: theme.textSecondary }]} numberOfLines={1}>
+                  Ответственные: {(activeSection.responsible_users_data || []).map(userName).join(', ')}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.sectionLinkRow}>
+              {!!activeSection.file_url && (
+                <Pressable onPress={() => openUrl(activeSection.file_url)} style={[styles.resourcePill, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                  <Ionicons name="document-outline" size={15} color={theme.blue} />
+                  <Text style={[styles.resourceText, { color: theme.text }]}>Файл раздела</Text>
+                </Pressable>
+              )}
+              {!!activeSection.external_url && (
+                <Pressable onPress={() => openUrl(activeSection.external_url)} style={[styles.resourcePill, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                  <Ionicons name="link-outline" size={15} color={theme.blue} />
+                  <Text style={[styles.resourceText, { color: theme.text }]}>Ссылка</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
+
+        {tab === 'knowledge' && (
+          <View style={styles.actionRow}>
+            {canEdit && (
+              <>
+                <Pressable onPress={() => openCreate('section')} style={[styles.actionBtn, { backgroundColor: theme.blue }]}>
+                  <Ionicons name="folder-open-outline" size={18} color="#fff" />
+                  <Text style={styles.actionText}>Раздел</Text>
+                </Pressable>
+                <Pressable onPress={() => openCreate('snippet')} style={[styles.actionBtn, { backgroundColor: '#1AAE6F' }]}>
+                  <Ionicons name="document-text-outline" size={18} color="#fff" />
+                  <Text style={styles.actionText}>Материал</Text>
+                </Pressable>
+                {activeSectionId && (
+                  <Pressable onPress={() => openCreate('attachment')} style={[styles.actionBtn, { backgroundColor: '#F59E0B' }]}>
+                    <Ionicons name="attach-outline" size={18} color="#fff" />
+                    <Text style={styles.actionText}>Файл</Text>
+                  </Pressable>
+                )}
+              </>
+            )}
+          </View>
+        )}
+
+        {tab === 'knowledge' && childSections.length > 0 && (
+          <>
+            <Text style={[styles.bigTitle, { color: theme.text }]}>Разделы</Text>
+            {childSections.map((section) => (
+              <Pressable key={section.id} onPress={() => setActiveSectionId(section.id)} style={[styles.sectionCard, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
+                {section.cover_image_url ? <Image source={{ uri: section.cover_image_url }} style={styles.sectionCardImage} contentFit="cover" /> : null}
+                <View style={styles.sectionCardBody}>
+                  <View style={[styles.sectionIcon, { backgroundColor: theme.blueSoft }]}>
+                    <Ionicons name={iconOf(section.icon)} size={21} color={theme.blue} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>{section.title}</Text>
+                    {!!section.description && <Text style={[styles.sectionDescription, { color: theme.textSecondary }]} numberOfLines={2}>{stripHtml(section.description)}</Text>}
+                    {(section.responsible_users_data || []).length > 0 && <MiniAvatarStack users={section.responsible_users_data} theme={theme} />}
+                  </View>
+                  <View style={styles.cardRightActions}>
+                    {canEdit && (
+                      <Pressable onPress={() => openEditSection(section)} style={[styles.smallIconBtn, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                        <Ionicons name="create-outline" size={16} color={theme.blue} />
+                      </Pressable>
+                    )}
+                    {isAdmin && (
+                      <Pressable onPress={() => deleteSection(section)} style={[styles.smallIconBtn, { backgroundColor: theme.redSoft, borderColor: theme.border }]}>
+                        <Ionicons name="trash-outline" size={16} color={theme.red} />
+                      </Pressable>
+                    )}
+                    <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+                  </View>
+                </View>
+              </Pressable>
+            ))}
+          </>
+        )}
+
+        {tab === 'knowledge' && activeSection && (activeSection.attachments || []).length > 0 && (
+          <>
+            <Text style={[styles.bigTitle, { color: theme.text }]}>Файлы, фото и ссылки</Text>
+            {(activeSection.attachments || []).map((item) => (
+              <Pressable key={item.id} onPress={() => openUrl(item.file_url || item.url)} style={[styles.attachmentCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <View style={[styles.attachmentIcon, { backgroundColor: theme.blueSoft }]}>
+                  <Ionicons name={item.attachment_type === 'image' ? 'image-outline' : item.attachment_type === 'link' ? 'link-outline' : 'document-outline'} size={19} color={theme.blue} />
+                </View>
+                {item.attachment_type === 'image' && item.file_url ? <Image source={{ uri: item.file_url }} style={styles.attachmentImage} contentFit="cover" /> : null}
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.attachmentTitle, { color: theme.text }]}>{item.title || item.url || 'Материал'}</Text>
+                  {!!item.note && <Text style={[styles.attachmentNote, { color: theme.textSecondary }]} numberOfLines={2}>{item.note}</Text>}
+                </View>
+                <Ionicons name="open-outline" size={18} color={theme.textMuted} />
+              </Pressable>
+            ))}
+          </>
+        )}
+
+        {tab === 'knowledge' && (
+          <>
+            <Text style={[styles.bigTitle, { color: theme.text }]}>Материалы</Text>
+            {filteredSnippets.length === 0 ? (
+              <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Ionicons name="document-text-outline" size={34} color={theme.textMuted} />
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Материалов в этом разделе пока нет.</Text>
+              </View>
+            ) : (
+              filteredSnippets.map((snippet) => (
+                <View key={snippet.id} style={[styles.snippetCard, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
+                  <View style={styles.snippetTop}>
+                    <View style={[styles.snippetIcon, { backgroundColor: theme.blueSoft }]}>
+                      <Ionicons name="document-text-outline" size={19} color={theme.blue} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.snippetTitle, { color: theme.text }]}>{snippet.title}</Text>
+                      <Text style={[styles.snippetMeta, { color: theme.textSecondary }]}>{snippet.section_title || snippet.section_data?.title || 'Без раздела'} · {snippet.category}</Text>
+                    </View>
+                    <Pressable onPress={() => copySnippet(snippet)} style={[styles.smallIconBtn, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                      <Ionicons name="copy-outline" size={16} color={theme.blue} />
+                    </Pressable>
+                    {canEdit && (
+                      <Pressable onPress={() => openEditSnippet(snippet)} style={[styles.smallIconBtn, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                        <Ionicons name="create-outline" size={16} color={theme.blue} />
+                      </Pressable>
+                    )}
+                    {isAdmin && (
+                      <Pressable onPress={() => deleteSnippet(snippet)} style={[styles.smallIconBtn, { backgroundColor: theme.redSoft, borderColor: theme.border }]}>
+                        <Ionicons name="trash-outline" size={16} color={theme.red} />
+                      </Pressable>
+                    )}
+                  </View>
+                  <Markdown style={markdownStyles(theme) as any}>{snippet.content || ''}</Markdown>
+                </View>
+              ))
+            )}
+          </>
+        )}
+
+        {tab === 'videos' && (
+          <>
+            {filteredVideos.length === 0 ? (
+              <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Ionicons name="play-circle-outline" size={34} color={theme.textMuted} />
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Видео пока нет.</Text>
+              </View>
+            ) : (
+              filteredVideos.map((video) => (
+                <Pressable key={video.id} onPress={() => openUrl(getYoutubeUrl(video.youtube_url) || video.video_file)} style={[styles.videoCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <View style={[styles.videoIcon, { backgroundColor: theme.blueSoft }]}>
+                    <Ionicons name="play" size={22} color={theme.blue} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.videoTitle, { color: theme.text }]}>{video.title}</Text>
+                    {!!video.description && <Text style={[styles.videoDescription, { color: theme.textSecondary }]} numberOfLines={2}>{video.description}</Text>}
+                  </View>
+                  <Ionicons name="open-outline" size={18} color={theme.textMuted} />
+                </Pressable>
+              ))
+            )}
+          </>
+        )}
+
+        {tab === 'tests' && (
+          <>
+            {filteredTests.length === 0 ? (
+              <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Ionicons name="checkmark-done-circle-outline" size={34} color={theme.textMuted} />
+                <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Тестов пока нет.</Text>
+              </View>
+            ) : (
+              filteredTests.map((test) => (
+                <Pressable key={test.id} onPress={() => startTest(test)} style={[styles.testCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <View style={[styles.testIcon, { backgroundColor: theme.blueSoft }]}>
+                    <Ionicons name="checkmark-done-circle-outline" size={21} color={theme.blue} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.testTitle, { color: theme.text }]}>{test.title}</Text>
+                    {!!test.description && <Text style={[styles.testDescription, { color: theme.textSecondary }]} numberOfLines={2}>{test.description}</Text>}
+                    <Text style={[styles.testMeta, { color: theme.textMuted }]}>{test.questions?.length || 0} вопросов</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+                </Pressable>
+              ))
+            )}
+          </>
+        )}
+      </ScrollView>
+
+      <Modal visible={editorOpen} animationType="slide" transparent onRequestClose={() => setEditorOpen(false)}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={[styles.modalCard, { backgroundColor: theme.card || theme.surface, borderColor: theme.border }]}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>
+                  {editorMode === 'create' ? 'Добавить' : 'Редактировать'} {editorEntity === 'section' ? 'раздел' : editorEntity === 'snippet' ? 'материал' : 'файл/ссылку'}
+                </Text>
+                <Text style={[styles.modalSub, { color: theme.textSecondary }]}>Markdown поддерживается в описаниях и материалах</Text>
+              </View>
+              <Pressable onPress={() => setEditorOpen(false)} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
+                <Ionicons name="close" size={20} color={theme.text} />
+              </Pressable>
+            </View>
+
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
+              {editorEntity === 'section' && (
+                <>
+                  <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название раздела</Text>
+                    <TextInput value={sectionTitle} onChangeText={setSectionTitle} placeholder="Например: Визы" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
+                  </View>
+                  <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Описание Markdown</Text>
+                    <TextInput value={sectionDescription} onChangeText={setSectionDescription} placeholder={'## Описание\n- правила\n- ссылки\n**важное**'} placeholderTextColor={theme.textMuted} style={[styles.input, styles.textarea, { color: theme.text }]} multiline textAlignVertical="top" />
+                  </View>
+
+                  <Text style={[styles.modalBlockTitle, { color: theme.text }]}>Иконка</Text>
+                  <View style={styles.wrapRow}>
                     {SECTION_ICONS.map((item) => {
                       const active = sectionIcon === item.key;
                       return (
-                        <Pressable
-                          key={item.key}
-                          onPress={() => setSectionIcon(item.key)}
-                          style={[
-                            styles.catBtn,
-                            {
-                              backgroundColor: active ? theme.blue : theme.surface,
-                              borderColor: active ? theme.blue : theme.border,
-                            },
-                          ]}
-                        >
-                          <Ionicons
-                            name={item.icon}
-                            size={15}
-                            color={active ? '#fff' : theme.textSecondary}
-                            style={{ marginRight: 6 }}
-                          />
-                          <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
-                            {item.label}
-                          </Text>
+                        <Pressable key={item.key} onPress={() => setSectionIcon(item.key)} style={[styles.choicePill, { backgroundColor: active ? theme.blue : theme.backgroundSoft, borderColor: active ? theme.blue : theme.border }]}>
+                          <Ionicons name={item.icon} size={15} color={active ? '#fff' : theme.blue} />
+                          <Text style={[styles.choiceText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
                         </Pressable>
                       );
                     })}
                   </View>
-                </ScrollView>
 
-                <Text style={[styles.editorLabel, { color: theme.textSecondary }]}>Родительский раздел</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.tabRow}>
-                    <Pressable
-                      onPress={() => setSectionParentId(null)}
-                      style={[
-                        styles.catBtn,
-                        {
-                          backgroundColor: sectionParentId === null ? theme.blue : theme.surface,
-                          borderColor: sectionParentId === null ? theme.blue : theme.border,
-                        },
-                      ]}
-                    >
-                      <Text style={{ color: sectionParentId === null ? '#fff' : theme.text, fontWeight: '900' }}>
-                        Главная
-                      </Text>
+                  <Text style={[styles.modalBlockTitle, { color: theme.text }]}>Родительский раздел</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+                    <Pressable onPress={() => setSectionParent(null)} style={[styles.choicePill, { backgroundColor: sectionParent === null ? theme.blue : theme.backgroundSoft, borderColor: sectionParent === null ? theme.blue : theme.border }]}>
+                      <Text style={[styles.choiceText, { color: sectionParent === null ? '#fff' : theme.text }]}>Главная</Text>
                     </Pressable>
+                    {sections.filter((s) => s.id !== editingId).map((section) => (
+                      <Pressable key={section.id} onPress={() => setSectionParent(section.id)} style={[styles.choicePill, { backgroundColor: sectionParent === section.id ? theme.blue : theme.backgroundSoft, borderColor: sectionParent === section.id ? theme.blue : theme.border }]}>
+                        <Text style={[styles.choiceText, { color: sectionParent === section.id ? '#fff' : theme.text }]}>{section.title}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
 
-                    {sections
-                      .filter((section) => section.id !== editingId)
-                      .map((section) => {
-                        const active = sectionParentId === section.id;
-                        return (
-                          <Pressable
-                            key={section.id}
-                            onPress={() => setSectionParentId(section.id)}
-                            style={[
-                              styles.catBtn,
-                              {
-                                backgroundColor: active ? theme.blue : theme.surface,
-                                borderColor: active ? theme.blue : theme.border,
-                              },
-                            ]}
-                          >
-                            <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
-                              {section.full_path || section.title}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
+                  <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Ссылка раздела</Text>
+                    <TextInput value={sectionUrl} onChangeText={setSectionUrl} placeholder="https://..." placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} autoCapitalize="none" keyboardType="url" />
                   </View>
-                </ScrollView>
-              </View>
-            )}
 
-            {editorEntity === 'snippet' && (
-              <View style={{ marginTop: 16, gap: 12 }}>
-                <TextInput
-                  value={snippetTitle}
-                  onChangeText={setSnippetTitle}
-                  placeholder="Название"
-                  placeholderTextColor={theme.textMuted}
-                  style={[
-                    styles.input,
-                    { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface },
-                  ]}
-                />
-
-                <Text style={[styles.editorLabel, { color: theme.textSecondary }]}>Раздел</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.tabRow}>
-                    <Pressable
-                      onPress={() => setSnippetSectionId(null)}
-                      style={[
-                        styles.catBtn,
-                        {
-                          backgroundColor: snippetSectionId === null ? theme.blue : theme.surface,
-                          borderColor: snippetSectionId === null ? theme.blue : theme.border,
-                        },
-                      ]}
-                    >
-                      <Text style={{ color: snippetSectionId === null ? '#fff' : theme.text, fontWeight: '900' }}>
-                        Без раздела
-                      </Text>
+                  <View style={styles.actionRow}>
+                    <Pressable onPress={pickSectionCover} style={[styles.modalActionBtn, { backgroundColor: theme.blueSoft }]}>
+                      <Ionicons name="image-outline" size={17} color={theme.blue} />
+                      <Text style={[styles.modalActionText, { color: theme.blue }]}>{sectionCover?.name || 'Фото'}</Text>
                     </Pressable>
-
-                    {sections.map((section) => {
-                      const active = snippetSectionId === section.id;
-                      return (
-                        <Pressable
-                          key={section.id}
-                          onPress={() => setSnippetSectionId(section.id)}
-                          style={[
-                            styles.catBtn,
-                            {
-                              backgroundColor: active ? theme.blue : theme.surface,
-                              borderColor: active ? theme.blue : theme.border,
-                            },
-                          ]}
-                        >
-                          <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
-                            {section.full_path || section.title}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </ScrollView>
-
-                <Text style={[styles.editorLabel, { color: theme.textSecondary }]}>Старая категория</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.tabRow}>
-                    {['script', 'faq', 'requisites', 'links'].map((cat) => {
-                      const active = snippetCategory === cat;
-                      return (
-                        <Pressable
-                          key={cat}
-                          onPress={() => setSnippetCategory(cat)}
-                          style={[
-                            styles.catBtn,
-                            {
-                              backgroundColor: active ? theme.blue : theme.surface,
-                              borderColor: active ? theme.blue : theme.border,
-                            },
-                          ]}
-                        >
-                          <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
-                            {CATEGORY_LABELS[cat]?.label || cat}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </ScrollView>
-
-                <TextInput
-                  value={snippetContent}
-                  onChangeText={setSnippetContent}
-                  placeholder="Текст для быстрого копирования"
-                  placeholderTextColor={theme.textMuted}
-                  multiline
-                  style={[
-                    styles.input,
-                    styles.textarea,
-                    { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface },
-                  ]}
-                />
-              </View>
-            )}
-
-            {editorEntity === 'video' && (
-              <View style={{ marginTop: 16, gap: 12 }}>
-                <TextInput
-                  value={videoTitle}
-                  onChangeText={setVideoTitle}
-                  placeholder="Название видео"
-                  placeholderTextColor={theme.textMuted}
-                  style={[
-                    styles.input,
-                    { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface },
-                  ]}
-                />
-
-                <TextInput
-                  value={videoDescription}
-                  onChangeText={setVideoDescription}
-                  placeholder="Описание"
-                  placeholderTextColor={theme.textMuted}
-                  multiline
-                  style={[
-                    styles.input,
-                    styles.textareaSmall,
-                    { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface },
-                  ]}
-                />
-
-                <TextInput
-                  value={youtubeUrl}
-                  onChangeText={setYoutubeUrl}
-                  placeholder="Ссылка YouTube или Shorts"
-                  placeholderTextColor={theme.textMuted}
-                  style={[
-                    styles.input,
-                    { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface },
-                  ]}
-                />
-
-                {!!youtubeUrl.trim() && (
-                  <View style={[styles.previewCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                    <Text style={[styles.previewTitle, { color: theme.text }]}>Предпросмотр ссылки</Text>
-                    <Text style={[styles.previewText, { color: theme.textSecondary }]}>
-                      {getYoutubeMeta(youtubeUrl)?.isShort
-                        ? 'Определено как Shorts'
-                        : getYoutubeMeta(youtubeUrl)
-                        ? 'Определено как YouTube-видео'
-                        : 'Ссылка пока не распознана'}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
-
-            {editorEntity === 'test' && (
-              <View style={{ marginTop: 16, gap: 12 }}>
-                <TextInput
-                  value={testTitle}
-                  onChangeText={setTestTitle}
-                  placeholder="Название теста"
-                  placeholderTextColor={theme.textMuted}
-                  style={[
-                    styles.input,
-                    { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface },
-                  ]}
-                />
-
-                <TextInput
-                  value={testDescription}
-                  onChangeText={setTestDescription}
-                  placeholder="Описание теста"
-                  placeholderTextColor={theme.textMuted}
-                  multiline
-                  style={[
-                    styles.input,
-                    styles.textareaSmall,
-                    { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface },
-                  ]}
-                />
-
-                <Text style={[styles.editorLabel, { color: theme.textSecondary }]}>Раздел</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.tabRow}>
-                    <Pressable
-                      onPress={() => setTestSectionId(null)}
-                      style={[
-                        styles.catBtn,
-                        {
-                          backgroundColor: testSectionId === null ? theme.blue : theme.surface,
-                          borderColor: testSectionId === null ? theme.blue : theme.border,
-                        },
-                      ]}
-                    >
-                      <Text style={{ color: testSectionId === null ? '#fff' : theme.text, fontWeight: '900' }}>
-                        Без раздела
-                      </Text>
+                    <Pressable onPress={pickSectionFile} style={[styles.modalActionBtn, { backgroundColor: theme.blueSoft }]}>
+                      <Ionicons name="document-outline" size={17} color={theme.blue} />
+                      <Text style={[styles.modalActionText, { color: theme.blue }]}>{sectionFile?.name || 'Файл'}</Text>
                     </Pressable>
+                  </View>
 
-                    {sections.map((section) => {
-                      const active = testSectionId === section.id;
+                  <Text style={[styles.modalBlockTitle, { color: theme.text }]}>Ответственные сотрудники</Text>
+                  <View style={styles.wrapRow}>
+                    {users.map((item) => {
+                      const active = sectionResponsibles.includes(item.id);
                       return (
-                        <Pressable
-                          key={section.id}
-                          onPress={() => setTestSectionId(section.id)}
-                          style={[
-                            styles.catBtn,
-                            {
-                              backgroundColor: active ? theme.blue : theme.surface,
-                              borderColor: active ? theme.blue : theme.border,
-                            },
-                          ]}
-                        >
-                          <Text style={{ color: active ? '#fff' : theme.text, fontWeight: '900' }}>
-                            {section.full_path || section.title}
-                          </Text>
+                        <Pressable key={item.id} onPress={() => toggleResponsible(item.id)} style={[styles.choicePill, { backgroundColor: active ? theme.blue : theme.backgroundSoft, borderColor: active ? theme.blue : theme.border }]}>
+                          <Text style={[styles.choiceText, { color: active ? '#fff' : theme.text }]}>{userName(item)}</Text>
                         </Pressable>
                       );
                     })}
                   </View>
-                </ScrollView>
+                </>
+              )}
 
-                {questions.map((question, qIndex) => {
-                  const options = normalizeOptions(question.options).length
-                    ? normalizeOptions(question.options)
-                    : ['', '', '', ''];
+              {editorEntity === 'snippet' && (
+                <>
+                  <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название</Text>
+                    <TextInput value={snippetTitle} onChangeText={setSnippetTitle} placeholder="Название материала" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
+                  </View>
+                  <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Текст Markdown</Text>
+                    <TextInput value={snippetContent} onChangeText={setSnippetContent} placeholder={'## Инструкция\n- пункт 1\n- пункт 2\n**важно**'} placeholderTextColor={theme.textMuted} style={[styles.input, styles.textareaBig, { color: theme.text }]} multiline textAlignVertical="top" />
+                  </View>
 
-                  while (options.length < 4) options.push('');
-
-                  return (
-                    <View key={qIndex} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                      <View style={styles.cardTopRow}>
-                        <Text style={[styles.cardTitle, { color: theme.text }]}>Вопрос {qIndex + 1}</Text>
-
-                        <Pressable
-                          onPress={() => removeQuestion(qIndex)}
-                          style={[styles.adminIconBtn, { backgroundColor: theme.redSoft, borderColor: theme.border }]}>
-                          <Ionicons name="trash-outline" size={17} color={theme.red} />
+                  <Text style={[styles.modalBlockTitle, { color: theme.text }]}>Категория</Text>
+                  <View style={styles.wrapRow}>
+                    {CATEGORIES.filter((item) => item.key).map((item) => {
+                      const active = snippetCategory === item.key;
+                      return (
+                        <Pressable key={item.key} onPress={() => setSnippetCategory(item.key)} style={[styles.choicePill, { backgroundColor: active ? theme.blue : theme.backgroundSoft, borderColor: active ? theme.blue : theme.border }]}>
+                          <Ionicons name={item.icon} size={15} color={active ? '#fff' : theme.blue} />
+                          <Text style={[styles.choiceText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
                         </Pressable>
-                      </View>
+                      );
+                    })}
+                  </View>
 
-                      <TextInput
-                        value={question.text}
-                        onChangeText={(v) => updateQuestionText(qIndex, v)}
-                        placeholder="Текст вопроса"
-                        placeholderTextColor={theme.textMuted}
-                        style={[
-                          styles.input,
-                          {
-                            color: theme.text,
-                            borderColor: theme.border,
-                            backgroundColor: theme.backgroundSoft,
-                          },
-                        ]}
-                      />
+                  <Text style={[styles.modalBlockTitle, { color: theme.text }]}>Раздел</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+                    <Pressable onPress={() => setSnippetSection(null)} style={[styles.choicePill, { backgroundColor: snippetSection === null ? theme.blue : theme.backgroundSoft, borderColor: snippetSection === null ? theme.blue : theme.border }]}>
+                      <Text style={[styles.choiceText, { color: snippetSection === null ? '#fff' : theme.text }]}>Без раздела</Text>
+                    </Pressable>
+                    {sections.map((section) => (
+                      <Pressable key={section.id} onPress={() => setSnippetSection(section.id)} style={[styles.choicePill, { backgroundColor: snippetSection === section.id ? theme.blue : theme.backgroundSoft, borderColor: snippetSection === section.id ? theme.blue : theme.border }]}>
+                        <Text style={[styles.choiceText, { color: snippetSection === section.id ? '#fff' : theme.text }]}>{section.title}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </>
+              )}
 
-                      {options.map((opt, oIndex) => {
-                        const active = question.correct === oIndex;
-                        return (
-                          <Pressable
-                            key={oIndex}
-                            onPress={() => updateQuestionCorrect(qIndex, oIndex)}
-                            style={{ marginTop: 10 }}
-                          >
-                            <TextInput
-                              value={opt}
-                              onChangeText={(v) => updateQuestionOption(qIndex, oIndex, v)}
-                              placeholder={`Вариант ${oIndex + 1}${active ? ' (правильный)' : ''}`}
-                              placeholderTextColor={theme.textMuted}
-                              style={[
-                                styles.input,
-                                {
-                                  color: theme.text,
-                                  borderColor: active ? theme.blue : theme.border,
-                                  backgroundColor: active ? theme.blueSoft : theme.backgroundSoft,
-                                },
-                              ]}
-                            />
-                          </Pressable>
-                        );
-                      })}
+              {editorEntity === 'attachment' && (
+                <>
+                  <View style={styles.actionRow}>
+                    <Pressable onPress={() => setAttachmentType('link')} style={[styles.modalActionBtn, { backgroundColor: attachmentType === 'link' ? theme.blue : theme.blueSoft }]}>
+                      <Ionicons name="link-outline" size={17} color={attachmentType === 'link' ? '#fff' : theme.blue} />
+                      <Text style={[styles.modalActionText, { color: attachmentType === 'link' ? '#fff' : theme.blue }]}>Ссылка</Text>
+                    </Pressable>
+                    <Pressable onPress={pickAttachmentImage} style={[styles.modalActionBtn, { backgroundColor: attachmentType === 'image' ? theme.blue : theme.blueSoft }]}>
+                      <Ionicons name="image-outline" size={17} color={attachmentType === 'image' ? '#fff' : theme.blue} />
+                      <Text style={[styles.modalActionText, { color: attachmentType === 'image' ? '#fff' : theme.blue }]}>Фото</Text>
+                    </Pressable>
+                    <Pressable onPress={pickAttachmentFile} style={[styles.modalActionBtn, { backgroundColor: attachmentType === 'file' ? theme.blue : theme.blueSoft }]}>
+                      <Ionicons name="document-outline" size={17} color={attachmentType === 'file' ? '#fff' : theme.blue} />
+                      <Text style={[styles.modalActionText, { color: attachmentType === 'file' ? '#fff' : theme.blue }]}>Файл</Text>
+                    </Pressable>
+                  </View>
+                  <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название</Text>
+                    <TextInput value={attachmentTitle} onChangeText={setAttachmentTitle} placeholder="Название материала" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
+                  </View>
+                  {attachmentType === 'link' ? (
+                    <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                      <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>URL</Text>
+                      <TextInput value={attachmentUrl} onChangeText={setAttachmentUrl} placeholder="https://..." placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} autoCapitalize="none" keyboardType="url" />
                     </View>
-                  );
-                })}
+                  ) : (
+                    <View style={[styles.selectedFileBox, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                      <Ionicons name={attachmentType === 'image' ? 'image-outline' : 'document-outline'} size={20} color={theme.blue} />
+                      <Text style={[styles.selectedFileText, { color: theme.text }]}>{attachmentFile?.name || 'Файл не выбран'}</Text>
+                    </View>
+                  )}
+                  <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                    <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Комментарий</Text>
+                    <TextInput value={attachmentNote} onChangeText={setAttachmentNote} placeholder="Описание файла или ссылки" placeholderTextColor={theme.textMuted} style={[styles.input, styles.textarea, { color: theme.text }]} multiline textAlignVertical="top" />
+                  </View>
+                </>
+              )}
 
-                <Pressable
-                  onPress={addQuestion}
-                  style={[styles.secondaryActionBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                >
-                  <Text style={[styles.secondaryActionText, { color: theme.text }]}>
-                    Добавить вопрос
-                  </Text>
+              <Pressable onPress={submitEditor} disabled={saving} style={[styles.saveBtn, { backgroundColor: theme.blue, opacity: saving ? 0.65 : 1 }]}>
+                {saving ? <ActivityIndicator color="#fff" /> : <Ionicons name="save-outline" size={18} color="#fff" />}
+                <Text style={styles.saveText}>{saving ? 'Сохранение...' : 'Сохранить'}</Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={!!activeTest} animationType="slide" transparent onRequestClose={() => setActiveTest(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.card || theme.surface, borderColor: theme.border }]}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>{activeTest?.title}</Text>
+              <Pressable onPress={() => setActiveTest(null)} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
+                <Ionicons name="close" size={20} color={theme.text} />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.modalScroll}>
+              {!!activeTest?.description && <Text style={[styles.testDescription, { color: theme.textSecondary }]}>{activeTest.description}</Text>}
+              {(activeTest?.questions || []).map((question, index) => {
+                const key = question.id ?? index + 100000;
+                const options = normalizeOptions(question.options);
+                return (
+                  <View key={key} style={[styles.questionCard, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                    <Text style={[styles.questionText, { color: theme.text }]}>{index + 1}. {question.text}</Text>
+                    {options.map((option, optionIndex) => {
+                      const active = answers[key] === optionIndex;
+                      return (
+                        <Pressable key={optionIndex} onPress={() => setAnswers((prev) => ({ ...prev, [key]: optionIndex }))} style={[styles.answerBtn, { backgroundColor: active ? theme.blue : theme.surface, borderColor: active ? theme.blue : theme.border }]}>
+                          <Text style={[styles.answerText, { color: active ? '#fff' : theme.text }]}>{option}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                );
+              })}
+              {testResult ? (
+                <View style={[styles.resultBox, { backgroundColor: theme.blueSoft }]}>
+                  <Text style={[styles.resultText, { color: theme.blue }]}>Результат: {testResult.score}/{testResult.total}</Text>
+                </View>
+              ) : (
+                <Pressable onPress={submitTest} disabled={submittingTest} style={[styles.saveBtn, { backgroundColor: theme.blue, opacity: submittingTest ? 0.65 : 1 }]}>
+                  {submittingTest ? <ActivityIndicator color="#fff" /> : <Ionicons name="checkmark-done-outline" size={18} color="#fff" />}
+                  <Text style={styles.saveText}>Завершить тест</Text>
                 </Pressable>
-              </View>
-            )}
-
-            <Pressable
-              onPress={submitEditor}
-              style={[styles.submitBtn, { backgroundColor: theme.blue, marginTop: 20 }]}
-            >
-              <Text style={styles.submitBtnText}>
-                {saving
-                  ? 'Сохранение...'
-                  : editorMode === 'create'
-                  ? 'Создать'
-                  : 'Сохранить изменения'}
-              </Text>
-            </Pressable>
-          </ScrollView>
-        </ScreenWrapper>
+              )}
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-  },
-  backBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  title: { fontSize: 22, fontWeight: '900' },
-
-  container: { padding: 20, paddingBottom: 120 },
-  videoModalContent: { padding: 20, paddingBottom: 80 },
-
-  heroCard: {
-    borderWidth: 1,
-    borderRadius: 30,
-    padding: 18,
-    marginBottom: 16,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.1,
-    shadowRadius: 24,
-    elevation: 3,
-  },
-  heroTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  heroTitle: { fontSize: 21, fontWeight: '900' },
-  heroSub: { marginTop: 6, fontSize: 13, lineHeight: 19, fontWeight: '600' },
-  smallAddSection: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroStats: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  heroStat: {
-    flex: 1,
-    borderRadius: 18,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-  },
-  heroStatValue: { fontSize: 20, fontWeight: '900' },
-  heroStatLabel: { marginTop: 4, fontSize: 11, fontWeight: '700' },
-
-  searchBox: {
-    minHeight: 56,
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  searchInput: { flex: 1, fontSize: 15, fontWeight: '600' },
-
-  tabRow: { flexDirection: 'row', gap: 8, paddingRight: 16 },
-  tabBtn: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  catBtn: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  breadcrumbs: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingRight: 16,
-  },
-  breadcrumbChip: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  breadcrumbText: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
-
-  sectionAdminRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
-  },
-  sectionAdminBtn: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  sectionAdminText: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
-
-  sectionGrid: {
-    marginTop: 16,
-    gap: 12,
-  },
-  sectionCard: {
-    borderWidth: 1,
-    borderRadius: 24,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 3,
-  },
-  sectionIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-    lineHeight: 20,
-  },
-  sectionMeta: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
-  card: {
-    borderWidth: 1,
-    borderRadius: 24,
-    padding: 16,
-  },
-  cardTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  cardTitle: { fontSize: 16, fontWeight: '900' },
-  cardText: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 21,
-    fontWeight: '600',
-  },
-  cardMeta: { marginTop: 4, fontSize: 12, fontWeight: '700' },
-  copyText: { marginTop: 10, fontSize: 12, fontWeight: '900' },
-  cardFooter: {
-    marginTop: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-
-  videoHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  videoIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  adminActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  adminIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  questionIndex: { fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
-  questionText: { marginTop: 8, fontSize: 16, lineHeight: 23, fontWeight: '800' },
-
-  optionBtn: {
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  optionText: { fontSize: 14, fontWeight: '700', lineHeight: 20 },
-
-  submitBtn: {
-    marginTop: 14,
-    minHeight: 56,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitBtnText: { color: '#fff', fontSize: 15, fontWeight: '900' },
-
-  nativeVideo: {
-    width: '100%',
-    height: 240,
-    borderRadius: 20,
-    backgroundColor: '#000',
-  },
-
-  input: {
-    minHeight: 52,
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  textarea: {
-    minHeight: 160,
-    textAlignVertical: 'top',
-  },
-  textareaSmall: {
-    minHeight: 100,
-    textAlignVertical: 'top',
-  },
-
-  secondaryActionBtn: {
-    minHeight: 52,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  secondaryActionText: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-
-  previewCard: {
-    borderWidth: 1,
-    borderRadius: 18,
-    padding: 14,
-  },
-  previewTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  previewText: {
-    marginTop: 6,
-    fontSize: 13,
-    lineHeight: 19,
-    fontWeight: '600',
-  },
-  editorLabel: {
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scroll: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 128, gap: 14 },
+  hero: { borderRadius: 32, padding: 18, overflow: 'hidden' },
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
+  heroBackBtn: { width: 42, height: 42, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
+  heroAddBtn: { minHeight: 42, borderRadius: 16, paddingHorizontal: 14, backgroundColor: 'rgba(255,255,255,0.18)', flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
+  heroAddText: { color: '#fff', fontSize: 13, fontWeight: '900' },
+  heroKicker: { color: 'rgba(255,255,255,0.78)', fontSize: 12, fontWeight: '900', letterSpacing: 0.8, textTransform: 'uppercase' },
+  heroTitle: { marginTop: 8, color: '#fff', fontSize: 31, fontWeight: '900', letterSpacing: -0.4 },
+  heroSubtitle: { marginTop: 8, color: 'rgba(255,255,255,0.84)', fontSize: 14, fontWeight: '700', lineHeight: 20, maxWidth: 330 },
+  heroStats: { marginTop: 20, minHeight: 76, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
+  heroStatItem: { flex: 1, alignItems: 'center' },
+  heroStatValue: { color: '#fff', fontSize: 24, fontWeight: '900' },
+  heroStatLabel: { marginTop: 3, color: 'rgba(255,255,255,0.78)', fontSize: 12, fontWeight: '800' },
+  heroLine: { width: 1, height: 34, backgroundColor: 'rgba(255,255,255,0.18)' },
+  tabsCard: { borderWidth: 1, borderRadius: 24, padding: 6, flexDirection: 'row', gap: 6 },
+  tabBtn: { flex: 1, minHeight: 46, borderRadius: 18, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' },
+  tabText: { fontSize: 12, fontWeight: '900' },
+  searchCard: { borderWidth: 1, borderRadius: 24, padding: 14, gap: 10 },
+  searchBox: { borderWidth: 1, borderRadius: 18, minHeight: 50, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  searchInput: { flex: 1, fontSize: 14, fontWeight: '700' },
+  filterRow: { gap: 8, paddingVertical: 2 },
+  filterPill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 9, flexDirection: 'row', gap: 6, alignItems: 'center' },
+  filterText: { fontSize: 12, fontWeight: '900' },
+  breadcrumbRow: { gap: 8 },
+  breadcrumbPill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
+  breadcrumbText: { fontSize: 12, fontWeight: '900' },
+  sectionInfoCard: { borderWidth: 1, borderRadius: 28, padding: 16, gap: 12, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.07, shadowRadius: 15, elevation: 2 },
+  sectionCover: { width: '100%', height: 150, borderRadius: 22 },
+  sectionInfoTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sectionInfoIcon: { width: 46, height: 46, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  sectionInfoTitle: { fontSize: 19, fontWeight: '900' },
+  sectionInfoSub: { marginTop: 3, fontSize: 12, fontWeight: '700' },
+  responsibleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  responsibleText: { flex: 1, fontSize: 12, fontWeight: '700' },
+  sectionLinkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  resourcePill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 8, flexDirection: 'row', gap: 6, alignItems: 'center' },
+  resourceText: { fontSize: 12, fontWeight: '900' },
+  actionRow: { flexDirection: 'row', gap: 9 },
+  actionBtn: { flex: 1, minHeight: 50, borderRadius: 18, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' },
+  actionText: { color: '#fff', fontSize: 13, fontWeight: '900' },
+  bigTitle: { fontSize: 20, fontWeight: '900', marginTop: 2 },
+  sectionCard: { borderWidth: 1, borderRadius: 26, overflow: 'hidden', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.07, shadowRadius: 15, elevation: 2 },
+  sectionCardImage: { width: '100%', height: 128 },
+  sectionCardBody: { padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sectionIcon: { width: 46, height: 46, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { fontSize: 16, fontWeight: '900' },
+  sectionDescription: { marginTop: 5, fontSize: 12, fontWeight: '600', lineHeight: 17 },
+  cardRightActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  smallIconBtn: { width: 34, height: 34, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  avatarStack: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  avatarMini: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  avatarMiniText: { color: '#fff', fontSize: 10, fontWeight: '900' },
+  avatarExtraText: { fontSize: 10, fontWeight: '900' },
+  attachmentCard: { borderWidth: 1, borderRadius: 22, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  attachmentIcon: { width: 40, height: 40, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  attachmentImage: { width: 48, height: 48, borderRadius: 15 },
+  attachmentTitle: { fontSize: 14, fontWeight: '900' },
+  attachmentNote: { marginTop: 3, fontSize: 12, fontWeight: '600', lineHeight: 17 },
+  emptyCard: { borderWidth: 1, borderRadius: 24, padding: 24, alignItems: 'center', gap: 10 },
+  emptyText: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  snippetCard: { borderWidth: 1, borderRadius: 26, padding: 15, gap: 10, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.07, shadowRadius: 15, elevation: 2 },
+  snippetTop: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  snippetIcon: { width: 40, height: 40, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  snippetTitle: { fontSize: 16, fontWeight: '900' },
+  snippetMeta: { marginTop: 3, fontSize: 11.5, fontWeight: '700' },
+  videoCard: { borderWidth: 1, borderRadius: 24, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  videoIcon: { width: 48, height: 48, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  videoTitle: { fontSize: 16, fontWeight: '900' },
+  videoDescription: { marginTop: 5, fontSize: 12, fontWeight: '600', lineHeight: 17 },
+  testCard: { borderWidth: 1, borderRadius: 24, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  testIcon: { width: 48, height: 48, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  testTitle: { fontSize: 16, fontWeight: '900' },
+  testDescription: { marginTop: 5, fontSize: 13, fontWeight: '600', lineHeight: 19 },
+  testMeta: { marginTop: 6, fontSize: 12, fontWeight: '800' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalCard: { maxHeight: '90%', borderTopLeftRadius: 32, borderTopRightRadius: 32, borderWidth: 1, padding: 16 },
+  modalHandle: { alignSelf: 'center', width: 48, height: 5, borderRadius: 999, backgroundColor: 'rgba(148,163,184,0.45)', marginBottom: 14 },
+  modalHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 },
+  modalTitle: { flex: 1, fontSize: 21, fontWeight: '900' },
+  modalSub: { marginTop: 4, fontSize: 12, fontWeight: '700', lineHeight: 18 },
+  modalClose: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  modalScroll: { gap: 12, paddingBottom: 20 },
+  inputWrap: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 12 },
+  inputLabel: { fontSize: 12, fontWeight: '900', marginBottom: 8 },
+  input: { minHeight: 26, fontSize: 15, fontWeight: '700' },
+  textarea: { minHeight: 108, lineHeight: 21 },
+  textareaBig: { minHeight: 180, lineHeight: 21 },
+  modalBlockTitle: { fontSize: 14, fontWeight: '900', marginTop: 2 },
+  wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  choicePill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  choiceText: { fontSize: 12, fontWeight: '900' },
+  modalActionBtn: { flex: 1, minHeight: 48, borderRadius: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  modalActionText: { fontSize: 12, fontWeight: '900' },
+  selectedFileBox: { borderWidth: 1, borderRadius: 20, padding: 14, flexDirection: 'row', gap: 10, alignItems: 'center' },
+  selectedFileText: { flex: 1, fontSize: 13, fontWeight: '800' },
+  saveBtn: { minHeight: 56, borderRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  saveText: { color: '#fff', fontSize: 15, fontWeight: '900' },
+  questionCard: { borderWidth: 1, borderRadius: 20, padding: 12, gap: 8 },
+  questionText: { fontSize: 15, fontWeight: '900', lineHeight: 21 },
+  answerBtn: { borderWidth: 1, borderRadius: 16, padding: 12 },
+  answerText: { fontSize: 13, fontWeight: '800' },
+  resultBox: { borderRadius: 18, padding: 16, alignItems: 'center' },
+  resultText: { fontSize: 17, fontWeight: '900' },
 });
