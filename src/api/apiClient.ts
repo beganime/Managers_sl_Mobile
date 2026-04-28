@@ -6,7 +6,7 @@ export const BASE_URL = 'https://manager-sl.ru/api/';
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
-  timeout: 20000,
+  timeout: 30000,
   headers: {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -19,7 +19,15 @@ function normalizePath(path: string) {
 }
 
 function isFormDataPayload(data: unknown) {
-  return typeof FormData !== 'undefined' && data instanceof FormData;
+  if (!data) return false;
+  if (typeof FormData !== 'undefined' && data instanceof FormData) return true;
+
+  const maybeFormData = data as any;
+  return (
+    typeof maybeFormData === 'object' &&
+    typeof maybeFormData.append === 'function' &&
+    (typeof maybeFormData.getParts === 'function' || String(maybeFormData).includes('FormData'))
+  );
 }
 
 function stripJsonContentType(config: AxiosRequestConfig) {
@@ -87,26 +95,16 @@ export async function loginRequest(email: string, password: string) {
   try {
     const response = await apiClient.post('auth/login/', { email, password });
 
-    if (response.data?.access) {
-      await saveToken('access_token', response.data.access);
-    }
-
-    if (response.data?.refresh) {
-      await saveToken('refresh_token', response.data.refresh);
-    }
+    if (response.data?.access) await saveToken('access_token', response.data.access);
+    if (response.data?.refresh) await saveToken('refresh_token', response.data.refresh);
 
     await persistUserCacheFromResponse(response.data);
     return response.data;
   } catch {
     const fallback = await apiClient.post('token/', { email, password });
 
-    if (fallback.data?.access) {
-      await saveToken('access_token', fallback.data.access);
-    }
-
-    if (fallback.data?.refresh) {
-      await saveToken('refresh_token', fallback.data.refresh);
-    }
+    if (fallback.data?.access) await saveToken('access_token', fallback.data.access);
+    if (fallback.data?.refresh) await saveToken('refresh_token', fallback.data.refresh);
 
     return fallback.data;
   }
@@ -116,11 +114,8 @@ export async function logoutRequest() {
   const refresh = await getToken('refresh_token');
 
   try {
-    if (refresh) {
-      await apiClient.post('auth/logout/', { refresh });
-    }
+    if (refresh) await apiClient.post('auth/logout/', { refresh });
   } catch {
-    // даже если logout API не ответил, локальную сессию всё равно чистим
   } finally {
     await deleteToken('access_token');
     await deleteToken('refresh_token');
@@ -140,26 +135,21 @@ export async function updateMyProfile(payload: Record<string, any>) {
   return response.data;
 }
 
-export async function uploadMyAvatar(file: {
-  uri: string;
-  name?: string;
-  type?: string;
-}) {
-  const fd = new FormData();
+function normalizeUploadFile(file: { uri: string; name?: string; type?: string }) {
+  return {
+    uri: file.uri,
+    name: file.name || 'avatar.jpg',
+    type: file.type || 'image/jpeg',
+  } as any;
+}
 
-  fd.append(
-    'avatar',
-    {
-      uri: file.uri,
-      name: file.name || 'avatar.jpg',
-      type: file.type || 'image/jpeg',
-    } as any
-  );
+export async function uploadMyAvatar(file: { uri: string; name?: string; type?: string }) {
+  const fd = new FormData();
+  fd.append('avatar', normalizeUploadFile(file));
 
   const response = await apiClient.patch('users/users/me/', fd, {
-    headers: {
-      Accept: 'application/json',
-    },
+    headers: { Accept: 'application/json' },
+    transformRequest: (data) => data,
   });
 
   await persistUserCacheFromResponse(response.data);
@@ -167,9 +157,7 @@ export async function uploadMyAvatar(file: {
 }
 
 export async function removeMyAvatar() {
-  const response = await apiClient.patch('users/users/me/', {
-    remove_avatar: true,
-  });
+  const response = await apiClient.patch('users/users/me/', { remove_avatar: true });
   await persistUserCacheFromResponse(response.data);
   return response.data;
 }
@@ -186,6 +174,7 @@ apiClient.interceptors.request.use(
 
     if (isFormDataPayload(config.data)) {
       stripJsonContentType(config);
+      config.transformRequest = [(data) => data];
     }
 
     return config;
@@ -206,27 +195,17 @@ apiClient.interceptors.response.use(
 
       try {
         const refreshToken = await getToken('refresh_token');
-
-        if (!refreshToken) {
-          throw new Error('No refresh token');
-        }
+        if (!refreshToken) throw new Error('No refresh token');
 
         let refreshResponse;
         try {
-          refreshResponse = await axios.post(`${BASE_URL}auth/refresh/`, {
-            refresh: refreshToken,
-          });
+          refreshResponse = await axios.post(`${BASE_URL}auth/refresh/`, { refresh: refreshToken });
         } catch {
-          refreshResponse = await axios.post(`${BASE_URL}token/refresh/`, {
-            refresh: refreshToken,
-          });
+          refreshResponse = await axios.post(`${BASE_URL}token/refresh/`, { refresh: refreshToken });
         }
 
         const newAccess = (refreshResponse as any).data?.access;
-
-        if (!newAccess) {
-          throw new Error('No new access token');
-        }
+        if (!newAccess) throw new Error('No new access token');
 
         await saveToken('access_token', newAccess);
 
@@ -241,6 +220,7 @@ apiClient.interceptors.response.use(
             delete originalRequest.headers['Content-Type'];
             delete originalRequest.headers['content-type'];
           }
+          originalRequest.transformRequest = [(data: any) => data];
         }
 
         return apiClient(originalRequest);
