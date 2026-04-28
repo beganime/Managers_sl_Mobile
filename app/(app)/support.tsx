@@ -21,8 +21,13 @@ import {
 } from 'react-native';
 
 import ScreenWrapper from '../../components/ScreenWrapper';
-import apiClient, { extractList } from '../../src/api/apiClient';
-import { useTheme } from '../../src/context/themeContext';
+import apiClient, {
+    buildAbsoluteFileUrl,
+    extractList,
+    multipartConfig,
+    normalizeUploadFile,
+} from '../../src/api/apiClient';
+import { useTheme } from '../../src/context/ThemeContext';
 import { safeGoBack } from '../../src/navigation/safeGoBack';
 
 type CategoryValue = 'support' | 'admin' | 'bug' | 'idea' | 'feedback';
@@ -81,19 +86,25 @@ function flattenError(error: any) {
 }
 
 function imageAssetToFile(asset: ImagePicker.ImagePickerAsset): UploadFile {
-  return {
-    uri: asset.uri,
-    name: asset.fileName || asset.uri.split('/').pop() || 'photo.jpg',
-    type: asset.mimeType || 'image/jpeg',
-  };
+  return normalizeUploadFile(
+    {
+      uri: asset.uri,
+      name: asset.fileName || asset.uri.split('/').pop() || 'photo.jpg',
+      type: asset.mimeType || 'image/jpeg',
+    },
+    'photo.jpg'
+  );
 }
 
 function docAssetToFile(asset: DocumentPicker.DocumentPickerAsset): UploadFile {
-  return {
-    uri: asset.uri,
-    name: asset.name || 'file',
-    type: asset.mimeType || 'application/octet-stream',
-  };
+  return normalizeUploadFile(
+    {
+      uri: asset.uri,
+      name: asset.name || 'file',
+      type: asset.mimeType || 'application/octet-stream',
+    },
+    asset.name || 'file'
+  );
 }
 
 export default function SupportScreen() {
@@ -149,17 +160,22 @@ export default function SupportScreen() {
     setSaving(true);
 
     try {
-      if (photo || file) {
+        if (photo || file) {
         const fd = new FormData();
         fd.append('category', category);
         fd.append('subject', subject.trim());
         fd.append('message', message.trim());
-        if (photo) fd.append('photo', photo as any);
-        if (file) fd.append('file', file as any);
-        await apiClient.post('support/messages/', fd, { headers: { Accept: 'application/json' }, transformRequest: (data) => data });
-      } else {
-        await apiClient.post('support/messages/', { category, subject: subject.trim(), message: message.trim() });
-      }
+        if (photo) fd.append('photo', normalizeUploadFile(photo, 'photo.jpg'));
+        if (file) fd.append('file', normalizeUploadFile(file, file.name || 'file'));
+
+        await apiClient.post('support/messages/', fd, multipartConfig);
+        } else {
+        await apiClient.post('support/messages/', {
+            category,
+            subject: subject.trim(),
+            message: message.trim(),
+        });
+        }
 
       setSubject('');
       setMessage('');
@@ -175,10 +191,11 @@ export default function SupportScreen() {
     }
   };
 
-  const openUrl = async (url?: string | null) => {
-    if (!url) return;
-    await WebBrowser.openBrowserAsync(url);
-  };
+    const openUrl = async (url?: string | null) => {
+    const absoluteUrl = buildAbsoluteFileUrl(url);
+    if (!absoluteUrl) return;
+    await WebBrowser.openBrowserAsync(absoluteUrl);
+    };
 
   return (
     <ScreenWrapper>

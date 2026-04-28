@@ -16,7 +16,7 @@ import {
 
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
-import apiClient, { fetchAllPages } from '../../src/api/apiClient';
+import apiClient, { buildAbsoluteFileUrl, fetchAllPages } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
 
 type DocumentItem = {
@@ -25,9 +25,17 @@ type DocumentItem = {
   status?: 'draft' | 'generated' | 'pending' | 'approved' | 'error' | 'rejected' | string;
   created_at?: string;
   updated_at?: string;
-  file?: string;
+
+  file?: string | null;
   file_url?: string | null;
+  original_file_url?: string | null;
+  review_file_url?: string | null;
+
   approved_file_url?: string | null;
+  approved_pdf_url?: string | null;
+  watermarked_file_url?: string | null;
+  pdf_file_url?: string | null;
+
   can_download?: boolean;
   template_name?: string | null;
   manager_name?: string | null;
@@ -83,6 +91,41 @@ function statusMeta(status: string, theme: any) {
         color: '#B26A00',
         icon: 'time' as const,
       };
+  }
+}
+
+function rawDocumentUrl(item: DocumentItem) {
+  return (
+    item.original_file_url ||
+    item.review_file_url ||
+    item.file_url ||
+    item.file ||
+    null
+  );
+}
+
+function approvedDocumentUrl(item: DocumentItem) {
+  return (
+    item.approved_file_url ||
+    item.approved_pdf_url ||
+    item.watermarked_file_url ||
+    item.pdf_file_url ||
+    null
+  );
+}
+
+async function openExternalUrl(url: string | null, emptyMessage: string) {
+  const absoluteUrl = buildAbsoluteFileUrl(url);
+
+  if (!absoluteUrl) {
+    Alert.alert('Файл', emptyMessage);
+    return;
+  }
+
+  try {
+    await Linking.openURL(absoluteUrl);
+  } catch {
+    Alert.alert('Ошибка', 'Не удалось открыть файл.');
   }
 }
 
@@ -148,27 +191,28 @@ export default function DocumentsScreen() {
     });
   }, [documents, search, statusFilter]);
 
-  const openFile = async (item: DocumentItem) => {
-    const url = item.approved_file_url || item.file_url || item.file;
+  const openRawFile = async (item: DocumentItem) => {
+    await openExternalUrl(
+      rawDocumentUrl(item),
+      'У документа пока нет файла без водяного знака.'
+    );
+  };
 
-    if (!url) {
-      Alert.alert('Файл', 'У документа пока нет файла.');
-      return;
-    }
+  const openApprovedFile = async (item: DocumentItem) => {
+    const status = normalizeStatus(item.status);
 
-    if (!item.can_download && normalizeStatus(item.status) !== 'approved') {
+    if (status !== 'approved' && !item.can_download) {
       Alert.alert(
-        'Документ ещё не одобрен',
-        'Скачивание доступно только после одобрения администратором.'
+        'PDF ещё не готов',
+        'PDF с водяным знаком можно скачать только после Approve.'
       );
       return;
     }
 
-    try {
-      await Linking.openURL(url);
-    } catch {
-      Alert.alert('Ошибка', 'Не удалось открыть файл.');
-    }
+    await openExternalUrl(
+      approvedDocumentUrl(item),
+      'PDF с водяным знаком ещё не создан. Нажми Approve или проверь backend watermark.'
+    );
   };
 
   const approve = async (item: DocumentItem) => {
@@ -176,7 +220,7 @@ export default function DocumentsScreen() {
       setProcessingId(item.id);
       await apiClient.post(`documents/generated/${item.id}/approve/`, {});
       await load();
-      Alert.alert('Готово', 'Документ одобрен.');
+      Alert.alert('Готово', 'Документ одобрен. PDF с водяным знаком создан.');
     } catch (error: any) {
       Alert.alert(
         'Ошибка',
@@ -245,7 +289,7 @@ export default function DocumentsScreen() {
             <Text style={[styles.title, { color: theme.text }]}>Документы</Text>
             <Text style={[styles.sub, { color: theme.textSecondary }]}>
               {isAdmin
-                ? 'Проверка, одобрение и просмотр документов'
+                ? 'Проверка без водяного знака и Approve PDF с водяным знаком'
                 : 'Созданные документы и их статус'}
             </Text>
           </View>
@@ -363,6 +407,8 @@ export default function DocumentsScreen() {
             const status = normalizeStatus(item.status);
             const meta = statusMeta(status, theme);
             const isProcessing = processingId === item.id;
+            const hasRaw = Boolean(rawDocumentUrl(item));
+            const hasApproved = Boolean(approvedDocumentUrl(item));
 
             return (
               <View
@@ -421,32 +467,53 @@ export default function DocumentsScreen() {
                   </Text>
                 )}
 
-                {!item.can_download && status !== 'approved' && (
+                {status !== 'approved' && (
                   <Text style={[styles.hint, { color: theme.textMuted }]}>
-                    Скачивание будет доступно только после одобрения администратором.
+                    До Approve можно открыть файл без водяного знака для проверки. PDF с водяным знаком появится после Approve.
                   </Text>
                 )}
 
                 <View style={styles.actionsRow}>
                   <Pressable
-                    onPress={() => openFile(item)}
+                    onPress={() => openRawFile(item)}
                     style={[
                       styles.ghostBtn,
                       {
                         borderColor: theme.border,
                         backgroundColor: theme.backgroundSoft,
-                        opacity:
-                          !item.can_download && status !== 'approved' ? 0.7 : 1,
+                        opacity: hasRaw ? 1 : 0.65,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="eye-outline" size={16} color={theme.text} />
+                    <Text style={[styles.ghostBtnText, { color: theme.text }]}>
+                      Проверить без watermark
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => openApprovedFile(item)}
+                    style={[
+                      styles.ghostBtn,
+                      {
+                        borderColor: status === 'approved' ? theme.blue : theme.border,
+                        backgroundColor: status === 'approved' ? theme.blueSoft : theme.backgroundSoft,
+                        opacity: status === 'approved' && hasApproved ? 1 : 0.72,
                       },
                     ]}
                   >
                     <Ionicons
-                      name={item.can_download ? 'download-outline' : 'eye-outline'}
+                      name="download-outline"
                       size={16}
-                      color={theme.text}
+                      color={status === 'approved' ? theme.blue : theme.textMuted}
                     />
-                    <Text style={[styles.ghostBtnText, { color: theme.text }]}>
-                      {item.can_download ? 'Открыть / скачать' : 'Ожидает approve'}
+                    <Text
+                      style={[
+                        styles.ghostBtnText,
+                        { color: status === 'approved' ? theme.blue : theme.textMuted },
+                      ]}
+                    >
+                      PDF с watermark
                     </Text>
                   </Pressable>
 

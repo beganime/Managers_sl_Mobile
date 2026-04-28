@@ -25,8 +25,15 @@ import Markdown from 'react-native-markdown-display';
 
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
-import apiClient, { extractList, fetchAllPages } from '../../src/api/apiClient';
+import apiClient, {
+  buildAbsoluteFileUrl,
+  extractList,
+  fetchAllPages,
+  multipartConfig,
+  normalizeUploadFile,
+} from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
+import { safeGoBack } from '../../src/navigation/safeGoBack';
 import { getToken, saveToken } from '../../src/utils/storage';
 
 type UserMini = {
@@ -510,18 +517,32 @@ export default function KnowledgeBaseScreen() {
     if (result.canceled || !result.assets?.length) return;
 
     const asset = result.assets[0];
-    setSectionCover({
-      uri: asset.uri,
-      name: asset.fileName || asset.uri.split('/').pop() || 'cover.jpg',
-      type: asset.mimeType || 'image/jpeg',
-    });
+    setSectionCover(
+      normalizeUploadFile(
+        {
+          uri: asset.uri,
+          name: asset.fileName || asset.uri.split('/').pop() || 'cover.jpg',
+          type: asset.mimeType || 'image/jpeg',
+        },
+        'cover.jpg'
+      )
+    );
   };
 
   const pickSectionFile = async () => {
     const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, multiple: false });
     if (result.canceled || !result.assets?.length) return;
     const asset = result.assets[0];
-    setSectionFile({ uri: asset.uri, name: fileNameFromPicker(asset), type: fileTypeFromPicker(asset) });
+    setSectionFile(
+      normalizeUploadFile(
+        {
+          uri: asset.uri,
+          name: fileNameFromPicker(asset),
+          type: fileTypeFromPicker(asset),
+        },
+        fileNameFromPicker(asset)
+      )
+    );
   };
 
   const pickAttachmentImage = async () => {
@@ -534,7 +555,16 @@ export default function KnowledgeBaseScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85, selectionLimit: 1 });
     if (result.canceled || !result.assets?.length) return;
     const asset = result.assets[0];
-    setAttachmentFile({ uri: asset.uri, name: asset.fileName || 'image.jpg', type: asset.mimeType || 'image/jpeg' });
+    setAttachmentFile(
+      normalizeUploadFile(
+        {
+          uri: asset.uri,
+          name: asset.fileName || asset.uri.split('/').pop() || 'image.jpg',
+          type: asset.mimeType || 'image/jpeg',
+        },
+        'image.jpg'
+      )
+    );
     setAttachmentType('image');
   };
 
@@ -542,7 +572,16 @@ export default function KnowledgeBaseScreen() {
     const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, multiple: false });
     if (result.canceled || !result.assets?.length) return;
     const asset = result.assets[0];
-    setAttachmentFile({ uri: asset.uri, name: fileNameFromPicker(asset), type: fileTypeFromPicker(asset) });
+    setAttachmentFile(
+      normalizeUploadFile(
+        {
+          uri: asset.uri,
+          name: fileNameFromPicker(asset),
+          type: fileTypeFromPicker(asset),
+        },
+        fileNameFromPicker(asset)
+      )
+    );
     setAttachmentType('file');
   };
 
@@ -573,9 +612,9 @@ export default function KnowledgeBaseScreen() {
         if (sectionFile?.uri) fd.append('file', sectionFile as any);
 
         if (editorMode === 'create') {
-          await apiClient.post('documents/knowledge-sections/', fd, { headers: { Accept: 'application/json' } });
+          await apiClient.post('documents/knowledge-sections/', fd, multipartConfig);
         } else {
-          await apiClient.patch(`documents/knowledge-sections/${editingId}/`, fd, { headers: { Accept: 'application/json' } });
+          await apiClient.patch(`documents/knowledge-sections/${editingId}/`, fd, multipartConfig);
         }
       }
 
@@ -625,7 +664,8 @@ export default function KnowledgeBaseScreen() {
         if (attachmentType === 'link') fd.append('url', attachmentUrl.trim());
         else fd.append('file', attachmentFile as any);
 
-        await apiClient.post('documents/knowledge-section-attachments/', fd, { headers: { Accept: 'application/json' } });
+        
+        await apiClient.post('documents/knowledge-section-attachments/', fd, multipartConfig);
       }
 
       setEditorOpen(false);
@@ -686,10 +726,12 @@ export default function KnowledgeBaseScreen() {
   };
 
   const openUrl = async (url?: string | null) => {
-    if (!url) return;
-    try {
-      await WebBrowser.openBrowserAsync(url);
-    } catch {
+  const absoluteUrl = buildAbsoluteFileUrl(url);
+  if (!absoluteUrl) return;
+
+  try {
+    await WebBrowser.openBrowserAsync(absoluteUrl);
+  } catch {
       Alert.alert('Ошибка', 'Не удалось открыть ссылку.');
     }
   };
@@ -754,7 +796,7 @@ export default function KnowledgeBaseScreen() {
           style={styles.hero}
         >
           <View style={styles.heroTop}>
-            <Pressable onPress={() => router.back()} style={styles.heroBackBtn}>
+            <Pressable onPress={() => safeGoBack(router)} style={styles.heroBackBtn}>
               <Ionicons name="arrow-back" size={21} color="#fff" />
             </Pressable>
             {canEdit && (

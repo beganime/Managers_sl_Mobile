@@ -22,6 +22,7 @@ import ScreenWrapper from '../../components/ScreenWrapper';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import apiClient, { extractList, fetchAllPages } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
+import { safeGoBack } from '../../src/navigation/safeGoBack';
 
 type UserMini = {
   id: number;
@@ -365,7 +366,7 @@ export default function ProjectsScreen() {
           style={styles.hero}
         >
           <View style={styles.heroTop}>
-            <Pressable onPress={() => router.back()} style={styles.heroBackBtn}>
+            <Pressable onPress={() => safeGoBack(router)} style={styles.heroBackBtn}>
               <Ionicons name="arrow-back" size={21} color="#fff" />
             </Pressable>
             <Pressable onPress={openCreate} style={styles.heroAddBtn}>

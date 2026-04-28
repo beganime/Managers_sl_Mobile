@@ -4,6 +4,8 @@ import { deleteToken, getToken, saveToken } from '../utils/storage';
 
 export const BASE_URL = 'https://manager-sl.ru/api/';
 
+export const API_ORIGIN = BASE_URL.replace(/\/api\/?$/i, '').replace(/\/$/, '');
+
 const apiClient = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
@@ -16,6 +18,23 @@ const apiClient = axios.create({
 function normalizePath(path: string) {
   if (!path) return '';
   return path.startsWith('/') ? path.slice(1) : path;
+}
+
+export function buildAbsoluteFileUrl(value?: string | null) {
+  if (!value) return null;
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (/^(https?:|mailto:|tel:)/i.test(raw)) {
+    return raw;
+  }
+
+  if (raw.startsWith('/')) {
+    return `${API_ORIGIN}${raw}`;
+  }
+
+  return `${API_ORIGIN}/${raw.replace(/^\/+/, '')}`;
 }
 
 function isFormDataPayload(data: unknown) {
@@ -44,6 +63,11 @@ function stripJsonContentType(config: AxiosRequestConfig) {
   delete headers['Content-Type'];
   delete headers['content-type'];
 }
+
+export const multipartConfig: AxiosRequestConfig = {
+  headers: { Accept: 'application/json' },
+  transformRequest: [(data) => data],
+};
 
 async function persistUserCacheFromResponse(payload: any) {
   if (payload && typeof payload === 'object') {
@@ -135,22 +159,24 @@ export async function updateMyProfile(payload: Record<string, any>) {
   return response.data;
 }
 
-function normalizeUploadFile(file: { uri: string; name?: string; type?: string }) {
+export function normalizeUploadFile(
+  file: { uri: string; name?: string; type?: string },
+  fallbackName = 'file'
+) {
+  const cleanName = file.name || file.uri?.split('/')?.pop() || fallbackName;
+
   return {
     uri: file.uri,
-    name: file.name || 'avatar.jpg',
-    type: file.type || 'image/jpeg',
+    name: cleanName,
+    type: file.type || 'application/octet-stream',
   } as any;
 }
 
 export async function uploadMyAvatar(file: { uri: string; name?: string; type?: string }) {
   const fd = new FormData();
-  fd.append('avatar', normalizeUploadFile(file));
+  fd.append('avatar', normalizeUploadFile(file, 'avatar.jpg'));
 
-  const response = await apiClient.patch('users/users/me/', fd, {
-    headers: { Accept: 'application/json' },
-    transformRequest: (data) => data,
-  });
+  const response = await apiClient.patch('users/users/me/', fd, multipartConfig);
 
   await persistUserCacheFromResponse(response.data);
   return response.data;
