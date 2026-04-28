@@ -281,6 +281,7 @@ export default function AppTabsLayout() {
         <Tabs.Screen name="projects" options={{ href: null, headerShown: false }} />
         <Tabs.Screen name="project/[id]" options={{ href: null, headerShown: false }} />
         <Tabs.Screen name="support" options={{ href: null, headerShown: false }} />
+        <Tabs.Screen name="task/[id]" options={{ href: null, headerShown: false }} />
       </Tabs>
 
       {shouldShowGlobalFab && (
