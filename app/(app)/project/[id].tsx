@@ -2,10 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +22,7 @@ import {
 import Markdown from 'react-native-markdown-display';
 
 import ScreenWrapper from '../../../components/ScreenWrapper';
+import { useCurrentUser } from '../../../hooks/useCurrentUser';
 import apiClient, {
   appendPreparedFile,
   buildAbsoluteFileUrl,
@@ -43,6 +43,7 @@ type UserMini = {
 
 type TaskStatus = 'todo' | 'process' | 'review' | 'done';
 type TaskPriority = 'low' | 'medium' | 'high';
+type ProjectStatus = 'active' | 'paused' | 'done' | 'archived';
 
 type ProjectTask = {
   id: number;
@@ -59,6 +60,8 @@ type ProjectTask = {
   status: TaskStatus;
   priority: TaskPriority;
   deadline?: string | null;
+  order?: number;
+  created_at?: string;
   updated_at?: string;
 };
 
@@ -70,6 +73,7 @@ type ProjectAttachment = {
   file_url?: string | null;
   url?: string;
   note?: string;
+  created_at?: string;
 };
 
 type Project = {
@@ -77,18 +81,36 @@ type Project = {
   title: string;
   description?: string;
   city?: string;
+  office?: number | null;
   office_city?: string;
-  status: string;
+  status: ProjectStatus;
   deadline?: string | null;
+  is_hidden?: boolean;
+  is_pinned?: boolean;
+  created_by?: number | null;
+  created_by_data?: UserMini | null;
+  participants?: number[];
   participants_data?: UserMini[];
+  responsible_users?: number[];
   responsible_users_data?: UserMini[];
   items?: ProjectTask[];
   attachments?: ProjectAttachment[];
+  created_at?: string;
+  updated_at?: string;
+  can_manage?: boolean;
 };
 
-type UploadFile = { uri: string; name: string; type: string };
+type UploadFile = {
+  uri: string;
+  name: string;
+  type: string;
+};
 
-const TASK_STATUSES: Array<{ value: TaskStatus; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+const TASK_STATUSES: Array<{
+  value: TaskStatus;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}> = [
   { value: 'todo', label: 'План', icon: 'ellipse-outline' },
   { value: 'process', label: 'В работе', icon: 'flash-outline' },
   { value: 'review', label: 'Проверка', icon: 'eye-outline' },
@@ -101,7 +123,22 @@ const PRIORITIES: Array<{ value: TaskPriority; label: string }> = [
   { value: 'high', label: 'Высокий' },
 ];
 
-const ATTACHMENT_TYPES: Array<{ value: 'link' | 'image' | 'file'; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+const PROJECT_STATUSES: Array<{
+  value: ProjectStatus;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}> = [
+  { value: 'active', label: 'Активный', icon: 'radio-button-on-outline' },
+  { value: 'paused', label: 'Пауза', icon: 'pause-circle-outline' },
+  { value: 'done', label: 'Завершён', icon: 'checkmark-done-outline' },
+  { value: 'archived', label: 'Архив', icon: 'archive-outline' },
+];
+
+const ATTACHMENT_TYPES: Array<{
+  value: 'link' | 'image' | 'file';
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}> = [
   { value: 'link', label: 'Ссылка', icon: 'link-outline' },
   { value: 'image', label: 'Фото', icon: 'image-outline' },
   { value: 'file', label: 'Файл', icon: 'document-outline' },
@@ -113,32 +150,58 @@ function userName(user?: UserMini | null) {
 }
 
 function initials(user?: UserMini | null) {
-  const parts = userName(user).split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return 'U';
+  const name = userName(user);
+  const parts = name.split(/\s+/).filter(Boolean);
+
+  if (!parts.length) return 'U';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+
+  return `${parts[0].slice(0, 1)}${parts[1].slice(0, 1)}`.toUpperCase();
 }
 
 function formatDate(value?: string | null) {
   if (!value) return 'Без дедлайна';
+
   try {
-    return new Date(value).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' });
+    return new Date(value).toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
   } catch {
     return value;
   }
 }
 
-function statusColor(status: string, theme: any) {
-  if (status === 'done') return theme.success || '#1AAE6F';
-  if (status === 'review') return theme.warning || '#F59E0B';
-  if (status === 'process') return theme.blue;
-  return theme.textMuted;
+function formatDateTime(value?: string | null) {
+  if (!value) return '—';
+
+  try {
+    return new Date(value).toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return value;
+  }
 }
 
-function priorityColor(priority: string, theme: any) {
-  if (priority === 'high') return theme.red;
-  if (priority === 'medium') return theme.warning || '#F59E0B';
-  return theme.success || '#1AAE6F';
+function statusLabel(status?: string) {
+  if (status === 'active') return 'Активный';
+  if (status === 'paused') return 'Пауза';
+  if (status === 'done') return 'Завершён';
+  if (status === 'archived') return 'Архив';
+  return status || '—';
+}
+
+function taskStatusLabel(status?: string) {
+  if (status === 'todo') return 'План';
+  if (status === 'process') return 'В работе';
+  if (status === 'review') return 'Проверка';
+  if (status === 'done') return 'Готово';
+  return status || '—';
 }
 
 function priorityLabel(priority?: string) {
@@ -148,22 +211,73 @@ function priorityLabel(priority?: string) {
   return priority || '—';
 }
 
-function attachmentIcon(type?: string): keyof typeof Ionicons.glyphMap {
-  if (type === 'image') return 'image-outline';
-  if (type === 'link') return 'link-outline';
-  return 'document-outline';
+function projectStatusColor(status: string | undefined, theme: any) {
+  if (status === 'active') return theme.blue;
+  if (status === 'paused') return theme.warning || '#F59E0B';
+  if (status === 'done') return theme.success || '#1AAE6F';
+  if (status === 'archived') return theme.textMuted;
+  return theme.textMuted;
 }
 
-function markdownStyles(theme: any) {
-  return {
-    body: { color: theme.textSecondary, fontSize: 14, lineHeight: 21, fontWeight: '600' },
-    paragraph: { marginTop: 0, marginBottom: 8 },
-    strong: { color: theme.text, fontWeight: '900' },
-    heading1: { color: theme.text, fontSize: 22, fontWeight: '900', marginBottom: 8 },
-    heading2: { color: theme.text, fontSize: 19, fontWeight: '900', marginBottom: 6 },
-    heading3: { color: theme.text, fontSize: 17, fontWeight: '900', marginBottom: 6 },
-    link: { color: theme.blue, fontWeight: '900' },
-  };
+function taskStatusColor(status: string | undefined, theme: any) {
+  if (status === 'done') return theme.success || '#1AAE6F';
+  if (status === 'review') return theme.warning || '#F59E0B';
+  if (status === 'process') return theme.blue;
+  return theme.textMuted;
+}
+
+function priorityColor(priority: string | undefined, theme: any) {
+  if (priority === 'high') return theme.red;
+  if (priority === 'medium') return theme.warning || '#F59E0B';
+  return theme.success || '#1AAE6F';
+}
+
+function deadlineMeta(value?: string | null) {
+  if (!value) return { label: 'Без дедлайна', tone: 'muted' as const };
+
+  const now = new Date();
+  const date = new Date(value);
+  const diff = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (Number.isNaN(diff)) return { label: formatDate(value), tone: 'muted' as const };
+  if (diff < 0) return { label: `Просрочено ${Math.abs(diff)} дн.`, tone: 'danger' as const };
+  if (diff === 0) return { label: 'Сегодня', tone: 'warning' as const };
+  if (diff <= 3) return { label: `Через ${diff} дн.`, tone: 'warning' as const };
+
+  return { label: formatDate(value), tone: 'ok' as const };
+}
+
+function projectProgress(project?: Project | null) {
+  const tasks = project?.items || [];
+  const total = tasks.length;
+  const done = tasks.filter((item) => item.status === 'done').length;
+  const subtasks = tasks.reduce((sum, item) => sum + Number(item.subtasks_count || item.subtasks?.length || 0), 0);
+  const percent = total > 0 ? Math.round((done / total) * 100) : project?.status === 'done' ? 100 : 0;
+
+  return { total, done, subtasks, percent };
+}
+
+function canManageProject(project: Project | null, currentUserId?: number, isAdmin?: boolean) {
+  if (!project) return false;
+  if (project.can_manage) return true;
+  if (isAdmin) return true;
+  if (!currentUserId) return false;
+  return Number(project.created_by) === Number(currentUserId);
+}
+
+function normalizeDeadline(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return `${trimmed}T23:59:00`;
+  }
+
+  return trimmed;
+}
+
+function cleanDescription(value?: string) {
+  return String(value || '').replace(/[#*_`>-]/g, '').trim();
 }
 
 function fileNameFromPicker(asset: any) {
@@ -174,31 +288,103 @@ function fileTypeFromPicker(asset: any, fallback = 'application/octet-stream') {
   return asset?.mimeType || asset?.type || fallback;
 }
 
+function attachmentIcon(type?: string): keyof typeof Ionicons.glyphMap {
+  if (type === 'image') return 'image-outline';
+  if (type === 'link') return 'link-outline';
+  return 'document-outline';
+}
+
 function flattenTaskError(error: any) {
   const data = error?.response?.data;
-  return data?.detail || data?.title?.[0] || data?.parent?.[0] || data?.project?.[0] || data?.deadline?.[0] || 'Не удалось сохранить задачу.';
+
+  return (
+    data?.detail ||
+    data?.title?.[0] ||
+    data?.parent?.[0] ||
+    data?.project?.[0] ||
+    data?.assigned_to?.[0] ||
+    data?.deadline?.[0] ||
+    'Не удалось сохранить задачу.'
+  );
 }
 
 function flattenAttachmentError(error: any) {
   const data = error?.response?.data;
-  return data?.detail || data?.file?.[0] || data?.url?.[0] || data?.project?.[0] || 'Не удалось добавить материал.';
+
+  return (
+    data?.detail ||
+    data?.file?.[0] ||
+    data?.url?.[0] ||
+    data?.project?.[0] ||
+    data?.attachment_type?.[0] ||
+    'Не удалось добавить материал.'
+  );
 }
 
-function taskProgress(project?: Project | null) {
-  const items = project?.items || [];
-  const total = items.length;
-  const done = items.filter((item) => item.status === 'done').length;
-  const subtasks = items.reduce((sum, item) => sum + Number(item.subtasks_count || item.subtasks?.length || 0), 0);
-  const percent = total > 0 ? Math.round((done / total) * 100) : project?.status === 'done' ? 100 : 0;
-  return { total, done, subtasks, percent };
+function flattenProjectError(error: any) {
+  const data = error?.response?.data;
+
+  return (
+    data?.detail ||
+    data?.title?.[0] ||
+    data?.participants?.[0] ||
+    data?.responsible_users?.[0] ||
+    data?.deadline?.[0] ||
+    'Не удалось сохранить проект.'
+  );
+}
+
+function markdownStyles(theme: any) {
+  return {
+    body: {
+      color: theme.textSecondary,
+      fontSize: 14,
+      lineHeight: 21,
+      fontWeight: '600',
+    },
+    paragraph: {
+      marginTop: 0,
+      marginBottom: 8,
+    },
+    strong: {
+      color: theme.text,
+      fontWeight: '900',
+    },
+    heading1: {
+      color: theme.text,
+      fontSize: 22,
+      fontWeight: '900',
+      marginBottom: 8,
+    },
+    heading2: {
+      color: theme.text,
+      fontSize: 19,
+      fontWeight: '900',
+      marginBottom: 6,
+    },
+    heading3: {
+      color: theme.text,
+      fontSize: 17,
+      fontWeight: '900',
+      marginBottom: 6,
+    },
+    link: {
+      color: theme.blue,
+      fontWeight: '900',
+    },
+  };
 }
 
 function AvatarStack({ users, theme }: { users?: UserMini[]; theme: any }) {
-  const visible = (users || []).slice(0, 5);
+  const visible = (users || []).slice(0, 6);
+  const extra = Math.max((users || []).length - visible.length, 0);
+
   if (!visible.length) {
     return (
-      <View style={[styles.avatarMini, { backgroundColor: theme.backgroundSoft, borderColor: theme.surface }]}>
-        <Ionicons name="person-outline" size={14} color={theme.textMuted} />
+      <View style={styles.avatarStack}>
+        <View style={[styles.avatarMini, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+          <Ionicons name="person-outline" size={14} color={theme.textMuted} />
+        </View>
       </View>
     );
   }
@@ -220,6 +406,21 @@ function AvatarStack({ users, theme }: { users?: UserMini[]; theme: any }) {
           <Text style={styles.avatarMiniText}>{initials(item)}</Text>
         </View>
       ))}
+
+      {extra > 0 && (
+        <View
+          style={[
+            styles.avatarMini,
+            {
+              backgroundColor: theme.backgroundSoft,
+              borderColor: theme.surface,
+              marginLeft: -8,
+            },
+          ]}
+        >
+          <Text style={[styles.avatarExtraText, { color: theme.text }]}>+{extra}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -228,19 +429,35 @@ export default function ProjectDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
   const { theme, themeMode } = useTheme();
+  const { user } = useCurrentUser();
 
-  const projectId = Number(params.id);
   const dark = themeMode === 'dark';
+  const projectId = Number(params.id);
+  const isAdmin = Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
+  const currentUserId = user?.id ? Number(user.id) : undefined;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
   const [project, setProject] = useState<Project | null>(null);
   const [users, setUsers] = useState<UserMini[]>([]);
 
+  const [editProjectOpen, setEditProjectOpen] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [attachmentModalOpen, setAttachmentModalOpen] = useState(false);
+
+  const [savingProject, setSavingProject] = useState(false);
   const [savingTask, setSavingTask] = useState(false);
   const [savingAttachment, setSavingAttachment] = useState(false);
+
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editCity, setEditCity] = useState('');
+  const [editDeadline, setEditDeadline] = useState('');
+  const [editStatus, setEditStatus] = useState<ProjectStatus>('active');
+  const [editParticipants, setEditParticipants] = useState<number[]>([]);
+  const [editResponsibles, setEditResponsibles] = useState<number[]>([]);
+  const [userSearch, setUserSearch] = useState('');
 
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
@@ -255,13 +472,29 @@ export default function ProjectDetailScreen() {
   const [attachmentNote, setAttachmentNote] = useState('');
   const [selectedFile, setSelectedFile] = useState<UploadFile | null>(null);
 
-  const progress = useMemo(() => taskProgress(project), [project]);
-  const tasksByStatus = useMemo(() => {
-    const items = project?.items || [];
-    return TASK_STATUSES.map((status) => ({ ...status, items: items.filter((item) => item.status === status.value) }));
+  const progress = useMemo(() => projectProgress(project), [project]);
+  const canManage = useMemo(() => canManageProject(project, currentUserId, isAdmin), [project, currentUserId, isAdmin]);
+
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+
+    if (!q) return users;
+
+    return users.filter((item) => {
+      return userName(item).toLowerCase().includes(q) || String(item.email || '').toLowerCase().includes(q);
+    });
+  }, [users, userSearch]);
+
+  const taskGroups = useMemo(() => {
+    const tasks = project?.items || [];
+
+    return TASK_STATUSES.map((status) => ({
+      ...status,
+      items: tasks.filter((item) => item.status === status.value),
+    }));
   }, [project?.items]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!projectId) return;
 
     try {
@@ -270,19 +503,24 @@ export default function ProjectDetailScreen() {
         fetchAllPages('users/users/?limit=100&offset=0'),
       ]);
 
-      if (projectRes.status === 'fulfilled') setProject(projectRes.value.data);
-      if (usersRes.status === 'fulfilled') setUsers(usersRes.value as UserMini[]);
-    } catch {
-      Alert.alert('Ошибка', 'Не удалось загрузить проект.');
+      if (projectRes.status === 'fulfilled') {
+        setProject(projectRes.value.data);
+      }
+
+      if (usersRes.status === 'fulfilled') {
+        setUsers(usersRes.value as UserMini[]);
+      }
+    } catch (error: any) {
+      Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось загрузить проект.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [projectId]);
 
   useEffect(() => {
     void load();
-  }, [projectId]);
+  }, [load]);
 
   const resetTask = () => {
     setTaskTitle('');
@@ -299,6 +537,71 @@ export default function ProjectDetailScreen() {
     setAttachmentUrl('');
     setAttachmentNote('');
     setSelectedFile(null);
+  };
+
+  const openProjectEdit = () => {
+    if (!project) return;
+
+    setEditTitle(project.title || '');
+    setEditDescription(project.description || '');
+    setEditCity(project.city || project.office_city || '');
+    setEditDeadline(project.deadline || '');
+    setEditStatus(project.status || 'active');
+    setEditParticipants(
+      project.participants?.length
+        ? project.participants.map(Number)
+        : project.participants_data?.map((item) => Number(item.id)) || []
+    );
+    setEditResponsibles(
+      project.responsible_users?.length
+        ? project.responsible_users.map(Number)
+        : project.responsible_users_data?.map((item) => Number(item.id)) || []
+    );
+    setUserSearch('');
+    setEditProjectOpen(true);
+  };
+
+  const toggleId = (id: number, list: number[], setter: (value: number[]) => void) => {
+    setter(list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
+  };
+
+  const saveProject = async () => {
+    if (!project) return;
+
+    if (!editTitle.trim()) {
+      Alert.alert('Ошибка', 'Название проекта не может быть пустым.');
+      return;
+    }
+
+    const participants = Array.from(
+      new Set([
+        ...editParticipants,
+        ...(currentUserId ? [currentUserId] : []),
+        ...editResponsibles,
+      ])
+    );
+
+    setSavingProject(true);
+
+    try {
+      await apiClient.patch(`tasks/projects/${project.id}/`, {
+        title: editTitle.trim(),
+        description: editDescription.trim(),
+        city: editCity.trim(),
+        status: editStatus,
+        deadline: normalizeDeadline(editDeadline),
+        participants,
+        responsible_users: editResponsibles,
+      });
+
+      setEditProjectOpen(false);
+      await load();
+      Alert.alert('Готово', 'Проект обновлён.');
+    } catch (error: any) {
+      Alert.alert('Ошибка', String(flattenProjectError(error)));
+    } finally {
+      setSavingProject(false);
+    }
   };
 
   const createTask = async () => {
@@ -318,7 +621,7 @@ export default function ProjectDetailScreen() {
         assigned_to: taskAssignedTo,
         status: taskStatus,
         priority: taskPriority,
-        deadline: taskDeadline.trim() || null,
+        deadline: normalizeDeadline(taskDeadline),
       });
 
       setTaskModalOpen(false);
@@ -341,23 +644,41 @@ export default function ProjectDetailScreen() {
   };
 
   const openTask = (task: ProjectTask) => {
-    router.push({ pathname: '/(app)/task/[id]', params: { id: String(task.id), projectId: String(projectId) } } as any);
+    router.push({
+      pathname: '/(app)/task/[id]',
+      params: {
+        id: String(task.id),
+        projectId: String(projectId),
+      },
+    } as any);
   };
 
   const pickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
     if (!permission.granted) {
       Alert.alert('Нет доступа', 'Разреши приложению доступ к галерее.');
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 0.85, selectionLimit: 1 });
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.85,
+      selectionLimit: 1,
+    });
+
     if (result.canceled || !result.assets?.length) return;
 
     const asset = result.assets[0];
+
     setSelectedFile(
       normalizeUploadFile(
-        { uri: asset.uri, name: asset.fileName || asset.uri.split('/').pop() || 'image.jpg', type: asset.mimeType || 'image/jpeg' },
+        {
+          uri: asset.uri,
+          name: asset.fileName || asset.uri.split('/').pop() || 'image.jpg',
+          type: asset.mimeType || 'image/jpeg',
+        },
         'image.jpg'
       )
     );
@@ -365,11 +686,25 @@ export default function ProjectDetailScreen() {
   };
 
   const pickFile = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, multiple: false });
+    const result = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+
     if (result.canceled || !result.assets?.length) return;
 
     const asset = result.assets[0];
-    setSelectedFile(normalizeUploadFile({ uri: asset.uri, name: fileNameFromPicker(asset), type: fileTypeFromPicker(asset) }, fileNameFromPicker(asset)));
+
+    setSelectedFile(
+      normalizeUploadFile(
+        {
+          uri: asset.uri,
+          name: fileNameFromPicker(asset),
+          type: fileTypeFromPicker(asset),
+        },
+        fileNameFromPicker(asset)
+      )
+    );
     setAttachmentType('file');
   };
 
@@ -388,6 +723,7 @@ export default function ProjectDetailScreen() {
 
     try {
       const fd = new FormData();
+
       fd.append('project', String(projectId));
       fd.append('attachment_type', attachmentType);
       fd.append('title', attachmentTitle.trim());
@@ -396,7 +732,12 @@ export default function ProjectDetailScreen() {
       if (attachmentType === 'link') {
         fd.append('url', attachmentUrl.trim());
       } else if (selectedFile) {
-        await appendPreparedFile(fd, 'file', selectedFile, attachmentType === 'image' ? 'image.jpg' : selectedFile.name || 'file');
+        await appendPreparedFile(
+          fd,
+          'file',
+          selectedFile,
+          attachmentType === 'image' ? 'image.jpg' : selectedFile.name || 'file'
+        );
       }
 
       await apiClient.post('tasks/project-attachments/', fd, multipartConfig);
@@ -441,6 +782,9 @@ export default function ProjectDetailScreen() {
       <ScreenWrapper>
         <View style={styles.center}>
           <Text style={[styles.emptyTitle, { color: theme.text }]}>Проект не найден</Text>
+          <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
+            Возможно, у тебя нет доступа к этому проекту.
+          </Text>
           <Pressable onPress={() => safeGoBack(router, '/(app)/projects')} style={[styles.backWideBtn, { backgroundColor: theme.blue }]}>
             <Text style={styles.backWideText}>Назад</Text>
           </Pressable>
@@ -449,518 +793,1568 @@ export default function ProjectDetailScreen() {
     );
   }
 
+  const pColor = projectStatusColor(project.status, theme);
+  const d = deadlineMeta(project.deadline);
+  const dColor = d.tone === 'danger' ? theme.red : d.tone === 'warning' ? theme.warning || '#F59E0B' : theme.textMuted;
+
   return (
     <ScreenWrapper>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              void load();
-            }}
-            tintColor={theme.blue}
-          />
-        }
-      >
-        <LinearGradient
-          colors={dark ? ['#111827', '#1E3A8A'] : ['#2563EB', '#60A5FA']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.hero}
+      <View style={[styles.screen, { backgroundColor: theme.background }]}>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                void load();
+              }}
+              tintColor={theme.blue}
+            />
+          }
         >
-          <View style={styles.heroTop}>
-            <Pressable onPress={() => safeGoBack(router, '/(app)/projects')} style={styles.heroBackBtn}>
-              <Ionicons name="arrow-back" size={21} color="#fff" />
+          <View
+            style={[
+              styles.header,
+              {
+                backgroundColor: dark ? '#111827' : '#FFFFFF',
+                borderColor: theme.border,
+                shadowColor: theme.shadow,
+              },
+            ]}
+          >
+            <View style={styles.headerTop}>
+              <Pressable onPress={() => safeGoBack(router, '/(app)/projects')} style={[styles.backBtn, { backgroundColor: theme.backgroundSoft }]}>
+                <Ionicons name="arrow-back" size={21} color={theme.text} />
+              </Pressable>
+
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.kicker, { color: theme.textMuted }]}>PROJECT #{project.id}</Text>
+                <Text style={[styles.title, { color: theme.text }]}>{project.title}</Text>
+              </View>
+
+              {canManage && (
+                <Pressable onPress={openProjectEdit} style={[styles.editBtn, { backgroundColor: theme.blue }]}>
+                  <Ionicons name="create-outline" size={17} color="#fff" />
+                </Pressable>
+              )}
+            </View>
+
+            <View style={styles.headerMetaRow}>
+              <View style={[styles.metaPill, { backgroundColor: `${pColor}18`, borderColor: `${pColor}55` }]}>
+                <Ionicons name="radio-button-on-outline" size={14} color={pColor} />
+                <Text style={[styles.metaPillText, { color: pColor }]}>{statusLabel(project.status)}</Text>
+              </View>
+
+              <View style={[styles.metaPill, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                <Ionicons name="location-outline" size={14} color={theme.textMuted} />
+                <Text style={[styles.metaPillText, { color: theme.textSecondary }]}>
+                  {project.city || project.office_city || 'Без города'}
+                </Text>
+              </View>
+
+              <View style={[styles.metaPill, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                <Ionicons name="time-outline" size={14} color={dColor} />
+                <Text style={[styles.metaPillText, { color: dColor }]}>{d.label}</Text>
+              </View>
+            </View>
+
+            <View style={[styles.progressPanel, { backgroundColor: theme.backgroundSoft }]}>
+              <View style={styles.progressHeader}>
+                <Text style={[styles.progressTitle, { color: theme.text }]}>Прогресс проекта</Text>
+                <Text style={[styles.progressPercent, { color: theme.blue }]}>{progress.percent}%</Text>
+              </View>
+
+              <View style={[styles.progressTrack, { backgroundColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)' }]}>
+                <View style={[styles.progressFill, { width: `${progress.percent}%`, backgroundColor: theme.blue }]} />
+              </View>
+
+              <View style={styles.progressStats}>
+                <Text style={[styles.progressHint, { color: theme.textSecondary }]}>
+                  {progress.done}/{progress.total} задач завершено
+                </Text>
+                <Text style={[styles.progressHint, { color: theme.textSecondary }]}>
+                  {progress.subtasks} подзадач
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.quickActions}>
+            <Pressable onPress={() => setTaskModalOpen(true)} style={[styles.quickBtn, { backgroundColor: theme.blue }]}>
+              <Ionicons name="add-circle-outline" size={18} color="#fff" />
+              <Text style={styles.quickBtnText}>Задача</Text>
             </Pressable>
 
-            <View style={styles.heroActions}>
-              <Pressable onPress={() => setTaskModalOpen(true)} style={styles.heroActionBtn}>
-                <Ionicons name="checkbox-outline" size={17} color="#fff" />
-                <Text style={styles.heroActionText}>Задача</Text>
-              </Pressable>
-
-              <Pressable onPress={() => setAttachmentModalOpen(true)} style={styles.heroIconBtn}>
-                <Ionicons name="attach-outline" size={18} color="#fff" />
-              </Pressable>
-            </View>
+            <Pressable onPress={() => setAttachmentModalOpen(true)} style={[styles.quickBtn, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
+              <Ionicons name="attach-outline" size={18} color={theme.blue} />
+              <Text style={[styles.quickBtnText, { color: theme.blue }]}>Материал</Text>
+            </Pressable>
           </View>
 
-          <Text style={styles.heroKicker}>{project.city || project.office_city || 'Проект'}</Text>
-          <Text style={styles.heroTitle}>{project.title}</Text>
-          <Text style={styles.heroSubtitle}>Дедлайн: {formatDate(project.deadline)}</Text>
-
-          <View style={styles.heroProgressBox}>
-            <View style={styles.heroProgressTop}>
-              <Text style={styles.heroProgressLabel}>Общий прогресс</Text>
-              <Text style={styles.heroProgressPercent}>{progress.percent}%</Text>
-            </View>
-
-            <View style={styles.heroProgressTrack}>
-              <View style={[styles.heroProgressFill, { width: `${progress.percent}%` }]} />
-            </View>
-
-            <View style={styles.heroStats}>
-              <View style={styles.heroStatItem}>
-                <Text style={styles.heroStatValue}>{progress.total}</Text>
-                <Text style={styles.heroStatLabel}>Задач</Text>
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionIcon, { backgroundColor: theme.blueSoft }]}>
+                <Ionicons name="document-text-outline" size={18} color={theme.blue} />
               </View>
-              <View style={styles.heroLine} />
-              <View style={styles.heroStatItem}>
-                <Text style={styles.heroStatValue}>{progress.subtasks}</Text>
-                <Text style={styles.heroStatLabel}>Подзадач</Text>
-              </View>
-              <View style={styles.heroLine} />
-              <View style={styles.heroStatItem}>
-                <Text style={styles.heroStatValue}>{progress.done}</Text>
-                <Text style={styles.heroStatLabel}>Готово</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Описание</Text>
+                <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>Контекст, цель и правила проекта</Text>
               </View>
             </View>
-          </View>
-        </LinearGradient>
 
-        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
-          <View style={styles.cardTitleRow}>
-            <View style={[styles.cardIcon, { backgroundColor: theme.blueSoft }]}>
-              <Ionicons name="document-text-outline" size={19} color={theme.blue} />
-            </View>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Описание</Text>
-          </View>
-
-          {project.description ? (
-            <Markdown style={markdownStyles(theme) as any}>{project.description}</Markdown>
-          ) : (
-            <Text style={[styles.emptySmall, { color: theme.textSecondary }]}>Описание не добавлено.</Text>
-          )}
-        </View>
-
-        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
-          <View style={styles.cardTitleRow}>
-            <View style={[styles.cardIcon, { backgroundColor: theme.blueSoft }]}>
-              <Ionicons name="people-outline" size={19} color={theme.blue} />
-            </View>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Команда проекта</Text>
-          </View>
-
-          <View style={styles.teamHeader}>
-            <AvatarStack users={project.participants_data} theme={theme} />
-            <Text style={[styles.teamCount, { color: theme.textSecondary }]}>Участников: {(project.participants_data || []).length}</Text>
-          </View>
-
-          <Text style={[styles.subSectionTitle, { color: theme.text }]}>Ответственные</Text>
-          <View style={styles.peopleWrap}>
-            {(project.responsible_users_data || []).map((item) => (
-              <View key={item.id} style={[styles.personPill, { backgroundColor: theme.blueSoft, borderColor: theme.border }]}>
-                <Text style={[styles.personText, { color: theme.blue }]}>{userName(item)}</Text>
-              </View>
-            ))}
-
-            {(project.responsible_users_data || []).length === 0 && (
-              <Text style={[styles.emptySmall, { color: theme.textSecondary }]}>Ответственные не назначены.</Text>
+            {project.description ? (
+              <Markdown style={markdownStyles(theme) as any}>{project.description}</Markdown>
+            ) : (
+              <Text style={[styles.emptySmall, { color: theme.textSecondary }]}>Описание не добавлено.</Text>
             )}
           </View>
-        </View>
 
-        <View style={styles.quickActions}>
-          <Pressable onPress={() => setTaskModalOpen(true)} style={[styles.quickActionBtn, { backgroundColor: theme.blue }]}>
-            <Ionicons name="add-circle-outline" size={18} color="#fff" />
-            <Text style={styles.quickActionText}>Добавить задачу</Text>
-          </Pressable>
-
-          <Pressable onPress={() => setAttachmentModalOpen(true)} style={[styles.quickActionBtn, { backgroundColor: theme.success || '#1AAE6F' }]}>
-            <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
-            <Text style={styles.quickActionText}>Материал</Text>
-          </Pressable>
-        </View>
-
-        <Text style={[styles.bigSectionTitle, { color: theme.text }]}>Задачи проекта</Text>
-        <Text style={[styles.bigSectionSub, { color: theme.textSecondary }]}>Нажми на задачу, чтобы открыть её как папку с подзадачами.</Text>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.kanbanScroll}>
-          {tasksByStatus.map((column) => (
-            <View key={column.value} style={[styles.kanbanColumn, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <View style={styles.columnHeader}>
-                <View style={[styles.columnIcon, { backgroundColor: theme.blueSoft }]}>
-                  <Ionicons name={column.icon} size={16} color={theme.blue} />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.columnTitle, { color: theme.text }]}>{column.label}</Text>
-                  <Text style={[styles.columnCount, { color: theme.textSecondary }]}>{column.items.length} задач</Text>
-                </View>
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionIcon, { backgroundColor: theme.blueSoft }]}>
+                <Ionicons name="people-outline" size={18} color={theme.blue} />
               </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Команда</Text>
+                <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>Участники и ответственные</Text>
+              </View>
+            </View>
 
-              {column.items.length === 0 ? (
-                <View style={[styles.emptyColumn, { backgroundColor: theme.backgroundSoft }]}>
-                  <Text style={[styles.emptySmall, { color: theme.textSecondary }]}>Пусто</Text>
+            <View style={styles.teamRow}>
+              <AvatarStack users={project.participants_data} theme={theme} />
+              <Text style={[styles.teamText, { color: theme.textSecondary }]}>
+                Участников: {(project.participants_data || []).length}
+              </Text>
+            </View>
+
+            <Text style={[styles.smallSectionTitle, { color: theme.text }]}>Ответственные</Text>
+
+            <View style={styles.peopleWrap}>
+              {(project.responsible_users_data || []).map((item) => (
+                <View key={item.id} style={[styles.personChip, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                  <Text style={[styles.personChipText, { color: theme.text }]}>{userName(item)}</Text>
                 </View>
-              ) : (
-                column.items.map((task) => {
-                  const pColor = priorityColor(task.priority, theme);
-                  const sColor = statusColor(task.status, theme);
+              ))}
 
-                  return (
-                    <Pressable
-                      key={task.id}
-                      onPress={() => openTask(task)}
-                      style={[styles.taskCard, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}
-                    >
-                      <View style={styles.taskTop}>
-                        <Text style={[styles.taskTitle, { color: theme.text }]}>{task.title}</Text>
-                        <View style={[styles.priorityDot, { backgroundColor: pColor }]} />
-                      </View>
-
-                      {!!task.description && (
-                        <View style={styles.taskDescription}>
-                          <Markdown style={markdownStyles(theme) as any}>
-                            {task.description.length > 130 ? `${task.description.slice(0, 130)}...` : task.description}
-                          </Markdown>
-                        </View>
-                      )}
-
-                      <View style={styles.taskMetaBox}>
-                        <View style={styles.taskMetaRow}>
-                          <Ionicons name="person-outline" size={13} color={theme.textMuted} />
-                          <Text style={[styles.taskMeta, { color: theme.textSecondary }]} numberOfLines={1}>{userName(task.assigned_to_data)}</Text>
-                        </View>
-
-                        <View style={styles.taskMetaRow}>
-                          <Ionicons name="folder-open-outline" size={13} color={theme.textMuted} />
-                          <Text style={[styles.taskMeta, { color: theme.textSecondary }]}>{task.subtasks_count || task.subtasks?.length || 0} подзадач</Text>
-                        </View>
-
-                        <View style={styles.taskMetaRow}>
-                          <Ionicons name="flag-outline" size={13} color={pColor} />
-                          <Text style={[styles.taskMeta, { color: pColor }]}>{priorityLabel(task.priority)}</Text>
-                        </View>
-                      </View>
-
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.taskStatusRow}>
-                        {TASK_STATUSES.map((statusItem) => {
-                          const active = task.status === statusItem.value;
-
-                          return (
-                            <Pressable
-                              key={statusItem.value}
-                              onPress={(event) => {
-                                event.stopPropagation();
-                                updateTaskStatus(task, statusItem.value);
-                              }}
-                              style={[
-                                styles.statusPill,
-                                {
-                                  backgroundColor: active ? sColor : theme.surface,
-                                  borderColor: active ? sColor : theme.border,
-                                },
-                              ]}
-                            >
-                              <Text style={[styles.statusText, { color: active ? '#fff' : theme.text }]}>{statusItem.label}</Text>
-                            </Pressable>
-                          );
-                        })}
-                      </ScrollView>
-
-                      <View style={[styles.openTaskBtn, { backgroundColor: theme.blueSoft, borderColor: theme.border }]}>
-                        <Ionicons name="folder-open-outline" size={15} color={theme.blue} />
-                        <Text style={[styles.openTaskBtnText, { color: theme.blue }]}>Открыть задачу</Text>
-                      </View>
-                    </Pressable>
-                  );
-                })
+              {(project.responsible_users_data || []).length === 0 && (
+                <Text style={[styles.emptySmall, { color: theme.textSecondary }]}>Ответственные не назначены.</Text>
               )}
             </View>
-          ))}
-        </ScrollView>
-
-        <View style={styles.materialHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.bigSectionTitle, { color: theme.text }]}>Файлы, фото и ссылки</Text>
-            <Text style={[styles.bigSectionSub, { color: theme.textSecondary }]}>Материалы проекта открываются во встроенном браузере.</Text>
           </View>
 
-          <Pressable onPress={() => setAttachmentModalOpen(true)} style={[styles.smallAddBtn, { backgroundColor: theme.blueSoft }]}>
-            <Ionicons name="add" size={18} color={theme.blue} />
-          </Pressable>
-        </View>
-
-        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
-          {(project.attachments || []).length === 0 ? (
-            <View style={styles.emptyMaterials}>
-              <Ionicons name="attach-outline" size={34} color={theme.textMuted} />
-              <Text style={[styles.emptySmall, { color: theme.textSecondary }]}>Материалы пока не добавлены.</Text>
-            </View>
-          ) : (
-            (project.attachments || []).map((attachment) => (
-              <Pressable
-                key={attachment.id}
-                onPress={() => openAttachment(attachment)}
-                style={[styles.attachmentCard, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}
-              >
-                <View style={[styles.attachmentIcon, { backgroundColor: theme.blueSoft }]}>
-                  <Ionicons name={attachmentIcon(attachment.attachment_type)} size={20} color={theme.blue} />
-                </View>
-
-                {attachment.attachment_type === 'image' && attachment.file_url ? (
-                  <Image source={{ uri: buildAbsoluteFileUrl(attachment.file_url) || attachment.file_url }} style={styles.attachmentImage} contentFit="cover" />
-                ) : null}
-
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.attachmentTitle, { color: theme.text }]} numberOfLines={1}>{attachment.title || attachment.url || 'Материал'}</Text>
-                  {!!attachment.note && <Text style={[styles.attachmentNote, { color: theme.textSecondary }]} numberOfLines={2}>{attachment.note}</Text>}
-                </View>
-
-                <Ionicons name="open-outline" size={18} color={theme.textMuted} />
-              </Pressable>
-            ))
-          )}
-        </View>
-      </ScrollView>
-
-      <Modal visible={taskModalOpen} animationType="slide" transparent onRequestClose={() => setTaskModalOpen(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <View style={styles.modalHandle} />
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.modalTitle, { color: theme.text }]}>Новая задача</Text>
-                <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>Подзадачи создаются внутри страницы конкретной задачи</Text>
-              </View>
-              <Pressable onPress={() => setTaskModalOpen(false)} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
-                <Ionicons name="close" size={20} color={theme.text} />
-              </Pressable>
+          <View style={styles.sectionTitleLine}>
+            <View>
+              <Text style={[styles.bigTitle, { color: theme.text }]}>Задачи</Text>
+              <Text style={[styles.bigSub, { color: theme.textSecondary }]}>Рабочий список задач проекта</Text>
             </View>
 
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
-              <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название</Text>
-                <TextInput value={taskTitle} onChangeText={setTaskTitle} placeholder="Название задачи" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
-              </View>
-
-              <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Описание Markdown</Text>
-                <TextInput value={taskDescription} onChangeText={setTaskDescription} placeholder={'Описание задачи\n- пункт\n**важное**'} placeholderTextColor={theme.textMuted} style={[styles.input, styles.textarea, { color: theme.text }]} multiline textAlignVertical="top" />
-              </View>
-
-              <Text style={[styles.peopleTitle, { color: theme.text }]}>Ответственный</Text>
-              <View style={styles.peopleWrap}>
-                <Pressable onPress={() => setTaskAssignedTo(null)} style={[styles.personPill, { backgroundColor: taskAssignedTo === null ? theme.blue : theme.backgroundSoft, borderColor: taskAssignedTo === null ? theme.blue : theme.border }]}>
-                  <Text style={[styles.personText, { color: taskAssignedTo === null ? '#fff' : theme.text }]}>Не назначен</Text>
-                </Pressable>
-                {users.map((item) => (
-                  <Pressable key={item.id} onPress={() => setTaskAssignedTo(item.id)} style={[styles.personPill, { backgroundColor: taskAssignedTo === item.id ? theme.blue : theme.backgroundSoft, borderColor: taskAssignedTo === item.id ? theme.blue : theme.border }]}>
-                    <Text style={[styles.personText, { color: taskAssignedTo === item.id ? '#fff' : theme.text }]}>{userName(item)}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <Text style={[styles.peopleTitle, { color: theme.text }]}>Статус</Text>
-              <View style={styles.peopleWrap}>
-                {TASK_STATUSES.map((item) => (
-                  <Pressable key={item.value} onPress={() => setTaskStatus(item.value)} style={[styles.personPill, { backgroundColor: taskStatus === item.value ? theme.blue : theme.backgroundSoft, borderColor: taskStatus === item.value ? theme.blue : theme.border }]}>
-                    <Text style={[styles.personText, { color: taskStatus === item.value ? '#fff' : theme.text }]}>{item.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <Text style={[styles.peopleTitle, { color: theme.text }]}>Приоритет</Text>
-              <View style={styles.peopleWrap}>
-                {PRIORITIES.map((item) => (
-                  <Pressable key={item.value} onPress={() => setTaskPriority(item.value)} style={[styles.personPill, { backgroundColor: taskPriority === item.value ? theme.blue : theme.backgroundSoft, borderColor: taskPriority === item.value ? theme.blue : theme.border }]}>
-                    <Text style={[styles.personText, { color: taskPriority === item.value ? '#fff' : theme.text }]}>{item.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Дедлайн</Text>
-                <TextInput value={taskDeadline} onChangeText={setTaskDeadline} placeholder="2026-05-20 или 2026-05-20T18:00:00" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} autoCapitalize="none" />
-              </View>
-
-              <Pressable onPress={createTask} disabled={savingTask} style={[styles.saveBtn, { backgroundColor: theme.blue, opacity: savingTask ? 0.65 : 1 }]}>
-                {savingTask ? <ActivityIndicator color="#fff" /> : <Ionicons name="save-outline" size={18} color="#fff" />}
-                <Text style={styles.saveText}>{savingTask ? 'Сохранение...' : 'Сохранить задачу'}</Text>
-              </Pressable>
-            </ScrollView>
+            <Pressable onPress={() => setTaskModalOpen(true)} style={[styles.smallAddBtn, { backgroundColor: theme.blueSoft }]}>
+              <Ionicons name="add" size={18} color={theme.blue} />
+            </Pressable>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
 
-      <Modal visible={attachmentModalOpen} animationType="slide" transparent onRequestClose={() => setAttachmentModalOpen(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <View style={styles.modalHandle} />
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.modalTitle, { color: theme.text }]}>Материал проекта</Text>
-                <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>Добавь ссылку, фото или файл внутрь проекта</Text>
+          <View style={[styles.tasksBoard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            {taskGroups.map((group) => (
+              <View key={group.value} style={styles.taskGroup}>
+                <View style={styles.taskGroupHeader}>
+                  <View style={[styles.taskGroupIcon, { backgroundColor: `${taskStatusColor(group.value, theme)}18` }]}>
+                    <Ionicons name={group.icon} size={15} color={taskStatusColor(group.value, theme)} />
+                  </View>
+                  <Text style={[styles.taskGroupTitle, { color: theme.text }]}>{group.label}</Text>
+                  <Text style={[styles.taskGroupCount, { color: theme.textMuted }]}>{group.items.length}</Text>
+                </View>
+
+                {group.items.length === 0 ? (
+                  <View style={[styles.emptyTaskLine, { backgroundColor: theme.backgroundSoft }]}>
+                    <Text style={[styles.emptySmall, { color: theme.textMuted }]}>Нет задач</Text>
+                  </View>
+                ) : (
+                  group.items.map((task) => {
+                    const sColor = taskStatusColor(task.status, theme);
+                    const prColor = priorityColor(task.priority, theme);
+
+                    return (
+                      <Pressable
+                        key={task.id}
+                        onPress={() => openTask(task)}
+                        style={[
+                          styles.taskRow,
+                          {
+                            backgroundColor: theme.backgroundSoft,
+                            borderColor: theme.border,
+                          },
+                        ]}
+                      >
+                        <View style={[styles.taskCheck, { borderColor: sColor, backgroundColor: task.status === 'done' ? sColor : 'transparent' }]}>
+                          {task.status === 'done' && <Ionicons name="checkmark" size={12} color="#fff" />}
+                        </View>
+
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.taskTitle, { color: theme.text }]} numberOfLines={2}>
+                            {task.title}
+                          </Text>
+
+                          {!!cleanDescription(task.description) && (
+                            <Text style={[styles.taskDescription, { color: theme.textSecondary }]} numberOfLines={2}>
+                              {cleanDescription(task.description)}
+                            </Text>
+                          )}
+
+                          <View style={styles.taskMetaRow}>
+                            <View style={[styles.taskPill, { backgroundColor: `${sColor}18` }]}>
+                              <Text style={[styles.taskPillText, { color: sColor }]}>{taskStatusLabel(task.status)}</Text>
+                            </View>
+
+                            <View style={[styles.taskPill, { backgroundColor: `${prColor}18` }]}>
+                              <Text style={[styles.taskPillText, { color: prColor }]}>{priorityLabel(task.priority)}</Text>
+                            </View>
+
+                            <View style={[styles.taskPill, { backgroundColor: theme.surface }]}>
+                              <Ionicons name="folder-open-outline" size={12} color={theme.textMuted} />
+                              <Text style={[styles.taskPillText, { color: theme.textSecondary }]}>
+                                {task.subtasks_count || task.subtasks?.length || 0}
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+
+                        <View style={styles.taskRight}>
+                          <Text style={[styles.taskAssignee, { color: theme.textSecondary }]} numberOfLines={1}>
+                            {userName(task.assigned_to_data)}
+                          </Text>
+                          <Text style={[styles.taskDate, { color: theme.textMuted }]}>{formatDate(task.deadline)}</Text>
+
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusMiniRow}>
+                            {TASK_STATUSES.map((statusItem) => {
+                              const active = task.status === statusItem.value;
+                              const color = taskStatusColor(statusItem.value, theme);
+
+                              return (
+                                <Pressable
+                                  key={statusItem.value}
+                                  onPress={(event) => {
+                                    event.stopPropagation();
+                                    updateTaskStatus(task, statusItem.value);
+                                  }}
+                                  style={[
+                                    styles.statusMini,
+                                    {
+                                      backgroundColor: active ? color : theme.surface,
+                                      borderColor: active ? color : theme.border,
+                                    },
+                                  ]}
+                                />
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
+
+                        <Ionicons name="chevron-forward" size={17} color={theme.textMuted} />
+                      </Pressable>
+                    );
+                  })
+                )}
               </View>
-              <Pressable onPress={() => setAttachmentModalOpen(false)} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
-                <Ionicons name="close" size={20} color={theme.text} />
-              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.sectionTitleLine}>
+            <View>
+              <Text style={[styles.bigTitle, { color: theme.text }]}>Материалы</Text>
+              <Text style={[styles.bigSub, { color: theme.textSecondary }]}>Файлы, фото и ссылки проекта</Text>
             </View>
 
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
-              <Text style={[styles.peopleTitle, { color: theme.text }]}>Тип материала</Text>
-              <View style={styles.peopleWrap}>
-                {ATTACHMENT_TYPES.map((item) => {
-                  const active = attachmentType === item.value;
-                  return (
-                    <Pressable key={item.value} onPress={() => setAttachmentType(item.value)} style={[styles.personPill, { backgroundColor: active ? theme.blue : theme.backgroundSoft, borderColor: active ? theme.blue : theme.border }]}>
-                      <Ionicons name={item.icon} size={15} color={active ? '#fff' : theme.blue} />
-                      <Text style={[styles.personText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+            <Pressable onPress={() => setAttachmentModalOpen(true)} style={[styles.smallAddBtn, { backgroundColor: theme.blueSoft }]}>
+              <Ionicons name="add" size={18} color={theme.blue} />
+            </Pressable>
+          </View>
 
-              <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название</Text>
-                <TextInput value={attachmentTitle} onChangeText={setAttachmentTitle} placeholder="Например: ТЗ, скрин, ссылка на макет" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
+            {(project.attachments || []).length === 0 ? (
+              <View style={styles.emptyMaterials}>
+                <Ionicons name="attach-outline" size={32} color={theme.textMuted} />
+                <Text style={[styles.emptySmall, { color: theme.textSecondary }]}>Материалы пока не добавлены.</Text>
               </View>
-
-              {attachmentType === 'link' ? (
-                <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-                  <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Ссылка</Text>
-                  <TextInput value={attachmentUrl} onChangeText={setAttachmentUrl} placeholder="https://..." placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} autoCapitalize="none" keyboardType="url" />
-                </View>
-              ) : (
-                <>
-                  <View style={styles.attachChoiceRow}>
-                    <Pressable onPress={pickImage} style={[styles.attachChoiceBtn, { backgroundColor: theme.blueSoft }]}>
-                      <Ionicons name="image-outline" size={18} color={theme.blue} />
-                      <Text style={[styles.attachChoiceText, { color: theme.blue }]}>Фото</Text>
-                    </Pressable>
-                    <Pressable onPress={pickFile} style={[styles.attachChoiceBtn, { backgroundColor: theme.blueSoft }]}>
-                      <Ionicons name="document-outline" size={18} color={theme.blue} />
-                      <Text style={[styles.attachChoiceText, { color: theme.blue }]}>Файл</Text>
-                    </Pressable>
+            ) : (
+              (project.attachments || []).map((attachment) => (
+                <Pressable
+                  key={attachment.id}
+                  onPress={() => openAttachment(attachment)}
+                  style={[styles.attachmentCard, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}
+                >
+                  <View style={[styles.attachmentIcon, { backgroundColor: theme.blueSoft }]}>
+                    <Ionicons name={attachmentIcon(attachment.attachment_type)} size={20} color={theme.blue} />
                   </View>
 
-                  {selectedFile?.uri && (
-                    <View style={[styles.selectedFileBox, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-                      <Ionicons name={attachmentType === 'image' ? 'image-outline' : 'document-outline'} size={18} color={theme.blue} />
-                      <Text style={[styles.selectedFileText, { color: theme.text }]} numberOfLines={1}>{selectedFile.name}</Text>
-                    </View>
-                  )}
+                  {attachment.attachment_type === 'image' && attachment.file_url ? (
+                    <Image
+                      source={{ uri: buildAbsoluteFileUrl(attachment.file_url) || attachment.file_url }}
+                      style={styles.attachmentImage}
+                      contentFit="cover"
+                    />
+                  ) : null}
 
-                  {attachmentType === 'image' && selectedFile?.uri ? <Image source={{ uri: selectedFile.uri }} style={styles.selectedPreviewImage} contentFit="cover" /> : null}
-                </>
-              )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.attachmentTitle, { color: theme.text }]} numberOfLines={1}>
+                      {attachment.title || attachment.url || 'Материал'}
+                    </Text>
 
-              <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Комментарий</Text>
-                <TextInput value={attachmentNote} onChangeText={setAttachmentNote} placeholder="Короткое описание материала" placeholderTextColor={theme.textMuted} style={[styles.input, styles.smallTextarea, { color: theme.text }]} multiline textAlignVertical="top" />
-              </View>
+                    {!!attachment.note && (
+                      <Text style={[styles.attachmentNote, { color: theme.textSecondary }]} numberOfLines={2}>
+                        {attachment.note}
+                      </Text>
+                    )}
+                  </View>
 
-              <Pressable onPress={createAttachment} disabled={savingAttachment} style={[styles.saveBtn, { backgroundColor: theme.success || '#1AAE6F', opacity: savingAttachment ? 0.65 : 1 }]}>
-                {savingAttachment ? <ActivityIndicator color="#fff" /> : <Ionicons name="cloud-upload-outline" size={18} color="#fff" />}
-                <Text style={styles.saveText}>{savingAttachment ? 'Загрузка...' : 'Добавить материал'}</Text>
-              </Pressable>
-            </ScrollView>
+                  <Ionicons name="open-outline" size={18} color={theme.textMuted} />
+                </Pressable>
+              ))
+            )}
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        </ScrollView>
+
+        <ProjectEditModal
+          visible={editProjectOpen}
+          theme={theme}
+          dark={dark}
+          users={filteredUsers}
+          userSearch={userSearch}
+          setUserSearch={setUserSearch}
+          title={editTitle}
+          setTitle={setEditTitle}
+          description={editDescription}
+          setDescription={setEditDescription}
+          city={editCity}
+          setCity={setEditCity}
+          deadline={editDeadline}
+          setDeadline={setEditDeadline}
+          status={editStatus}
+          setStatus={setEditStatus}
+          participants={editParticipants}
+          setParticipants={setEditParticipants}
+          responsibles={editResponsibles}
+          setResponsibles={setEditResponsibles}
+          saving={savingProject}
+          onClose={() => setEditProjectOpen(false)}
+          onSubmit={saveProject}
+        />
+
+        <TaskModal
+          visible={taskModalOpen}
+          theme={theme}
+          users={users}
+          title={taskTitle}
+          setTitle={setTaskTitle}
+          description={taskDescription}
+          setDescription={setTaskDescription}
+          assignedTo={taskAssignedTo}
+          setAssignedTo={setTaskAssignedTo}
+          status={taskStatus}
+          setStatus={setTaskStatus}
+          priority={taskPriority}
+          setPriority={setTaskPriority}
+          deadline={taskDeadline}
+          setDeadline={setTaskDeadline}
+          saving={savingTask}
+          onClose={() => setTaskModalOpen(false)}
+          onSubmit={createTask}
+        />
+
+        <AttachmentModal
+          visible={attachmentModalOpen}
+          theme={theme}
+          dark={dark}
+          attachmentType={attachmentType}
+          setAttachmentType={setAttachmentType}
+          title={attachmentTitle}
+          setTitle={setAttachmentTitle}
+          url={attachmentUrl}
+          setUrl={setAttachmentUrl}
+          note={attachmentNote}
+          setNote={setAttachmentNote}
+          selectedFile={selectedFile}
+          pickImage={pickImage}
+          pickFile={pickFile}
+          saving={savingAttachment}
+          onClose={() => setAttachmentModalOpen(false)}
+          onSubmit={createAttachment}
+        />
+      </View>
     </ScreenWrapper>
   );
 }
 
+function ProjectEditModal({
+  visible,
+  theme,
+  dark,
+  users,
+  userSearch,
+  setUserSearch,
+  title,
+  setTitle,
+  description,
+  setDescription,
+  city,
+  setCity,
+  deadline,
+  setDeadline,
+  status,
+  setStatus,
+  participants,
+  setParticipants,
+  responsibles,
+  setResponsibles,
+  saving,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  theme: any;
+  dark: boolean;
+  users: UserMini[];
+  userSearch: string;
+  setUserSearch: (value: string) => void;
+  title: string;
+  setTitle: (value: string) => void;
+  description: string;
+  setDescription: (value: string) => void;
+  city: string;
+  setCity: (value: string) => void;
+  deadline: string;
+  setDeadline: (value: string) => void;
+  status: ProjectStatus;
+  setStatus: (value: ProjectStatus) => void;
+  participants: number[];
+  setParticipants: (value: number[]) => void;
+  responsibles: number[];
+  setResponsibles: (value: number[]) => void;
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  const toggle = (id: number, list: number[], setter: (value: number[]) => void) => {
+    setter(list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={[styles.modalRoot, { backgroundColor: theme.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={[styles.modalIcon, { backgroundColor: theme.blueSoft }]}>
+            <Ionicons name="create-outline" size={22} color={theme.blue} />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Редактировать проект</Text>
+            <Text style={[styles.modalSub, { color: theme.textSecondary }]}>Описание, статус, участники и ответственные</Text>
+          </View>
+
+          <Pressable onPress={onClose} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
+            <Ionicons name="close" size={20} color={theme.text} />
+          </Pressable>
+        </View>
+
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalBody}>
+          <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название проекта</Text>
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Название проекта"
+              placeholderTextColor={theme.textMuted}
+              style={[styles.input, { color: theme.text }]}
+            />
+          </View>
+
+          <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Описание</Text>
+            <TextInput
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Цели, план, ссылки, важные детали..."
+              placeholderTextColor={theme.textMuted}
+              style={[styles.input, styles.textarea, { color: theme.text }]}
+              multiline
+              textAlignVertical="top"
+            />
+          </View>
+
+          <View style={styles.twoInputs}>
+            <View style={[styles.inputWrap, styles.halfInput, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Город</Text>
+              <TextInput
+                value={city}
+                onChangeText={setCity}
+                placeholder="Ашхабад"
+                placeholderTextColor={theme.textMuted}
+                style={[styles.input, { color: theme.text }]}
+              />
+            </View>
+
+            <View style={[styles.inputWrap, styles.halfInput, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Дедлайн</Text>
+              <TextInput
+                value={deadline}
+                onChangeText={setDeadline}
+                placeholder="2026-05-20"
+                placeholderTextColor={theme.textMuted}
+                style={[styles.input, { color: theme.text }]}
+                autoCapitalize="none"
+              />
+            </View>
+          </View>
+
+          <Text style={[styles.formSectionTitle, { color: theme.text }]}>Статус</Text>
+          <View style={styles.optionsWrap}>
+            {PROJECT_STATUSES.map((item) => {
+              const active = status === item.value;
+              const color = projectStatusColor(item.value, theme);
+
+              return (
+                <Pressable
+                  key={item.value}
+                  onPress={() => setStatus(item.value)}
+                  style={[
+                    styles.optionChip,
+                    {
+                      backgroundColor: active ? color : theme.surface,
+                      borderColor: active ? color : theme.border,
+                    },
+                  ]}
+                >
+                  <Ionicons name={item.icon} size={15} color={active ? '#fff' : color} />
+                  <Text style={[styles.optionText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.formSectionTitle, { color: theme.text }]}>Поиск сотрудников</Text>
+          <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Ionicons name="search-outline" size={18} color={theme.textMuted} />
+            <TextInput
+              value={userSearch}
+              onChangeText={setUserSearch}
+              placeholder="Имя или email"
+              placeholderTextColor={theme.textMuted}
+              style={[styles.searchInput, { color: theme.text }]}
+            />
+            {!!userSearch && (
+              <Pressable onPress={() => setUserSearch('')}>
+                <Ionicons name="close-circle" size={18} color={theme.textMuted} />
+              </Pressable>
+            )}
+          </View>
+
+          <Text style={[styles.formSectionTitle, { color: theme.text }]}>Участники</Text>
+          <View style={styles.peopleWrap}>
+            {users.map((item) => {
+              const active = participants.includes(item.id);
+
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() => toggle(item.id, participants, setParticipants)}
+                  style={[
+                    styles.personChip,
+                    {
+                      backgroundColor: active ? theme.blue : theme.surface,
+                      borderColor: active ? theme.blue : theme.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.personChipText, { color: active ? '#fff' : theme.text }]}>{userName(item)}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.formSectionTitle, { color: theme.text }]}>Ответственные</Text>
+          <View style={styles.peopleWrap}>
+            {users.map((item) => {
+              const active = responsibles.includes(item.id);
+
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() => toggle(item.id, responsibles, setResponsibles)}
+                  style={[
+                    styles.personChip,
+                    {
+                      backgroundColor: active ? theme.blue : theme.surface,
+                      borderColor: active ? theme.blue : theme.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.personChipText, { color: active ? '#fff' : theme.text }]}>{userName(item)}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={[styles.noticeCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Ionicons name="information-circle-outline" size={18} color={theme.blue} />
+            <Text style={[styles.noticeText, { color: theme.textSecondary }]}>
+              Ответственные автоматически получают доступ к проекту. Создателя нельзя убрать из участников.
+            </Text>
+          </View>
+
+          <Pressable onPress={onSubmit} disabled={saving} style={[styles.saveBtn, { backgroundColor: theme.blue, opacity: saving ? 0.65 : 1 }]}>
+            {saving ? <ActivityIndicator color="#fff" /> : <Ionicons name="save-outline" size={18} color="#fff" />}
+            <Text style={styles.saveText}>{saving ? 'Сохранение...' : 'Сохранить изменения'}</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function TaskModal({
+  visible,
+  theme,
+  users,
+  title,
+  setTitle,
+  description,
+  setDescription,
+  assignedTo,
+  setAssignedTo,
+  status,
+  setStatus,
+  priority,
+  setPriority,
+  deadline,
+  setDeadline,
+  saving,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  theme: any;
+  users: UserMini[];
+  title: string;
+  setTitle: (value: string) => void;
+  description: string;
+  setDescription: (value: string) => void;
+  assignedTo: number | null;
+  setAssignedTo: (value: number | null) => void;
+  status: TaskStatus;
+  setStatus: (value: TaskStatus) => void;
+  priority: TaskPriority;
+  setPriority: (value: TaskPriority) => void;
+  deadline: string;
+  setDeadline: (value: string) => void;
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={[styles.modalRoot, { backgroundColor: theme.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={[styles.modalIcon, { backgroundColor: theme.blueSoft }]}>
+            <Ionicons name="checkbox-outline" size={22} color={theme.blue} />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Новая задача</Text>
+            <Text style={[styles.modalSub, { color: theme.textSecondary }]}>Создай задачу внутри проекта</Text>
+          </View>
+
+          <Pressable onPress={onClose} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
+            <Ionicons name="close" size={20} color={theme.text} />
+          </Pressable>
+        </View>
+
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalBody}>
+          <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название</Text>
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Название задачи"
+              placeholderTextColor={theme.textMuted}
+              style={[styles.input, { color: theme.text }]}
+            />
+          </View>
+
+          <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Описание</Text>
+            <TextInput
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Описание задачи"
+              placeholderTextColor={theme.textMuted}
+              style={[styles.input, styles.textarea, { color: theme.text }]}
+              multiline
+              textAlignVertical="top"
+            />
+          </View>
+
+          <Text style={[styles.formSectionTitle, { color: theme.text }]}>Ответственный</Text>
+          <View style={styles.peopleWrap}>
+            <Pressable
+              onPress={() => setAssignedTo(null)}
+              style={[
+                styles.personChip,
+                {
+                  backgroundColor: assignedTo === null ? theme.blue : theme.surface,
+                  borderColor: assignedTo === null ? theme.blue : theme.border,
+                },
+              ]}
+            >
+              <Text style={[styles.personChipText, { color: assignedTo === null ? '#fff' : theme.text }]}>Не назначен</Text>
+            </Pressable>
+
+            {users.map((item) => (
+              <Pressable
+                key={item.id}
+                onPress={() => setAssignedTo(item.id)}
+                style={[
+                  styles.personChip,
+                  {
+                    backgroundColor: assignedTo === item.id ? theme.blue : theme.surface,
+                    borderColor: assignedTo === item.id ? theme.blue : theme.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.personChipText, { color: assignedTo === item.id ? '#fff' : theme.text }]}>{userName(item)}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={[styles.formSectionTitle, { color: theme.text }]}>Статус</Text>
+          <View style={styles.optionsWrap}>
+            {TASK_STATUSES.map((item) => {
+              const active = status === item.value;
+              const color = taskStatusColor(item.value, theme);
+
+              return (
+                <Pressable
+                  key={item.value}
+                  onPress={() => setStatus(item.value)}
+                  style={[
+                    styles.optionChip,
+                    {
+                      backgroundColor: active ? color : theme.surface,
+                      borderColor: active ? color : theme.border,
+                    },
+                  ]}
+                >
+                  <Ionicons name={item.icon} size={15} color={active ? '#fff' : color} />
+                  <Text style={[styles.optionText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.formSectionTitle, { color: theme.text }]}>Приоритет</Text>
+          <View style={styles.optionsWrap}>
+            {PRIORITIES.map((item) => {
+              const active = priority === item.value;
+              const color = priorityColor(item.value, theme);
+
+              return (
+                <Pressable
+                  key={item.value}
+                  onPress={() => setPriority(item.value)}
+                  style={[
+                    styles.optionChip,
+                    {
+                      backgroundColor: active ? color : theme.surface,
+                      borderColor: active ? color : theme.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.optionText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Дедлайн</Text>
+            <TextInput
+              value={deadline}
+              onChangeText={setDeadline}
+              placeholder="2026-05-20"
+              placeholderTextColor={theme.textMuted}
+              style={[styles.input, { color: theme.text }]}
+              autoCapitalize="none"
+            />
+          </View>
+
+          <Pressable onPress={onSubmit} disabled={saving} style={[styles.saveBtn, { backgroundColor: theme.blue, opacity: saving ? 0.65 : 1 }]}>
+            {saving ? <ActivityIndicator color="#fff" /> : <Ionicons name="save-outline" size={18} color="#fff" />}
+            <Text style={styles.saveText}>{saving ? 'Сохранение...' : 'Создать задачу'}</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function AttachmentModal({
+  visible,
+  theme,
+  dark,
+  attachmentType,
+  setAttachmentType,
+  title,
+  setTitle,
+  url,
+  setUrl,
+  note,
+  setNote,
+  selectedFile,
+  pickImage,
+  pickFile,
+  saving,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  theme: any;
+  dark: boolean;
+  attachmentType: 'link' | 'image' | 'file';
+  setAttachmentType: (value: 'link' | 'image' | 'file') => void;
+  title: string;
+  setTitle: (value: string) => void;
+  url: string;
+  setUrl: (value: string) => void;
+  note: string;
+  setNote: (value: string) => void;
+  selectedFile: UploadFile | null;
+  pickImage: () => void;
+  pickFile: () => void;
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={[styles.modalRoot, { backgroundColor: theme.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={[styles.modalIcon, { backgroundColor: theme.blueSoft }]}>
+            <Ionicons name="attach-outline" size={22} color={theme.blue} />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Материал проекта</Text>
+            <Text style={[styles.modalSub, { color: theme.textSecondary }]}>Ссылка, фото или файл</Text>
+          </View>
+
+          <Pressable onPress={onClose} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
+            <Ionicons name="close" size={20} color={theme.text} />
+          </Pressable>
+        </View>
+
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalBody}>
+          <Text style={[styles.formSectionTitle, { color: theme.text }]}>Тип материала</Text>
+          <View style={styles.optionsWrap}>
+            {ATTACHMENT_TYPES.map((item) => {
+              const active = attachmentType === item.value;
+
+              return (
+                <Pressable
+                  key={item.value}
+                  onPress={() => setAttachmentType(item.value)}
+                  style={[
+                    styles.optionChip,
+                    {
+                      backgroundColor: active ? theme.blue : theme.surface,
+                      borderColor: active ? theme.blue : theme.border,
+                    },
+                  ]}
+                >
+                  <Ionicons name={item.icon} size={15} color={active ? '#fff' : theme.blue} />
+                  <Text style={[styles.optionText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название</Text>
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Например: ТЗ, скрин, ссылка на макет"
+              placeholderTextColor={theme.textMuted}
+              style={[styles.input, { color: theme.text }]}
+            />
+          </View>
+
+          {attachmentType === 'link' ? (
+            <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Ссылка</Text>
+              <TextInput
+                value={url}
+                onChangeText={setUrl}
+                placeholder="https://..."
+                placeholderTextColor={theme.textMuted}
+                style={[styles.input, { color: theme.text }]}
+                autoCapitalize="none"
+                keyboardType="url"
+              />
+            </View>
+          ) : (
+            <>
+              <View style={styles.fileButtons}>
+                <Pressable onPress={pickImage} style={[styles.fileBtn, { backgroundColor: theme.blueSoft }]}>
+                  <Ionicons name="image-outline" size={18} color={theme.blue} />
+                  <Text style={[styles.fileBtnText, { color: theme.blue }]}>Фото</Text>
+                </Pressable>
+
+                <Pressable onPress={pickFile} style={[styles.fileBtn, { backgroundColor: theme.blueSoft }]}>
+                  <Ionicons name="document-outline" size={18} color={theme.blue} />
+                  <Text style={[styles.fileBtnText, { color: theme.blue }]}>Файл</Text>
+                </Pressable>
+              </View>
+
+              {selectedFile?.uri && (
+                <View style={[styles.selectedFileBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <Ionicons name={attachmentType === 'image' ? 'image-outline' : 'document-outline'} size={18} color={theme.blue} />
+                  <Text style={[styles.selectedFileText, { color: theme.text }]} numberOfLines={1}>
+                    {selectedFile.name}
+                  </Text>
+                </View>
+              )}
+
+              {attachmentType === 'image' && selectedFile?.uri ? (
+                <Image source={{ uri: selectedFile.uri }} style={styles.selectedPreviewImage} contentFit="cover" />
+              ) : null}
+            </>
+          )}
+
+          <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Комментарий</Text>
+            <TextInput
+              value={note}
+              onChangeText={setNote}
+              placeholder="Короткое описание материала"
+              placeholderTextColor={theme.textMuted}
+              style={[styles.input, styles.smallTextarea, { color: theme.text }]}
+              multiline
+              textAlignVertical="top"
+            />
+          </View>
+
+          <Pressable onPress={onSubmit} disabled={saving} style={[styles.saveBtn, { backgroundColor: theme.blue, opacity: saving ? 0.65 : 1 }]}>
+            {saving ? <ActivityIndicator color="#fff" /> : <Ionicons name="cloud-upload-outline" size={18} color="#fff" />}
+            <Text style={styles.saveText}>{saving ? 'Загрузка...' : 'Добавить материал'}</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
-  center: { flex: 1, padding: 22, alignItems: 'center', justifyContent: 'center' },
-  scroll: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 128, gap: 14 },
-  hero: { borderRadius: 32, padding: 18, overflow: 'hidden' },
-  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 26 },
-  heroBackBtn: { width: 42, height: 42, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
-  heroActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  heroActionBtn: { minHeight: 42, borderRadius: 16, paddingHorizontal: 13, backgroundColor: 'rgba(255,255,255,0.18)', flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
-  heroActionText: { color: '#fff', fontSize: 13, fontWeight: '900' },
-  heroIconBtn: { width: 42, height: 42, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
-  heroKicker: { color: 'rgba(255,255,255,0.78)', fontSize: 12, fontWeight: '900', letterSpacing: 0.8, textTransform: 'uppercase' },
-  heroTitle: { marginTop: 8, color: '#fff', fontSize: 31, fontWeight: '900', letterSpacing: -0.4 },
-  heroSubtitle: { marginTop: 8, color: 'rgba(255,255,255,0.84)', fontSize: 14, fontWeight: '700', lineHeight: 20 },
-  heroProgressBox: { marginTop: 20, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', padding: 12 },
-  heroProgressTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  heroProgressLabel: { color: 'rgba(255,255,255,0.84)', fontSize: 12, fontWeight: '900' },
-  heroProgressPercent: { color: '#fff', fontSize: 16, fontWeight: '900' },
-  heroProgressTrack: { marginTop: 10, height: 8, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.16)', overflow: 'hidden' },
-  heroProgressFill: { height: '100%', borderRadius: 999, backgroundColor: '#fff' },
-  heroStats: { marginTop: 14, minHeight: 58, flexDirection: 'row', alignItems: 'center' },
-  heroStatItem: { flex: 1, alignItems: 'center' },
-  heroStatValue: { color: '#fff', fontSize: 22, fontWeight: '900' },
-  heroStatLabel: { marginTop: 3, color: 'rgba(255,255,255,0.78)', fontSize: 11, fontWeight: '800' },
-  heroLine: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.18)' },
-  card: { borderWidth: 1, borderRadius: 26, padding: 16, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 3 },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  cardIcon: { width: 38, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  sectionTitle: { fontSize: 18, fontWeight: '900' },
-  subSectionTitle: { marginTop: 14, marginBottom: 8, fontSize: 14, fontWeight: '900' },
-  teamHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  avatarStack: { flexDirection: 'row', alignItems: 'center' },
-  avatarMini: { width: 32, height: 32, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
-  avatarMiniText: { color: '#fff', fontSize: 10, fontWeight: '900' },
-  teamCount: { fontSize: 13, fontWeight: '800' },
-  peopleWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  personPill: { minHeight: 38, borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%' },
-  personText: { fontSize: 12, fontWeight: '900' },
-  emptySmall: { fontSize: 13, fontWeight: '700', lineHeight: 19 },
-  emptyTitle: { fontSize: 20, fontWeight: '900', textAlign: 'center' },
-  quickActions: { flexDirection: 'row', gap: 10 },
-  quickActionBtn: { flex: 1, minHeight: 54, borderRadius: 19, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center' },
-  quickActionText: { color: '#fff', fontSize: 14, fontWeight: '900' },
-  bigSectionTitle: { fontSize: 21, fontWeight: '900' },
-  bigSectionSub: { marginTop: -8, fontSize: 13, fontWeight: '700', lineHeight: 19 },
-  kanbanScroll: { gap: 12, paddingRight: 18 },
-  kanbanColumn: { width: 304, borderWidth: 1, borderRadius: 24, padding: 12 },
-  columnHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  columnIcon: { width: 36, height: 36, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  columnTitle: { fontSize: 15, fontWeight: '900' },
-  columnCount: { marginTop: 2, fontSize: 12, fontWeight: '700' },
-  emptyColumn: { borderRadius: 18, minHeight: 92, alignItems: 'center', justifyContent: 'center', padding: 12 },
-  taskCard: { borderWidth: 1, borderRadius: 20, padding: 12, marginBottom: 10 },
-  taskTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  taskTitle: { flex: 1, fontSize: 15, fontWeight: '900', lineHeight: 20 },
-  priorityDot: { width: 10, height: 10, borderRadius: 5, marginTop: 5 },
-  taskDescription: { marginTop: 8 },
-  taskMetaBox: { marginTop: 10, gap: 6 },
-  taskMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  taskMeta: { flex: 1, fontSize: 12, fontWeight: '700' },
-  taskStatusRow: { marginTop: 10, gap: 7 },
-  statusPill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
-  statusText: { fontSize: 11.5, fontWeight: '900' },
-  openTaskBtn: { marginTop: 10, borderWidth: 1, borderRadius: 14, minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
-  openTaskBtnText: { fontSize: 12, fontWeight: '900' },
-  materialHeader: { marginTop: 4, flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  smallAddBtn: { width: 42, height: 42, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  emptyMaterials: { minHeight: 110, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  attachmentCard: { borderWidth: 1, borderRadius: 18, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 9 },
-  attachmentIcon: { width: 40, height: 40, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  attachmentImage: { width: 48, height: 48, borderRadius: 14 },
-  attachmentTitle: { fontSize: 14, fontWeight: '900' },
-  attachmentNote: { marginTop: 4, fontSize: 12, fontWeight: '700', lineHeight: 17 },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.38)' },
-  modalCard: { maxHeight: '88%', borderTopLeftRadius: 30, borderTopRightRadius: 30, borderWidth: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 22 },
-  modalHandle: { width: 42, height: 5, borderRadius: 999, backgroundColor: 'rgba(148,163,184,0.55)', alignSelf: 'center', marginBottom: 14 },
-  modalHeader: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
-  modalTitle: { fontSize: 22, fontWeight: '900' },
-  modalSubtitle: { marginTop: 4, fontSize: 13, fontWeight: '700', lineHeight: 18 },
-  modalClose: { width: 42, height: 42, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  modalScroll: { paddingTop: 14, paddingBottom: 28, gap: 12 },
-  inputWrap: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 12 },
-  inputLabel: { fontSize: 12, fontWeight: '900', marginBottom: 8 },
-  input: { minHeight: 26, fontSize: 15, fontWeight: '700' },
-  textarea: { minHeight: 120, lineHeight: 21 },
-  smallTextarea: { minHeight: 86, lineHeight: 21 },
-  peopleTitle: { fontSize: 14, fontWeight: '900' },
-  saveBtn: { marginTop: 4, borderRadius: 20, minHeight: 56, flexDirection: 'row', gap: 10, alignItems: 'center', justifyContent: 'center' },
-  saveText: { color: '#fff', fontSize: 15, fontWeight: '900' },
-  attachChoiceRow: { flexDirection: 'row', gap: 10 },
-  attachChoiceBtn: { flex: 1, minHeight: 48, borderRadius: 17, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' },
-  attachChoiceText: { fontSize: 13, fontWeight: '900' },
-  selectedFileBox: { borderWidth: 1, borderRadius: 17, paddingHorizontal: 12, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  selectedFileText: { flex: 1, fontSize: 13, fontWeight: '800' },
-  selectedPreviewImage: { width: '100%', height: 170, borderRadius: 20 },
-  backWideBtn: { marginTop: 16, minHeight: 48, borderRadius: 18, paddingHorizontal: 22, alignItems: 'center', justifyContent: 'center' },
-  backWideText: { color: '#fff', fontSize: 14, fontWeight: '900' },
+  screen: {
+    flex: 1,
+  },
+  center: {
+    flex: 1,
+    padding: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scroll: {
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 132,
+    gap: 14,
+  },
+  header: {
+    borderWidth: 1,
+    borderRadius: 30,
+    padding: 16,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kicker: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  title: {
+    marginTop: 3,
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  editBtn: {
+    minHeight: 42,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  editBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  headerMetaRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  metaPill: {
+    minHeight: 34,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  metaPillText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  progressPanel: {
+    marginTop: 14,
+    borderRadius: 22,
+    padding: 13,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  progressTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  progressPercent: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  progressTrack: {
+    marginTop: 10,
+    height: 8,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  progressStats: {
+    marginTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  progressHint: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  quickActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  quickBtn: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: 18,
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  card: {
+    borderWidth: 1,
+    borderRadius: 26,
+    padding: 15,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    marginBottom: 12,
+  },
+  sectionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  sectionSub: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  teamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  teamText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  smallSectionTitle: {
+    marginTop: 14,
+    marginBottom: 8,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  avatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarMini: {
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarMiniText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  avatarExtraText: {
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  peopleWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  personChip: {
+    minHeight: 38,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  personChipText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  sectionTitleLine: {
+    marginTop: 2,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  bigTitle: {
+    fontSize: 21,
+    fontWeight: '900',
+  },
+  bigSub: {
+    marginTop: 3,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  smallAddBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tasksBoard: {
+    borderWidth: 1,
+    borderRadius: 26,
+    padding: 12,
+    gap: 12,
+  },
+  taskGroup: {
+    gap: 8,
+  },
+  taskGroupHeader: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  taskGroupIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskGroupTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  taskGroupCount: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  emptyTaskLine: {
+    minHeight: 46,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskRow: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 11,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  taskCheck: {
+    marginTop: 3,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskTitle: {
+    fontSize: 14.5,
+    fontWeight: '900',
+    lineHeight: 19,
+  },
+  taskDescription: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  taskMetaRow: {
+    marginTop: 9,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  taskPill: {
+    minHeight: 26,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  taskPillText: {
+    fontSize: 10.5,
+    fontWeight: '900',
+  },
+  taskRight: {
+    width: 86,
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  taskAssignee: {
+    maxWidth: 86,
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  taskDate: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  statusMiniRow: {
+    marginTop: 3,
+    gap: 4,
+  },
+  statusMini: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  emptyMaterials: {
+    minHeight: 110,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  attachmentCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 9,
+  },
+  attachmentIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachmentImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+  },
+  attachmentTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  attachmentNote: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  emptyTitle: {
+    fontSize: 19,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  emptySub: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+    textAlign: 'center',
+  },
+  emptySmall: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+  },
+  backWideBtn: {
+    marginTop: 16,
+    minHeight: 48,
+    borderRadius: 18,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backWideText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  modalRoot: {
+    flex: 1,
+    paddingTop: Platform.OS === 'ios' ? 56 : 22,
+  },
+  modalHeader: {
+    marginHorizontal: 16,
+    borderWidth: 1,
+    borderRadius: 28,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  modalSub: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  modalClose: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBody: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 40,
+    gap: 13,
+  },
+  inputWrap: {
+    borderWidth: 1,
+    borderRadius: 21,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
+  input: {
+    minHeight: 28,
+    fontSize: 14.5,
+    fontWeight: '700',
+  },
+  textarea: {
+    minHeight: 116,
+    lineHeight: 20,
+  },
+  smallTextarea: {
+    minHeight: 86,
+    lineHeight: 20,
+  },
+  twoInputs: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  halfInput: {
+    flex: 1,
+  },
+  formSectionTitle: {
+    marginTop: 4,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  optionsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  optionChip: {
+    minHeight: 39,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  optionText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  searchBox: {
+    minHeight: 50,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  noticeCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 9,
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  fileButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  fileBtn: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 17,
+    flexDirection: 'row',
+    gap: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fileBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  selectedFileBox: {
+    borderWidth: 1,
+    borderRadius: 17,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  selectedFileText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  selectedPreviewImage: {
+    width: '100%',
+    height: 170,
+    borderRadius: 20,
+  },
+  saveBtn: {
+    minHeight: 56,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+  },
+  saveText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '900',
+  },
 });

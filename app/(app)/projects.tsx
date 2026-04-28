@@ -1,22 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
-import Markdown from 'react-native-markdown-display';
 
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
@@ -58,15 +56,33 @@ type Project = {
   attachments?: any[];
   created_at?: string;
   updated_at?: string;
+  can_manage?: boolean;
 };
 
-const STATUSES = [
+type ProjectStatus = 'active' | 'paused' | 'done' | 'archived';
+
+const STATUS_FILTERS: Array<{
+  value: '' | ProjectStatus;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}> = [
   { value: '', label: 'Все', icon: 'albums-outline' },
-  { value: 'active', label: 'Активные', icon: 'flash-outline' },
+  { value: 'active', label: 'Активные', icon: 'radio-button-on-outline' },
   { value: 'paused', label: 'Пауза', icon: 'pause-circle-outline' },
   { value: 'done', label: 'Готовые', icon: 'checkmark-done-outline' },
   { value: 'archived', label: 'Архив', icon: 'archive-outline' },
-] as const;
+];
+
+const PROJECT_STATUSES: Array<{
+  value: ProjectStatus;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}> = [
+  { value: 'active', label: 'Активный', icon: 'radio-button-on-outline' },
+  { value: 'paused', label: 'Пауза', icon: 'pause-circle-outline' },
+  { value: 'done', label: 'Завершён', icon: 'checkmark-done-outline' },
+  { value: 'archived', label: 'Архив', icon: 'archive-outline' },
+];
 
 function userName(user?: UserMini | null) {
   if (!user) return '—';
@@ -76,21 +92,16 @@ function userName(user?: UserMini | null) {
 function initials(user?: UserMini | null) {
   const name = userName(user);
   const parts = name.split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return 'U';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0].slice(0, 1)}${parts[1].slice(0, 1)}`.toUpperCase();
-}
 
-function statusText(status?: string) {
-  if (status === 'active') return 'Активный';
-  if (status === 'paused') return 'Пауза';
-  if (status === 'done') return 'Завершён';
-  if (status === 'archived') return 'Архив';
-  return status || '—';
+  if (!parts.length) return 'U';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+
+  return `${parts[0].slice(0, 1)}${parts[1].slice(0, 1)}`.toUpperCase();
 }
 
 function formatDate(value?: string | null) {
   if (!value) return 'Без дедлайна';
+
   try {
     return new Date(value).toLocaleDateString('ru-RU', {
       day: '2-digit',
@@ -100,6 +111,37 @@ function formatDate(value?: string | null) {
   } catch {
     return value;
   }
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '—';
+
+  try {
+    return new Date(value).toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return value;
+  }
+}
+
+function statusLabel(status?: string) {
+  if (status === 'active') return 'Активный';
+  if (status === 'paused') return 'Пауза';
+  if (status === 'done') return 'Завершён';
+  if (status === 'archived') return 'Архив';
+  return status || '—';
+}
+
+function statusColor(status: string | undefined, theme: any) {
+  if (status === 'active') return theme.blue;
+  if (status === 'paused') return theme.warning || '#F59E0B';
+  if (status === 'done') return theme.success || '#1AAE6F';
+  if (status === 'archived') return theme.textMuted;
+  return theme.textMuted;
 }
 
 function deadlineMeta(value?: string | null) {
@@ -113,72 +155,48 @@ function deadlineMeta(value?: string | null) {
   if (diff < 0) return { label: `Просрочено ${Math.abs(diff)} дн.`, tone: 'danger' as const };
   if (diff === 0) return { label: 'Сегодня', tone: 'warning' as const };
   if (diff <= 3) return { label: `Через ${diff} дн.`, tone: 'warning' as const };
+
   return { label: formatDate(value), tone: 'ok' as const };
 }
 
-function projectProgress(project: Project) {
-  const items = project.items || [];
-  const total = items.length;
-  const done = items.filter((item) => item.status === 'done').length;
+function progress(project: Project) {
+  const tasks = project.items || [];
+  const total = tasks.length;
+  const done = tasks.filter((item) => item.status === 'done').length;
   const percent = total > 0 ? Math.round((done / total) * 100) : project.status === 'done' ? 100 : 0;
+
   return { total, done, percent };
 }
 
-function markdownStyles(theme: any) {
-  return {
-    body: {
-      color: theme.textSecondary,
-      fontSize: 13,
-      lineHeight: 19,
-      fontWeight: '600',
-    },
-    paragraph: {
-      marginTop: 0,
-      marginBottom: 6,
-    },
-    strong: {
-      color: theme.text,
-      fontWeight: '900',
-    },
-    bullet_list: {
-      marginBottom: 4,
-    },
-    ordered_list: {
-      marginBottom: 4,
-    },
-    link: {
-      color: theme.blue,
-      fontWeight: '900',
-    },
-  };
+function normalizeDeadline(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed;
 }
 
-function StatPill({
-  label,
-  value,
-  icon,
-  theme,
-}: {
-  label: string;
-  value: string | number;
-  icon: keyof typeof Ionicons.glyphMap;
-  theme: any;
-}) {
+function errorText(error: any) {
+  const data = error?.response?.data;
+
   return (
-    <View style={[styles.statPill, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
-      <View style={[styles.statIcon, { backgroundColor: theme.blueSoft }]}>
-        <Ionicons name={icon} size={18} color={theme.blue} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.statValue, { color: theme.text }]}>{value}</Text>
-        <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{label}</Text>
-      </View>
-    </View>
+    data?.detail ||
+    data?.title?.[0] ||
+    data?.description?.[0] ||
+    data?.participants?.[0] ||
+    data?.responsible_users?.[0] ||
+    data?.deadline?.[0] ||
+    'Не удалось выполнить действие.'
   );
 }
 
+function canManageProject(project: Project, currentUserId?: number, isAdmin?: boolean) {
+  if (project.can_manage) return true;
+  if (isAdmin) return true;
+  if (!currentUserId) return false;
+  return Number(project.created_by) === Number(currentUserId);
+}
+
 function AvatarStack({ users, theme }: { users?: UserMini[]; theme: any }) {
-  const visible = (users || []).slice(0, 4);
+  const visible = (users || []).slice(0, 5);
   const extra = Math.max((users || []).length - visible.length, 0);
 
   if (!visible.length) {
@@ -199,7 +217,7 @@ function AvatarStack({ users, theme }: { users?: UserMini[]; theme: any }) {
           style={[
             styles.avatarMini,
             {
-              backgroundColor: index % 2 === 0 ? theme.blue : '#1AAE6F',
+              backgroundColor: index % 2 === 0 ? theme.blue : theme.success || '#1AAE6F',
               borderColor: theme.surface,
               marginLeft: index === 0 ? 0 : -8,
             },
@@ -208,11 +226,55 @@ function AvatarStack({ users, theme }: { users?: UserMini[]; theme: any }) {
           <Text style={styles.avatarMiniText}>{initials(item)}</Text>
         </View>
       ))}
+
       {extra > 0 && (
-        <View style={[styles.avatarMini, styles.avatarExtra, { backgroundColor: theme.backgroundSoft, borderColor: theme.surface, marginLeft: -8 }]}>
+        <View
+          style={[
+            styles.avatarMini,
+            {
+              backgroundColor: theme.backgroundSoft,
+              borderColor: theme.surface,
+              marginLeft: -8,
+            },
+          ]}
+        >
           <Text style={[styles.avatarExtraText, { color: theme.text }]}>+{extra}</Text>
         </View>
       )}
+    </View>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  icon,
+  theme,
+  color,
+}: {
+  title: string;
+  value: string | number;
+  icon: keyof typeof Ionicons.glyphMap;
+  theme: any;
+  color: string;
+}) {
+  return (
+    <View
+      style={[
+        styles.metricCard,
+        {
+          backgroundColor: theme.surface,
+          borderColor: theme.border,
+          shadowColor: theme.shadow,
+        },
+      ]}
+    >
+      <View style={[styles.metricIcon, { backgroundColor: `${color}18` }]}>
+        <Ionicons name={icon} size={18} color={color} />
+      </View>
+
+      <Text style={[styles.metricValue, { color: theme.text }]}>{value}</Text>
+      <Text style={[styles.metricTitle, { color: theme.textSecondary }]}>{title}</Text>
     </View>
   );
 }
@@ -222,115 +284,81 @@ export default function ProjectsScreen() {
   const { user } = useCurrentUser();
   const { theme, themeMode } = useTheme();
 
-  const isAdmin = Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
   const dark = themeMode === 'dark';
+  const isAdmin = Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
+  const currentUserId = user?.id ? Number(user.id) : undefined;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<UserMini[]>([]);
 
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState<'' | ProjectStatus>('');
   const [city, setCity] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [projectCity, setProjectCity] = useState('');
-  const [deadline, setDeadline] = useState('');
+  const [formTitle, setFormTitle] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formCity, setFormCity] = useState('');
+  const [formDeadline, setFormDeadline] = useState('');
+  const [formStatus, setFormStatus] = useState<ProjectStatus>('active');
   const [selectedParticipants, setSelectedParticipants] = useState<number[]>([]);
   const [selectedResponsibles, setSelectedResponsibles] = useState<number[]>([]);
+  const [userSearch, setUserSearch] = useState('');
 
-  const load = async () => {
+  const loadUsers = useCallback(async () => {
+    try {
+      const data = await fetchAllPages('users/users/?limit=100&offset=0');
+      setUsers((data || []) as UserMini[]);
+    } catch {
+      setUsers([]);
+    }
+  }, []);
+
+  const loadProjects = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       params.set('limit', '100');
       params.set('offset', '0');
+      params.set('ordering', '-updated_at');
+
       if (status) params.set('status', status);
       if (city.trim()) params.set('city', city.trim());
       if (search.trim()) params.set('search', search.trim());
 
-      const [projectsRes, usersRes] = await Promise.allSettled([
-        apiClient.get(`tasks/projects/?${params.toString()}`),
-        fetchAllPages('users/users/?limit=100&offset=0'),
-      ]);
-
-      if (projectsRes.status === 'fulfilled') {
-        setProjects(extractList(projectsRes.value.data));
-      }
-
-      if (usersRes.status === 'fulfilled') {
-        setUsers(usersRes.value as UserMini[]);
-      }
-    } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось загрузить проекты.');
+      const response = await apiClient.get(`tasks/projects/?${params.toString()}`);
+      setProjects(extractList(response.data) as Project[]);
+    } catch (error: any) {
+      Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось загрузить проекты.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [status, city, search]);
+
+  const load = useCallback(async () => {
+    await Promise.allSettled([loadProjects(), loadUsers()]);
+  }, [loadProjects, loadUsers]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [status]);
 
-  const resetForm = () => {
-    setTitle('');
-    setDescription('');
-    setProjectCity(user?.office?.city || '');
-    setDeadline('');
-    setSelectedParticipants(user?.id ? [Number(user.id)] : []);
-    setSelectedResponsibles([]);
-  };
-
-  const openCreate = () => {
-    resetForm();
-    setModalOpen(true);
-  };
-
-  const toggleId = (id: number, list: number[], setter: (ids: number[]) => void) => {
-    setter(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
-  };
-
-  const createProject = async () => {
-    if (!title.trim()) {
-      Alert.alert('Ошибка', 'Напиши название проекта.');
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      await apiClient.post('tasks/projects/', {
-        title: title.trim(),
-        description: description.trim(),
-        city: projectCity.trim(),
-        status: 'active',
-        deadline: deadline.trim() || null,
-        participants: selectedParticipants.length ? selectedParticipants : user?.id ? [Number(user.id)] : [],
-        responsible_users: selectedResponsibles,
-      });
-
-      setModalOpen(false);
-      resetForm();
-      await load();
-      Alert.alert('Готово', 'Проект создан.');
-    } catch (error: any) {
-      const detail = error?.response?.data?.detail || error?.response?.data?.title?.[0] || 'Не удалось создать проект.';
-      Alert.alert('Ошибка', String(detail));
-    } finally {
-      setSaving(false);
-    }
+  const refresh = () => {
+    setRefreshing(true);
+    void load();
   };
 
   const stats = useMemo(() => {
-    const active = projects.filter((p) => p.status === 'active').length;
-    const done = projects.filter((p) => p.status === 'done').length;
-    const urgent = projects.filter((p) => {
-      const meta = deadlineMeta(p.deadline);
+    const active = projects.filter((item) => item.status === 'active').length;
+    const done = projects.filter((item) => item.status === 'done').length;
+    const urgent = projects.filter((item) => {
+      const meta = deadlineMeta(item.deadline);
       return meta.tone === 'danger' || meta.tone === 'warning';
     }).length;
 
@@ -342,257 +370,423 @@ export default function ProjectsScreen() {
     };
   }, [projects]);
 
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+
+    if (!q) return users;
+
+    return users.filter((item) => {
+      return (
+        userName(item).toLowerCase().includes(q) ||
+        String(item.email || '').toLowerCase().includes(q)
+      );
+    });
+  }, [users, userSearch]);
+
+  const resetForm = () => {
+    setEditingProject(null);
+    setFormTitle('');
+    setFormDescription('');
+    setFormCity(user?.office?.city || '');
+    setFormDeadline('');
+    setFormStatus('active');
+    setSelectedParticipants(user?.id ? [Number(user.id)] : []);
+    setSelectedResponsibles([]);
+    setUserSearch('');
+  };
+
+  const openCreate = () => {
+    resetForm();
+    setModalOpen(true);
+  };
+
+  const openEdit = (project: Project) => {
+    setEditingProject(project);
+    setFormTitle(project.title || '');
+    setFormDescription(project.description || '');
+    setFormCity(project.city || project.office_city || '');
+    setFormDeadline(project.deadline || '');
+    setFormStatus(project.status || 'active');
+    setSelectedParticipants(
+      project.participants?.length
+        ? project.participants.map(Number)
+        : project.participants_data?.map((item) => Number(item.id)) || []
+    );
+    setSelectedResponsibles(
+      project.responsible_users?.length
+        ? project.responsible_users.map(Number)
+        : project.responsible_users_data?.map((item) => Number(item.id)) || []
+    );
+    setUserSearch('');
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    if (saving) return;
+    setModalOpen(false);
+    resetForm();
+  };
+
+  const toggleId = (id: number, list: number[], setter: (value: number[]) => void) => {
+    setter(list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
+  };
+
+  const saveProject = async () => {
+    if (!formTitle.trim()) {
+      Alert.alert('Ошибка', 'Напиши название проекта.');
+      return;
+    }
+
+    const participants = Array.from(
+      new Set([
+        ...selectedParticipants,
+        ...(user?.id ? [Number(user.id)] : []),
+        ...selectedResponsibles,
+      ])
+    );
+
+    setSaving(true);
+
+    try {
+      const payload = {
+        title: formTitle.trim(),
+        description: formDescription.trim(),
+        city: formCity.trim(),
+        status: formStatus,
+        deadline: normalizeDeadline(formDeadline),
+        participants,
+        responsible_users: selectedResponsibles,
+      };
+
+      if (editingProject) {
+        await apiClient.patch(`tasks/projects/${editingProject.id}/`, payload);
+      } else {
+        await apiClient.post('tasks/projects/', payload);
+      }
+
+      setModalOpen(false);
+      resetForm();
+      await load();
+
+      Alert.alert('Готово', editingProject ? 'Проект обновлён.' : 'Проект создан.');
+    } catch (error: any) {
+      Alert.alert('Ошибка', String(errorText(error)));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openProject = (project: Project) => {
+    router.push({ pathname: '/(app)/project/[id]', params: { id: String(project.id) } } as any);
+  };
+
   return (
     <ScreenWrapper>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              load();
-            }}
-            tintColor={theme.blue}
-          />
-        }
-      >
-        <LinearGradient
-          colors={dark ? ['#111827', '#1E3A8A'] : ['#2563EB', '#60A5FA']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.hero}
+      <View style={[styles.screen, { backgroundColor: theme.background }]}>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.blue} />}
         >
-          <View style={styles.heroTop}>
-            <Pressable onPress={() => safeGoBack(router)} style={styles.heroBackBtn}>
-              <Ionicons name="arrow-back" size={21} color="#fff" />
-            </Pressable>
-            <Pressable onPress={openCreate} style={styles.heroAddBtn}>
-              <Ionicons name="add" size={22} color="#fff" />
-              <Text style={styles.heroAddText}>Проект</Text>
-            </Pressable>
-          </View>
-
-          <Text style={styles.heroKicker}>ManagerSL Projects</Text>
-          <Text style={styles.heroTitle}>Проекты команды</Text>
-          <Text style={styles.heroSubtitle}>Планы, задачи, файлы, ответственные и дедлайны в одном месте.</Text>
-
-          <View style={styles.heroStats}>
-            <View style={styles.heroStatItem}>
-              <Text style={styles.heroStatValue}>{stats.total}</Text>
-              <Text style={styles.heroStatLabel}>Всего</Text>
-            </View>
-            <View style={styles.heroLine} />
-            <View style={styles.heroStatItem}>
-              <Text style={styles.heroStatValue}>{stats.active}</Text>
-              <Text style={styles.heroStatLabel}>Активные</Text>
-            </View>
-            <View style={styles.heroLine} />
-            <View style={styles.heroStatItem}>
-              <Text style={styles.heroStatValue}>{stats.urgent}</Text>
-              <Text style={styles.heroStatLabel}>Срочные</Text>
-            </View>
-          </View>
-        </LinearGradient>
-
-        <View style={styles.statsGrid}>
-          <StatPill label="Завершено" value={stats.done} icon="checkmark-done-outline" theme={theme} />
-          <StatPill label="В работе" value={stats.active} icon="flash-outline" theme={theme} />
-        </View>
-
-        <View style={[styles.filtersCard, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
-          <View style={[styles.searchBox, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-            <Ionicons name="search" size={18} color={theme.textMuted} />
-            <TextInput
-              value={search}
-              onChangeText={setSearch}
-              onSubmitEditing={load}
-              placeholder="Найти проект, задачу или описание"
-              placeholderTextColor={theme.textMuted}
-              style={[styles.searchInput, { color: theme.text }]}
-              returnKeyType="search"
-            />
-            {!!search && (
-              <Pressable onPress={() => setSearch('')}>
-                <Ionicons name="close-circle" size={18} color={theme.textMuted} />
+          <View
+            style={[
+              styles.header,
+              {
+                backgroundColor: dark ? '#111827' : '#FFFFFF',
+                borderColor: theme.border,
+                shadowColor: theme.shadow,
+              },
+            ]}
+          >
+            <View style={styles.headerTop}>
+              <Pressable onPress={() => safeGoBack(router)} style={[styles.backBtn, { backgroundColor: theme.backgroundSoft }]}>
+                <Ionicons name="arrow-back" size={21} color={theme.text} />
               </Pressable>
-            )}
+
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.kicker, { color: theme.textMuted }]}>PROJECTS</Text>
+                <Text style={[styles.title, { color: theme.text }]}>Проекты</Text>
+              </View>
+
+              <Pressable onPress={openCreate} style={[styles.createBtn, { backgroundColor: theme.blue }]}>
+                <Ionicons name="add" size={18} color="#fff" />
+                <Text style={styles.createBtnText}>Проект</Text>
+              </Pressable>
+            </View>
+
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+              Видны только проекты, где ты создатель, участник или ответственный.
+            </Text>
+
+            <View style={styles.metricsGrid}>
+              <MetricCard title="Всего" value={stats.total} icon="albums-outline" theme={theme} color={theme.blue} />
+              <MetricCard title="Активные" value={stats.active} icon="radio-button-on-outline" theme={theme} color={theme.blue} />
+              <MetricCard title="Срочные" value={stats.urgent} icon="time-outline" theme={theme} color={theme.red} />
+              <MetricCard title="Готовые" value={stats.done} icon="checkmark-done-outline" theme={theme} color={theme.success || '#1AAE6F'} />
+            </View>
           </View>
 
-          {isAdmin && (
+          <View
+            style={[
+              styles.filtersCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+                shadowColor: theme.shadow,
+              },
+            ]}
+          >
             <View style={[styles.searchBox, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-              <Ionicons name="location-outline" size={18} color={theme.textMuted} />
+              <Ionicons name="search-outline" size={18} color={theme.textMuted} />
               <TextInput
-                value={city}
-                onChangeText={setCity}
-                onSubmitEditing={load}
-                placeholder="Фильтр по городу"
+                value={search}
+                onChangeText={setSearch}
+                onSubmitEditing={() => void load()}
+                placeholder="Поиск по проектам"
                 placeholderTextColor={theme.textMuted}
                 style={[styles.searchInput, { color: theme.text }]}
                 returnKeyType="search"
               />
-            </View>
-          )}
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusRow}>
-            {STATUSES.map((item) => {
-              const active = status === item.value;
-              return (
-                <Pressable
-                  key={item.value}
-                  onPress={() => setStatus(item.value)}
-                  style={[
-                    styles.statusPill,
-                    {
-                      backgroundColor: active ? theme.blue : theme.backgroundSoft,
-                      borderColor: active ? theme.blue : theme.border,
-                    },
-                  ]}
-                >
-                  <Ionicons name={item.icon as any} size={15} color={active ? '#fff' : theme.blue} />
-                  <Text style={[styles.statusText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
+              {!!search && (
+                <Pressable onPress={() => setSearch('')}>
+                  <Ionicons name="close-circle" size={18} color={theme.textMuted} />
                 </Pressable>
-              );
-            })}
-          </ScrollView>
-
-          <Pressable onPress={load} style={[styles.applyBtn, { backgroundColor: theme.blueSoft }]}>
-            <Ionicons name="options-outline" size={17} color={theme.blue} />
-            <Text style={[styles.applyText, { color: theme.blue }]}>Обновить список</Text>
-          </Pressable>
-        </View>
-
-        {loading ? (
-          <View style={styles.centerBox}>
-            <ActivityIndicator color={theme.blue} />
-          </View>
-        ) : projects.length === 0 ? (
-          <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <View style={[styles.emptyIcon, { backgroundColor: theme.blueSoft }]}>
-              <Ionicons name="folder-open-outline" size={36} color={theme.blue} />
+              )}
             </View>
-            <Text style={[styles.emptyTitle, { color: theme.text }]}>Проектов пока нет</Text>
-            <Text style={[styles.emptySub, { color: theme.textSecondary }]}>Создай первый проект и назначь участников. Потом добавим задачи, дедлайны и файлы.</Text>
-            <Pressable onPress={openCreate} style={[styles.emptyBtn, { backgroundColor: theme.blue }]}>
-              <Ionicons name="add" size={18} color="#fff" />
-              <Text style={styles.emptyBtnText}>Создать проект</Text>
+
+            {isAdmin && (
+              <View style={[styles.searchBox, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                <Ionicons name="location-outline" size={18} color={theme.textMuted} />
+                <TextInput
+                  value={city}
+                  onChangeText={setCity}
+                  onSubmitEditing={() => void load()}
+                  placeholder="Фильтр по городу"
+                  placeholderTextColor={theme.textMuted}
+                  style={[styles.searchInput, { color: theme.text }]}
+                  returnKeyType="search"
+                />
+                {!!city && (
+                  <Pressable onPress={() => setCity('')}>
+                    <Ionicons name="close-circle" size={18} color={theme.textMuted} />
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusRow}>
+              {STATUS_FILTERS.map((item) => {
+                const active = status === item.value;
+
+                return (
+                  <Pressable
+                    key={item.value || 'all'}
+                    onPress={() => setStatus(item.value)}
+                    style={[
+                      styles.filterChip,
+                      {
+                        backgroundColor: active ? theme.blue : theme.backgroundSoft,
+                        borderColor: active ? theme.blue : theme.border,
+                      },
+                    ]}
+                  >
+                    <Ionicons name={item.icon} size={15} color={active ? '#fff' : theme.textSecondary} />
+                    <Text style={[styles.filterChipText, { color: active ? '#fff' : theme.text }]}>
+                      {item.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <Pressable onPress={() => void load()} style={[styles.applyBtn, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+              <Ionicons name="refresh-outline" size={17} color={theme.blue} />
+              <Text style={[styles.applyText, { color: theme.blue }]}>Обновить список</Text>
             </Pressable>
           </View>
-        ) : (
-          projects.map((project) => {
-            const progress = projectProgress(project);
-            const deadline = deadlineMeta(project.deadline);
-            const deadlineColor = deadline.tone === 'danger' ? theme.red : deadline.tone === 'warning' ? '#F59E0B' : theme.blue;
 
-            return (
-              <Pressable
-                key={project.id}
-                onPress={() => router.push({ pathname: '/(app)/project/[id]', params: { id: String(project.id) } } as any)}
-                style={[
-                  styles.projectCard,
-                  {
-                    backgroundColor: theme.surface,
-                    borderColor: theme.border,
-                    shadowColor: theme.shadow,
-                  },
-                ]}
-              >
-                <View style={styles.projectTop}>
-                  <View style={[styles.projectIcon, { backgroundColor: theme.blueSoft }]}>
-                    <Ionicons name={project.is_pinned ? 'pin' : 'folder-open'} size={21} color={theme.blue} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.projectTitle, { color: theme.text }]} numberOfLines={2}>{project.title}</Text>
-                    <Text style={[styles.projectMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                      {statusText(project.status)} · {project.city || project.office_city || 'Без города'}
-                    </Text>
-                  </View>
-                  <View style={[styles.deadlineBadge, { backgroundColor: `${deadlineColor}18` }]}>
-                    <Ionicons name="time-outline" size={13} color={deadlineColor} />
-                    <Text style={[styles.deadlineText, { color: deadlineColor }]}>{deadline.label}</Text>
-                  </View>
-                </View>
+          {loading ? (
+            <View style={styles.centerBox}>
+              <ActivityIndicator color={theme.blue} size="large" />
+            </View>
+          ) : projects.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <View style={[styles.emptyIcon, { backgroundColor: theme.blueSoft }]}>
+                <Ionicons name="folder-open-outline" size={34} color={theme.blue} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: theme.text }]}>Проектов нет</Text>
+              <Text style={[styles.emptySub, { color: theme.textSecondary }]}>
+                Если ты не участвуешь в проекте, он не будет показан. Создай проект или попроси создателя добавить тебя в участники.
+              </Text>
+              <Pressable onPress={openCreate} style={[styles.emptyBtn, { backgroundColor: theme.blue }]}>
+                <Ionicons name="add" size={18} color="#fff" />
+                <Text style={styles.emptyBtnText}>Создать проект</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.projectList}>
+              {projects.map((project) => {
+                const p = progress(project);
+                const d = deadlineMeta(project.deadline);
+                const sColor = statusColor(project.status, theme);
+                const dColor = d.tone === 'danger' ? theme.red : d.tone === 'warning' ? theme.warning || '#F59E0B' : theme.textMuted;
+                const canEdit = canManageProject(project, currentUserId, isAdmin);
+                const team = project.responsible_users_data?.length ? project.responsible_users_data : project.participants_data;
 
-                {!!project.description && (
-                  <View style={styles.projectDescription}>
-                    <Markdown style={markdownStyles(theme) as any}>{project.description.length > 220 ? `${project.description.slice(0, 220)}...` : project.description}</Markdown>
-                  </View>
-                )}
+                return (
+                  <Pressable
+                    key={project.id}
+                    onPress={() => openProject(project)}
+                    style={[
+                      styles.projectCard,
+                      {
+                        backgroundColor: theme.surface,
+                        borderColor: theme.border,
+                        shadowColor: theme.shadow,
+                      },
+                    ]}
+                  >
+                    <View style={styles.projectTop}>
+                      <View style={[styles.projectMark, { backgroundColor: `${sColor}18` }]}>
+                        <Ionicons name={project.is_pinned ? 'pin' : 'folder-outline'} size={20} color={sColor} />
+                      </View>
 
-                <View style={[styles.progressBox, { backgroundColor: theme.backgroundSoft }]}>
-                  <View style={styles.progressTop}>
-                    <Text style={[styles.progressLabel, { color: theme.text }]}>Прогресс</Text>
-                    <Text style={[styles.progressPercent, { color: theme.blue }]}>{progress.percent}%</Text>
-                  </View>
-                  <View style={[styles.progressTrack, { backgroundColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)' }]}>
-                    <View style={[styles.progressFill, { width: `${progress.percent}%`, backgroundColor: theme.blue }]} />
-                  </View>
-                  <Text style={[styles.progressHint, { color: theme.textSecondary }]}>
-                    {progress.done}/{progress.total} задач выполнено
-                  </Text>
-                </View>
+                      <View style={{ flex: 1 }}>
+                        <View style={styles.projectTitleRow}>
+                          <Text style={[styles.projectTitle, { color: theme.text }]} numberOfLines={2}>
+                            {project.title}
+                          </Text>
 
-                <View style={styles.projectFooter}>
-                  <View style={styles.projectPeople}>
-                    <AvatarStack users={project.responsible_users_data?.length ? project.responsible_users_data : project.participants_data} theme={theme} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.peopleLabel, { color: theme.textSecondary }]}>Ответственные</Text>
-                      <Text style={[styles.peopleNames, { color: theme.text }]} numberOfLines={1}>
-                        {(project.responsible_users_data || []).map(userName).join(', ') || 'Не назначены'}
+                          {canEdit && (
+                            <Pressable
+                              onPress={(event) => {
+                                event.stopPropagation();
+                                openEdit(project);
+                              }}
+                              style={[styles.editIconBtn, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}
+                            >
+                              <Ionicons name="create-outline" size={16} color={theme.textSecondary} />
+                            </Pressable>
+                          )}
+                        </View>
+
+                        <Text style={[styles.projectMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                          {statusLabel(project.status)} · {project.city || project.office_city || 'Без города'} · обновлено {formatDateTime(project.updated_at)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {!!project.description && (
+                      <Text style={[styles.projectDescription, { color: theme.textSecondary }]} numberOfLines={3}>
+                        {project.description.replace(/[#*_`>-]/g, '').trim()}
+                      </Text>
+                    )}
+
+                    <View style={[styles.progressBox, { backgroundColor: theme.backgroundSoft }]}>
+                      <View style={styles.progressHeader}>
+                        <Text style={[styles.progressTitle, { color: theme.text }]}>Прогресс</Text>
+                        <Text style={[styles.progressPercent, { color: theme.blue }]}>{p.percent}%</Text>
+                      </View>
+
+                      <View style={[styles.progressTrack, { backgroundColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)' }]}>
+                        <View style={[styles.progressFill, { width: `${p.percent}%`, backgroundColor: theme.blue }]} />
+                      </View>
+
+                      <Text style={[styles.progressHint, { color: theme.textSecondary }]}>
+                        {p.done}/{p.total} задач завершено
                       </Text>
                     </View>
-                  </View>
-                  <View style={styles.projectMiniStats}>
-                    <View style={[styles.footerPill, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-                      <Ionicons name="checkbox-outline" size={14} color={theme.blue} />
-                      <Text style={[styles.footerText, { color: theme.textSecondary }]}>{project.items?.length || 0}</Text>
-                    </View>
-                    <View style={[styles.footerPill, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-                      <Ionicons name="attach-outline" size={14} color={theme.blue} />
-                      <Text style={[styles.footerText, { color: theme.textSecondary }]}>{project.attachments?.length || 0}</Text>
-                    </View>
-                  </View>
-                </View>
-              </Pressable>
-            );
-          })
-        )}
-      </ScrollView>
 
-      <Modal visible={modalOpen} animationType="slide" transparent onRequestClose={() => setModalOpen(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={[styles.modalCard, { backgroundColor: theme.card || theme.surface, borderColor: theme.border }]}>
-            <View style={styles.modalHandle} />
-            <View style={styles.modalHeader}>
-              <View>
-                <Text style={[styles.modalTitle, { color: theme.text }]}>Новый проект</Text>
-                <Text style={[styles.modalSubtitle, { color: theme.textSecondary }]}>Создай пространство для задач, файлов и ответственных</Text>
+                    <View style={styles.projectFooter}>
+                      <View style={styles.peopleBlock}>
+                        <AvatarStack users={team} theme={theme} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.peopleLabel, { color: theme.textMuted }]}>Команда</Text>
+                          <Text style={[styles.peopleText, { color: theme.text }]} numberOfLines={1}>
+                            {(team || []).map(userName).join(', ') || 'Участники не назначены'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.footerPills}>
+                        <View style={[styles.footerPill, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                          <Ionicons name="time-outline" size={13} color={dColor} />
+                          <Text style={[styles.footerPillText, { color: dColor }]}>{d.label}</Text>
+                        </View>
+
+                        <View style={[styles.footerPill, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                          <Ionicons name="checkbox-outline" size={13} color={theme.blue} />
+                          <Text style={[styles.footerPillText, { color: theme.textSecondary }]}>{project.items?.length || 0}</Text>
+                        </View>
+
+                        <View style={[styles.footerPill, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                          <Ionicons name="attach-outline" size={13} color={theme.blue} />
+                          <Text style={[styles.footerPillText, { color: theme.textSecondary }]}>{project.attachments?.length || 0}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+
+        <Modal visible={modalOpen} animationType="slide" transparent={false} onRequestClose={closeModal}>
+          <KeyboardAvoidingView
+            style={[styles.modalRoot, { backgroundColor: theme.background }]}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View
+              style={[
+                styles.modalHeader,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                },
+              ]}
+            >
+              <View style={[styles.modalIcon, { backgroundColor: theme.blueSoft }]}>
+                <Ionicons name={editingProject ? 'create-outline' : 'folder-open-outline'} size={22} color={theme.blue} />
               </View>
-              <Pressable onPress={() => setModalOpen(false)} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
+
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>
+                  {editingProject ? 'Редактировать проект' : 'Новый проект'}
+                </Text>
+                <Text style={[styles.modalSub, { color: theme.textSecondary }]}>
+                  {editingProject ? 'Измени описание, статус и участников' : 'Создай рабочее пространство для задач'}
+                </Text>
+              </View>
+
+              <Pressable onPress={closeModal} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
                 <Ionicons name="close" size={20} color={theme.text} />
               </Pressable>
             </View>
 
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
-              <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalBody}
+            >
+              <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                 <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название проекта</Text>
                 <TextInput
-                  value={title}
-                  onChangeText={setTitle}
+                  value={formTitle}
+                  onChangeText={setFormTitle}
                   placeholder="Например: Запуск офиса в Мары"
                   placeholderTextColor={theme.textMuted}
                   style={[styles.input, { color: theme.text }]}
                 />
               </View>
 
-              <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Описание Markdown</Text>
+              <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Описание</Text>
                 <TextInput
-                  value={description}
-                  onChangeText={setDescription}
-                  placeholder={'Можно красиво:\n## Цель\n- задача 1\n- задача 2\n**важное**'}
+                  value={formDescription}
+                  onChangeText={setFormDescription}
+                  placeholder="Цель, план, важные детали проекта..."
                   placeholderTextColor={theme.textMuted}
                   style={[styles.input, styles.textarea, { color: theme.text }]}
                   multiline
@@ -601,22 +795,22 @@ export default function ProjectsScreen() {
               </View>
 
               <View style={styles.twoInputs}>
-                <View style={[styles.inputWrap, styles.halfInput, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                <View style={[styles.inputWrap, styles.halfInput, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                   <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Город</Text>
                   <TextInput
-                    value={projectCity}
-                    onChangeText={setProjectCity}
+                    value={formCity}
+                    onChangeText={setFormCity}
                     placeholder="Ашхабад"
                     placeholderTextColor={theme.textMuted}
                     style={[styles.input, { color: theme.text }]}
                   />
                 </View>
 
-                <View style={[styles.inputWrap, styles.halfInput, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                <View style={[styles.inputWrap, styles.halfInput, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                   <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Дедлайн</Text>
                   <TextInput
-                    value={deadline}
-                    onChangeText={setDeadline}
+                    value={formDeadline}
+                    onChangeText={setFormDeadline}
                     placeholder="2026-05-20"
                     placeholderTextColor={theme.textMuted}
                     style={[styles.input, { color: theme.text }]}
@@ -625,215 +819,237 @@ export default function ProjectsScreen() {
                 </View>
               </View>
 
-              {users.length > 0 && (
-                <>
-                  <Text style={[styles.peopleTitle, { color: theme.text }]}>Участники с доступом</Text>
-                  <View style={styles.peopleWrap}>
-                    {users.map((item) => {
-                      const active = selectedParticipants.includes(item.id);
-                      return (
-                        <Pressable
-                          key={item.id}
-                          onPress={() => toggleId(item.id, selectedParticipants, setSelectedParticipants)}
-                          style={[
-                            styles.personPill,
-                            {
-                              backgroundColor: active ? theme.blue : theme.backgroundSoft,
-                              borderColor: active ? theme.blue : theme.border,
-                            },
-                          ]}
-                        >
-                          <Text style={[styles.personText, { color: active ? '#fff' : theme.text }]}>{userName(item)}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
+              <Text style={[styles.formSectionTitle, { color: theme.text }]}>Статус проекта</Text>
+              <View style={styles.optionsWrap}>
+                {PROJECT_STATUSES.map((item) => {
+                  const active = formStatus === item.value;
+                  const color = statusColor(item.value, theme);
 
-                  <Text style={[styles.peopleTitle, { color: theme.text }]}>Ответственные</Text>
-                  <View style={styles.peopleWrap}>
-                    {users.map((item) => {
-                      const active = selectedResponsibles.includes(item.id);
-                      return (
-                        <Pressable
-                          key={item.id}
-                          onPress={() => toggleId(item.id, selectedResponsibles, setSelectedResponsibles)}
-                          style={[
-                            styles.personPill,
-                            {
-                              backgroundColor: active ? theme.blue : theme.backgroundSoft,
-                              borderColor: active ? theme.blue : theme.border,
-                            },
-                          ]}
-                        >
-                          <Text style={[styles.personText, { color: active ? '#fff' : theme.text }]}>{userName(item)}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </>
-              )}
+                  return (
+                    <Pressable
+                      key={item.value}
+                      onPress={() => setFormStatus(item.value)}
+                      style={[
+                        styles.optionChip,
+                        {
+                          backgroundColor: active ? color : theme.surface,
+                          borderColor: active ? color : theme.border,
+                        },
+                      ]}
+                    >
+                      <Ionicons name={item.icon} size={15} color={active ? '#fff' : color} />
+                      <Text style={[styles.optionText, { color: active ? '#fff' : theme.text }]}>
+                        {item.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
 
-              <Pressable onPress={createProject} disabled={saving} style={[styles.saveBtn, { backgroundColor: theme.blue, opacity: saving ? 0.65 : 1 }]}>
+              <Text style={[styles.formSectionTitle, { color: theme.text }]}>Поиск сотрудников</Text>
+              <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Ionicons name="search-outline" size={18} color={theme.textMuted} />
+                <TextInput
+                  value={userSearch}
+                  onChangeText={setUserSearch}
+                  placeholder="Имя или email"
+                  placeholderTextColor={theme.textMuted}
+                  style={[styles.searchInput, { color: theme.text }]}
+                />
+                {!!userSearch && (
+                  <Pressable onPress={() => setUserSearch('')}>
+                    <Ionicons name="close-circle" size={18} color={theme.textMuted} />
+                  </Pressable>
+                )}
+              </View>
+
+              <Text style={[styles.formSectionTitle, { color: theme.text }]}>Участники с доступом</Text>
+              <View style={styles.peopleWrap}>
+                {filteredUsers.map((item) => {
+                  const active = selectedParticipants.includes(item.id);
+
+                  return (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => toggleId(item.id, selectedParticipants, setSelectedParticipants)}
+                      style={[
+                        styles.personChip,
+                        {
+                          backgroundColor: active ? theme.blue : theme.surface,
+                          borderColor: active ? theme.blue : theme.border,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.personChipText, { color: active ? '#fff' : theme.text }]}>
+                        {userName(item)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.formSectionTitle, { color: theme.text }]}>Ответственные</Text>
+              <View style={styles.peopleWrap}>
+                {filteredUsers.map((item) => {
+                  const active = selectedResponsibles.includes(item.id);
+
+                  return (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => toggleId(item.id, selectedResponsibles, setSelectedResponsibles)}
+                      style={[
+                        styles.personChip,
+                        {
+                          backgroundColor: active ? theme.blue : theme.surface,
+                          borderColor: active ? theme.blue : theme.border,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.personChipText, { color: active ? '#fff' : theme.text }]}>
+                        {userName(item)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={[styles.noticeCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Ionicons name="information-circle-outline" size={18} color={theme.blue} />
+                <Text style={[styles.noticeText, { color: theme.textSecondary }]}>
+                  Ответственные автоматически получают доступ к проекту. Создатель проекта всегда остаётся участником.
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={saveProject}
+                disabled={saving}
+                style={[styles.saveBtn, { backgroundColor: theme.blue, opacity: saving ? 0.65 : 1 }]}
+              >
                 {saving ? <ActivityIndicator color="#fff" /> : <Ionicons name="save-outline" size={18} color="#fff" />}
-                <Text style={styles.saveText}>{saving ? 'Сохранение...' : 'Создать проект'}</Text>
+                <Text style={styles.saveText}>
+                  {saving ? 'Сохранение...' : editingProject ? 'Сохранить изменения' : 'Создать проект'}
+                </Text>
               </Pressable>
             </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+          </KeyboardAvoidingView>
+        </Modal>
+      </View>
     </ScreenWrapper>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
   scroll: {
     paddingHorizontal: 18,
     paddingTop: 14,
-    paddingBottom: 128,
+    paddingBottom: 132,
     gap: 14,
   },
-  hero: {
-    borderRadius: 32,
-    padding: 18,
-    overflow: 'hidden',
+  header: {
+    borderWidth: 1,
+    borderRadius: 30,
+    padding: 16,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 3,
   },
-  heroTop: {
+  headerTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 26,
+    gap: 12,
   },
-  heroBackBtn: {
-    width: 42,
-    height: 42,
+  backBtn: {
+    width: 44,
+    height: 44,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
   },
-  heroAddBtn: {
-    minHeight: 42,
+  kicker: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  title: {
+    marginTop: 2,
+    fontSize: 30,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    marginTop: 12,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '700',
+  },
+  createBtn: {
+    minHeight: 44,
     borderRadius: 16,
-    paddingHorizontal: 14,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 13,
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
   },
-  heroAddText: {
+  createBtnText: {
     color: '#fff',
     fontSize: 13,
     fontWeight: '900',
   },
-  heroKicker: {
-    color: 'rgba(255,255,255,0.78)',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  heroTitle: {
-    marginTop: 8,
-    color: '#fff',
-    fontSize: 31,
-    fontWeight: '900',
-    letterSpacing: -0.4,
-  },
-  heroSubtitle: {
-    marginTop: 8,
-    color: 'rgba(255,255,255,0.84)',
-    fontSize: 14,
-    fontWeight: '700',
-    lineHeight: 20,
-    maxWidth: 320,
-  },
-  heroStats: {
-    marginTop: 20,
-    minHeight: 76,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+  metricsGrid: {
+    marginTop: 16,
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-  },
-  heroStatItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  heroStatValue: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: '900',
-  },
-  heroStatLabel: {
-    marginTop: 3,
-    color: 'rgba(255,255,255,0.78)',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  heroLine: {
-    width: 1,
-    height: 34,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-  },
-  statsGrid: {
-    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
-  statPill: {
-    flex: 1,
+  metricCard: {
+    width: '48%',
     borderWidth: 1,
     borderRadius: 22,
     padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.07,
+    shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 2,
   },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 15,
+  metricIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 10,
   },
-  statValue: {
-    fontSize: 20,
+  metricValue: {
+    fontSize: 22,
     fontWeight: '900',
   },
-  statLabel: {
-    marginTop: 2,
-    fontSize: 11,
+  metricTitle: {
+    marginTop: 3,
+    fontSize: 12,
     fontWeight: '800',
   },
   filtersCard: {
     borderWidth: 1,
     borderRadius: 26,
-    padding: 14,
+    padding: 12,
     gap: 10,
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.07,
-    shadowRadius: 15,
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
     elevation: 2,
   },
   searchBox: {
+    minHeight: 50,
     borderWidth: 1,
     borderRadius: 18,
-    minHeight: 50,
-    paddingHorizontal: 12,
+    paddingHorizontal: 13,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 9,
   },
   searchInput: {
     flex: 1,
@@ -842,69 +1058,72 @@ const styles = StyleSheet.create({
   },
   statusRow: {
     gap: 8,
-    paddingVertical: 2,
+    paddingRight: 8,
   },
-  statusPill: {
+  filterChip: {
+    minHeight: 39,
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 13,
-    paddingVertical: 9,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  statusText: {
+  filterChipText: {
     fontSize: 12,
     fontWeight: '900',
   },
   applyBtn: {
-    height: 46,
-    borderRadius: 16,
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: 17,
     flexDirection: 'row',
-    gap: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
   },
   applyText: {
     fontSize: 13,
     fontWeight: '900',
   },
   centerBox: {
-    paddingVertical: 32,
+    minHeight: 240,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyCard: {
     borderWidth: 1,
     borderRadius: 28,
-    padding: 26,
+    padding: 22,
     alignItems: 'center',
-    gap: 10,
   },
   emptyIcon: {
-    width: 72,
-    height: 72,
+    width: 64,
+    height: 64,
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
+    marginBottom: 14,
   },
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: '900',
+    textAlign: 'center',
   },
   emptySub: {
+    marginTop: 8,
     fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: '700',
     lineHeight: 19,
+    textAlign: 'center',
   },
   emptyBtn: {
-    marginTop: 8,
-    borderRadius: 18,
+    marginTop: 16,
     minHeight: 48,
+    borderRadius: 17,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
   },
   emptyBtnText: {
@@ -912,66 +1131,72 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
   },
+  projectList: {
+    gap: 12,
+  },
   projectCard: {
     borderWidth: 1,
-    borderRadius: 28,
-    padding: 16,
+    borderRadius: 26,
+    padding: 14,
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 3,
+    shadowOpacity: 0.06,
+    shadowRadius: 15,
+    elevation: 2,
   },
   projectTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
   },
-  projectIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 18,
+  projectMark: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  projectTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
   projectTitle: {
-    fontSize: 17,
+    flex: 1,
+    fontSize: 16,
     fontWeight: '900',
-    lineHeight: 22,
+    lineHeight: 21,
+  },
+  editIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   projectMeta: {
-    marginTop: 5,
+    marginTop: 4,
     fontSize: 12,
     fontWeight: '700',
-    lineHeight: 17,
-  },
-  deadlineBadge: {
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    maxWidth: 118,
-  },
-  deadlineText: {
-    fontSize: 10.5,
-    fontWeight: '900',
   },
   projectDescription: {
     marginTop: 12,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '700',
   },
   progressBox: {
-    marginTop: 12,
-    borderRadius: 20,
+    marginTop: 13,
+    borderRadius: 18,
     padding: 12,
   },
-  progressTop: {
+  progressHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
   },
-  progressLabel: {
-    fontSize: 13,
+  progressTitle: {
+    fontSize: 12,
     fontWeight: '900',
   },
   progressPercent: {
@@ -979,7 +1204,8 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   progressTrack: {
-    height: 9,
+    marginTop: 9,
+    height: 8,
     borderRadius: 999,
     overflow: 'hidden',
   },
@@ -988,18 +1214,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   progressHint: {
-    marginTop: 7,
-    fontSize: 11.5,
-    fontWeight: '700',
+    marginTop: 8,
+    fontSize: 11,
+    fontWeight: '800',
   },
   projectFooter: {
     marginTop: 13,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
-  projectPeople: {
-    flex: 1,
+  peopleBlock: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -1007,12 +1230,11 @@ const styles = StyleSheet.create({
   avatarStack: {
     flexDirection: 'row',
     alignItems: 'center',
-    minWidth: 38,
   },
   avatarMini: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 32,
+    height: 32,
+    borderRadius: 12,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1022,90 +1244,83 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
   },
-  avatarExtra: {
-    borderWidth: 2,
-  },
   avatarExtraText: {
     fontSize: 10,
     fontWeight: '900',
   },
   peopleLabel: {
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '800',
   },
-  peopleNames: {
+  peopleText: {
     marginTop: 2,
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '800',
   },
-  projectMiniStats: {
+  footerPills: {
     flexDirection: 'row',
-    gap: 6,
+    flexWrap: 'wrap',
+    gap: 7,
   },
   footerPill: {
+    minHeight: 31,
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
-  footerText: {
-    fontSize: 12,
+  footerPillText: {
+    fontSize: 11,
     fontWeight: '900',
   },
-  modalOverlay: {
+  modalRoot: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    maxHeight: '90%',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    borderWidth: 1,
-    padding: 16,
-  },
-  modalHandle: {
-    alignSelf: 'center',
-    width: 48,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: 'rgba(148,163,184,0.45)',
-    marginBottom: 14,
+    paddingTop: Platform.OS === 'ios' ? 56 : 22,
   },
   modalHeader: {
+    marginHorizontal: 16,
+    borderWidth: 1,
+    borderRadius: 28,
+    padding: 14,
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 12,
-    marginBottom: 10,
   },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-  },
-  modalSubtitle: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 18,
-  },
-  modalClose: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+  modalIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalScroll: {
-    gap: 12,
-    paddingBottom: 20,
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  modalSub: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  modalClose: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBody: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 40,
+    gap: 13,
   },
   inputWrap: {
     borderWidth: 1,
-    borderRadius: 20,
+    borderRadius: 21,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
@@ -1115,13 +1330,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    minHeight: 26,
-    fontSize: 15,
+    minHeight: 28,
+    fontSize: 14.5,
     fontWeight: '700',
   },
   textarea: {
-    minHeight: 118,
-    lineHeight: 21,
+    minHeight: 116,
+    lineHeight: 20,
   },
   twoInputs: {
     flexDirection: 'row',
@@ -1130,9 +1345,27 @@ const styles = StyleSheet.create({
   halfInput: {
     flex: 1,
   },
-  peopleTitle: {
+  formSectionTitle: {
     marginTop: 4,
     fontSize: 14,
+    fontWeight: '900',
+  },
+  optionsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  optionChip: {
+    minHeight: 39,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  optionText: {
+    fontSize: 12,
     fontWeight: '900',
   },
   peopleWrap: {
@@ -1140,15 +1373,31 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
-  personPill: {
+  personChip: {
+    minHeight: 38,
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  personText: {
+  personChipText: {
     fontSize: 12,
     fontWeight: '900',
+  },
+  noticeCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 9,
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
   },
   saveBtn: {
     minHeight: 56,
@@ -1156,7 +1405,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 9,
   },
   saveText: {
     color: '#fff',
