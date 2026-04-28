@@ -61,9 +61,7 @@ export default function AppTabsLayout() {
     setFabOpen(false);
     router.push({
       pathname: '/(app)/admin-payments',
-      params: {
-        open: 'expense',
-      },
+      params: { open: 'expense' },
     } as any);
   };
 
@@ -71,9 +69,7 @@ export default function AppTabsLayout() {
     setFabOpen(false);
     router.push({
       pathname: '/(app)/admin-payments',
-      params: {
-        open: 'income',
-      },
+      params: { open: 'income' },
     } as any);
   };
 
@@ -99,7 +95,7 @@ export default function AppTabsLayout() {
   };
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={[styles.root, { backgroundColor: theme.background }]}>
       <Tabs
         screenOptions={{
           headerShown: false,
@@ -119,11 +115,7 @@ export default function AppTabsLayout() {
             bottom: TAB_BOTTOM + Math.max(insets.bottom - 4, 0),
             height: TAB_HEIGHT,
             borderRadius: 28,
-            backgroundColor: useBlur
-              ? 'transparent'
-              : dark
-              ? 'rgba(22,26,38,0.94)'
-              : 'rgba(255,255,255,0.96)',
+            backgroundColor: useBlur ? 'transparent' : dark ? '#161A26' : '#FFFFFF',
             borderTopWidth: 0,
             elevation: 0,
             shadowColor: theme.shadow,
@@ -146,9 +138,7 @@ export default function AppTabsLayout() {
                     StyleSheet.absoluteFillObject,
                     styles.tabShell,
                     {
-                      backgroundColor: dark
-                        ? 'rgba(22,26,38,0.78)'
-                        : 'rgba(255,255,255,0.82)',
+                      backgroundColor: dark ? 'rgba(22,26,38,0.88)' : 'rgba(255,255,255,0.9)',
                       borderColor: theme.border,
                     },
                   ]}
@@ -157,9 +147,7 @@ export default function AppTabsLayout() {
                   style={[
                     styles.topHairline,
                     {
-                      backgroundColor: dark
-                        ? 'rgba(255,255,255,0.06)'
-                        : 'rgba(255,255,255,0.78)',
+                      backgroundColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.78)',
                     },
                   ]}
                 />
@@ -170,9 +158,7 @@ export default function AppTabsLayout() {
                   StyleSheet.absoluteFillObject,
                   styles.androidTabBg,
                   {
-                    backgroundColor: dark
-                      ? 'rgba(22,26,38,0.96)'
-                      : 'rgba(255,255,255,0.98)',
+                    backgroundColor: dark ? '#161A26' : '#FFFFFF',
                     borderColor: theme.border,
                   },
                 ]}
@@ -284,6 +270,18 @@ export default function AppTabsLayout() {
         <Tabs.Screen name="task/[id]" options={{ href: null, headerShown: false }} />
       </Tabs>
 
+      {shouldShowGlobalFab && fabOpen && (
+        <Pressable
+          onPress={() => setFabOpen(false)}
+          style={[
+            styles.fabBackdrop,
+            {
+              backgroundColor: dark ? 'rgba(8,13,22,0.72)' : 'rgba(16,32,51,0.18)',
+            },
+          ]}
+        />
+      )}
+
       {shouldShowGlobalFab && (
         <View pointerEvents="box-none" style={[styles.fabHost, { bottom: fabBottom }]}>
           {fabOpen && (
@@ -291,126 +289,71 @@ export default function AppTabsLayout() {
               style={[
                 styles.fabMenu,
                 {
-                  backgroundColor: theme.card,
-                  borderColor: theme.border,
-                  shadowColor: theme.shadow,
+                  backgroundColor: dark ? '#162235' : '#FFFFFF',
+                  borderColor: dark ? '#2A3C57' : '#DCE6F1',
+                  shadowColor: '#000000',
                 },
               ]}
             >
-              <Pressable
+              <FabMenuItem
+                title="Проекты"
+                subtitle="Задачи, дедлайны, файлы"
+                icon="folder-open-outline"
+                iconColor={theme.blue}
+                iconBg={theme.blueSoft}
+                theme={theme}
                 onPress={openProjects}
-                style={({ pressed }) => [
-                  styles.fabMenuItem,
-                  {
-                    backgroundColor: pressed ? theme.backgroundSoft : 'transparent',
-                  },
-                ]}
-              >
-                <View style={[styles.fabMenuIcon, { backgroundColor: theme.blueSoft }]}>
-                  <Ionicons name="folder-open-outline" size={20} color={theme.blue} />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Проекты</Text>
-                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>Задачи, дедлайны, файлы</Text>
-                </View>
-
-                <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-              </Pressable>
+              />
 
               <View style={[styles.fabDivider, { backgroundColor: theme.border }]} />
 
-              <Pressable
+              <FabMenuItem
+                title="Поддержка"
+                subtitle="Написать администратору"
+                icon="chatbox-ellipses-outline"
+                iconColor={theme.success}
+                iconBg={dark ? '#173526' : '#E7F8EC'}
+                theme={theme}
                 onPress={openSupport}
-                style={({ pressed }) => [
-                  styles.fabMenuItem,
-                  {
-                    backgroundColor: pressed ? theme.backgroundSoft : 'transparent',
-                  },
-                ]}
-              >
-                <View style={[styles.fabMenuIcon, { backgroundColor: 'rgba(26,174,111,0.12)' }]}>
-                  <Ionicons name="chatbox-ellipses-outline" size={20} color="#1AAE6F" />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Поддержка</Text>
-                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>Написать администратору</Text>
-                </View>
-
-                <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-              </Pressable>
+              />
 
               <View style={[styles.fabDivider, { backgroundColor: theme.border }]} />
 
-              <Pressable
+              <FabMenuItem
+                title="Добавить расход"
+                subtitle="Виза, авиабилеты, офисные расходы"
+                icon="remove-circle-outline"
+                iconColor={theme.red}
+                iconBg={theme.redSoft}
+                theme={theme}
                 onPress={openExpenseFromTemplate}
-                style={({ pressed }) => [
-                  styles.fabMenuItem,
-                  {
-                    backgroundColor: pressed ? theme.backgroundSoft : 'transparent',
-                  },
-                ]}
-              >
-                <View style={[styles.fabMenuIcon, { backgroundColor: theme.redSoft }]}>
-                  <Ionicons name="remove-circle-outline" size={20} color={theme.red} />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Добавить расход</Text>
-                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>Виза, авиабилеты, офисные расходы</Text>
-                </View>
-
-                <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-              </Pressable>
+              />
 
               <View style={[styles.fabDivider, { backgroundColor: theme.border }]} />
 
-              <Pressable
+              <FabMenuItem
+                title="Добавить доход"
+                subtitle="Виза, авиабилеты или другой доход"
+                icon="add-circle-outline"
+                iconColor={theme.success}
+                iconBg={dark ? '#173526' : '#E7F8EC'}
+                theme={theme}
                 onPress={openIncomeFromTemplate}
-                style={({ pressed }) => [
-                  styles.fabMenuItem,
-                  {
-                    backgroundColor: pressed ? theme.backgroundSoft : 'transparent',
-                  },
-                ]}
-              >
-                <View style={[styles.fabMenuIcon, { backgroundColor: 'rgba(26,174,111,0.12)' }]}>
-                  <Ionicons name="add-circle-outline" size={20} color="#1AAE6F" />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Добавить доход</Text>
-                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>Виза, авиабилеты или другой доход</Text>
-                </View>
-
-                <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-              </Pressable>
+              />
 
               {isAdmin && (
                 <>
                   <View style={[styles.fabDivider, { backgroundColor: theme.border }]} />
 
-                  <Pressable
+                  <FabMenuItem
+                    title="Пополнить баланс офиса"
+                    subtitle="Только для админов · категория “Зарплата”"
+                    icon="business-outline"
+                    iconColor={theme.blue}
+                    iconBg={theme.blueSoft}
+                    theme={theme}
                     onPress={openOfficeTopUp}
-                    style={({ pressed }) => [
-                      styles.fabMenuItem,
-                      {
-                        backgroundColor: pressed ? theme.backgroundSoft : 'transparent',
-                      },
-                    ]}
-                  >
-                    <View style={[styles.fabMenuIcon, { backgroundColor: theme.blueSoft }]}>
-                      <Ionicons name="business-outline" size={20} color={theme.blue} />
-                    </View>
-
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Пополнить баланс офиса</Text>
-                      <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>Только для админов · категория “Зарплата”</Text>
-                    </View>
-
-                    <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
-                  </Pressable>
+                  />
                 </>
               )}
             </View>
@@ -422,7 +365,7 @@ export default function AppTabsLayout() {
               styles.fab,
               {
                 backgroundColor: theme.blue,
-                shadowColor: theme.shadow,
+                shadowColor: '#000000',
               },
             ]}
           >
@@ -434,7 +377,52 @@ export default function AppTabsLayout() {
   );
 }
 
+function FabMenuItem({
+  title,
+  subtitle,
+  icon,
+  iconColor,
+  iconBg,
+  theme,
+  onPress,
+}: {
+  title: string;
+  subtitle: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+  iconBg: string;
+  theme: any;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.fabMenuItem,
+        {
+          backgroundColor: pressed ? theme.backgroundSoft : theme.surface,
+          borderColor: theme.border,
+        },
+      ]}
+    >
+      <View style={[styles.fabMenuIcon, { backgroundColor: iconBg }]}>
+        <Ionicons name={icon} size={20} color={iconColor} />
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.fabMenuTitle, { color: theme.text }]}>{title}</Text>
+        <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>{subtitle}</Text>
+      </View>
+
+      <Ionicons name="chevron-forward" size={18} color={theme.textMuted} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   tabShell: {
     borderRadius: 28,
     borderWidth: 1,
@@ -451,6 +439,11 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     borderWidth: 1,
   },
+  fabBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9900,
+    elevation: 30,
+  },
   fabHost: {
     position: 'absolute',
     right: 18,
@@ -459,19 +452,20 @@ const styles = StyleSheet.create({
     elevation: 40,
   },
   fabMenu: {
-    width: 304,
+    width: 318,
     borderWidth: 1,
-    borderRadius: 26,
-    padding: 8,
+    borderRadius: 28,
+    padding: 10,
     marginBottom: 12,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.16,
-    shadowRadius: 22,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.22,
+    shadowRadius: 26,
+    elevation: 18,
   },
   fabMenuItem: {
-    minHeight: 70,
-    borderRadius: 20,
+    minHeight: 72,
+    borderWidth: 1,
+    borderRadius: 22,
     flexDirection: 'row',
     gap: 12,
     alignItems: 'center',
@@ -480,23 +474,24 @@ const styles = StyleSheet.create({
   },
   fabDivider: {
     height: StyleSheet.hairlineWidth,
-    marginHorizontal: 12,
+    marginHorizontal: 14,
+    marginVertical: 5,
   },
   fabMenuIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
   fabMenuTitle: {
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: '900',
   },
   fabMenuSub: {
     marginTop: 3,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     lineHeight: 17,
   },
   fab: {
@@ -506,8 +501,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.26,
     shadowRadius: 18,
-    elevation: 12,
+    elevation: 14,
   },
 });

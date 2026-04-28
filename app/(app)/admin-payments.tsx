@@ -4,7 +4,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -31,6 +33,7 @@ type CurrencyItem = {
 type OfficeItem = {
   id: number;
   city?: string;
+  name?: string;
   address?: string;
   phone?: string;
 };
@@ -114,6 +117,7 @@ function money(value: number) {
 
 function formatDate(value?: string) {
   if (!value) return '—';
+
   try {
     return new Date(value).toLocaleDateString('ru-RU');
   } catch {
@@ -162,30 +166,42 @@ function extractError(error: any) {
   );
 }
 
+function officeLabel(office: OfficeItem) {
+  return office.city || office.name || `Офис #${office.id}`;
+}
+
 function KpiCard({
   title,
   value,
   hint,
+  icon,
   theme,
-  accent = false,
+  accent = 'blue',
 }: {
   title: string;
   value: string;
   hint: string;
+  icon: keyof typeof Ionicons.glyphMap;
   theme: any;
-  accent?: boolean;
+  accent?: 'blue' | 'green' | 'red';
 }) {
+  const color = accent === 'green' ? theme.success : accent === 'red' ? theme.red : theme.blue;
+  const bg = accent === 'green' ? '#E7F8EC' : accent === 'red' ? theme.redSoft : theme.blueSoft;
+
   return (
     <View
       style={[
         styles.kpiCard,
         {
-          backgroundColor: accent ? theme.blueSoft : theme.card,
+          backgroundColor: theme.surface,
           borderColor: theme.border,
           shadowColor: theme.shadow,
         },
       ]}
     >
+      <View style={[styles.kpiIcon, { backgroundColor: bg }]}>
+        <Ionicons name={icon} size={19} color={color} />
+      </View>
       <Text style={[styles.kpiValue, { color: theme.text }]}>{value}</Text>
       <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>{title}</Text>
       <Text style={[styles.kpiHint, { color: theme.textMuted }]}>{hint}</Text>
@@ -200,9 +216,10 @@ export default function AdminPaymentsScreen() {
     officeId?: string;
   }>();
 
-  const { theme } = useTheme();
+  const { theme, themeMode } = useTheme();
   const { user } = useCurrentUser();
 
+  const dark = themeMode === 'dark';
   const isAdmin = Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
 
   const [tab, setTab] = useState<TabKey>('payments');
@@ -257,10 +274,7 @@ export default function AdminPaymentsScreen() {
 
   const openIncomeModal = useCallback(() => {
     if (!cashflowEnabled) {
-      Alert.alert(
-        'Доходы пока не готовы',
-        'На этом сервере пока не найден endpoint analytics/cashflow/.'
-      );
+      Alert.alert('Доходы пока не готовы', 'На этом сервере пока не найден endpoint analytics/cashflow/.');
       setFabOpen(false);
       return;
     }
@@ -338,13 +352,7 @@ export default function AdminPaymentsScreen() {
     }
 
     if (params.open === 'expense') {
-      setTab('expenses');
-      setModalType('expense');
-      setFabOpen(false);
-      setTitle('');
-      setAmount('');
-      setComment('');
-      setSelectedCategory('custom');
+      openExpenseModal();
       return;
     }
 
@@ -352,10 +360,7 @@ export default function AdminPaymentsScreen() {
       setTab('income');
 
       if (!cashflowEnabled) {
-        Alert.alert(
-          'Доходы пока не готовы',
-          'На сервере ещё нет analytics/cashflow/ или он недоступен.'
-        );
+        Alert.alert('Доходы пока не готовы', 'На сервере ещё нет analytics/cashflow/ или он недоступен.');
         return;
       }
 
@@ -369,7 +374,7 @@ export default function AdminPaymentsScreen() {
       setComment(salary ? 'Пополнение баланса офиса' : '');
       setSelectedCategory(salary ? 'salary' : 'custom');
     }
-  }, [params.open, params.title, params.officeId, cashflowEnabled]);
+  }, [params.open, params.title, params.officeId, cashflowEnabled, openExpenseModal]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -383,6 +388,7 @@ export default function AdminPaymentsScreen() {
     }
 
     setWorkingId(String(item.id));
+
     try {
       const response = await apiClient.post(`analytics/payments/${item.id}/confirm/`, {});
       await load();
@@ -415,6 +421,7 @@ export default function AdminPaymentsScreen() {
     try {
       if (cashflowEnabled) {
         const officeId = Number(selectedOfficeId || userOfficeId || 0);
+
         if (!officeId) {
           Alert.alert('Ошибка', 'Не удалось определить офис.');
           return;
@@ -451,10 +458,7 @@ export default function AdminPaymentsScreen() {
 
   const submitIncome = async () => {
     if (!cashflowEnabled) {
-      Alert.alert(
-        'Доходы пока не готовы',
-        'На сервере ещё нет analytics/cashflow/ или он недоступен.'
-      );
+      Alert.alert('Доходы пока не готовы', 'На сервере ещё нет analytics/cashflow/ или он недоступен.');
       return;
     }
 
@@ -474,6 +478,7 @@ export default function AdminPaymentsScreen() {
     }
 
     const officeId = Number(selectedOfficeId || userOfficeId || 0);
+
     if (!officeId) {
       Alert.alert('Ошибка', 'Не удалось определить офис.');
       return;
@@ -517,6 +522,7 @@ export default function AdminPaymentsScreen() {
     if (tab === 'payments') {
       return payments.filter((item) => {
         if (!q) return true;
+
         return (
           String(item.id).includes(q) ||
           String(item.deal || '').includes(q) ||
@@ -532,7 +538,6 @@ export default function AdminPaymentsScreen() {
 
       return combined.filter((item) => {
         if (categoryFilter !== 'all' && cashflowEnabled && item.category !== categoryFilter) return false;
-
         if (!q) return true;
 
         return (
@@ -547,7 +552,6 @@ export default function AdminPaymentsScreen() {
 
     return cashflowIncomes.filter((item) => {
       if (categoryFilter !== 'all' && item.category !== categoryFilter) return false;
-
       if (!q) return true;
 
       return (
@@ -613,35 +617,54 @@ export default function AdminPaymentsScreen() {
 
   return (
     <ScreenWrapper>
-      <View style={{ flex: 1 }}>
+      <View style={[styles.screen, { backgroundColor: theme.background }]}>
         <ScrollView
           contentContainerStyle={styles.container}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.blue} />}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.head}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.title, { color: theme.text }]}>Финансы</Text>
-              <Text style={[styles.sub, { color: theme.textSecondary }]}>
-                Платежи, расходы, доходы, виза и авиабилеты
-              </Text>
-            </View>
-          </View>
+          <View
+            style={[
+              styles.hero,
+              {
+                backgroundColor: dark ? '#162235' : '#FFFFFF',
+                borderColor: theme.border,
+                shadowColor: theme.shadow,
+              },
+            ]}
+          >
+            <View style={styles.heroTop}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.title, { color: theme.text }]}>Финансы</Text>
+                <Text style={[styles.sub, { color: theme.textSecondary }]}>
+                  Платежи, расходы, доходы, виза и авиабилеты
+                </Text>
+              </View>
 
-          <View style={styles.kpiRow}>
-            <KpiCard
-              title={tab === 'payments' ? 'Ждут' : tab === 'expenses' ? 'Расходов' : 'Доходов'}
-              value={String(totals.primary)}
-              hint={money(totals.amount)}
-              theme={theme}
-              accent
-            />
-            <KpiCard
-              title={tab === 'payments' ? 'Подтверждено' : 'Режим'}
-              value={tab === 'payments' ? String(totals.secondary) : tab === 'expenses' ? 'Expense' : 'Income'}
-              hint={tab === 'payments' ? money(totals.secondaryAmount) : cashflowEnabled ? 'Cashflow online' : 'Legacy'}
-              theme={theme}
-            />
+              <View style={[styles.heroIcon, { backgroundColor: theme.blueSoft }]}>
+                <Ionicons name="wallet-outline" size={24} color={theme.blue} />
+              </View>
+            </View>
+
+            <View style={styles.kpiRow}>
+              <KpiCard
+                title={tab === 'payments' ? 'Ждут' : tab === 'expenses' ? 'Расходов' : 'Доходов'}
+                value={String(totals.primary)}
+                hint={money(totals.amount)}
+                icon={tab === 'expenses' ? 'trending-down-outline' : tab === 'income' ? 'trending-up-outline' : 'time-outline'}
+                theme={theme}
+                accent={tab === 'expenses' ? 'red' : tab === 'income' ? 'green' : 'blue'}
+              />
+
+              <KpiCard
+                title={tab === 'payments' ? 'Подтверждено' : 'Режим'}
+                value={tab === 'payments' ? String(totals.secondary) : tab === 'expenses' ? 'Expense' : 'Income'}
+                hint={tab === 'payments' ? money(totals.secondaryAmount) : cashflowEnabled ? 'Cashflow online' : 'Legacy'}
+                icon={tab === 'payments' ? 'checkmark-circle-outline' : 'server-outline'}
+                theme={theme}
+                accent={tab === 'payments' ? 'green' : 'blue'}
+              />
+            </View>
           </View>
 
           <View
@@ -649,7 +672,7 @@ export default function AdminPaymentsScreen() {
               styles.searchBox,
               {
                 borderColor: theme.border,
-                backgroundColor: theme.card,
+                backgroundColor: theme.surface,
               },
             ]}
           >
@@ -665,9 +688,9 @@ export default function AdminPaymentsScreen() {
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
             {[
-              { key: 'payments', label: 'Платежи' },
-              { key: 'expenses', label: 'Расходы' },
-              { key: 'income', label: 'Доходы' },
+              { key: 'payments', label: 'Платежи', icon: 'card-outline' },
+              { key: 'expenses', label: 'Расходы', icon: 'remove-circle-outline' },
+              { key: 'income', label: 'Доходы', icon: 'add-circle-outline' },
             ].map((item) => {
               const active = tab === item.key;
 
@@ -683,6 +706,11 @@ export default function AdminPaymentsScreen() {
                     },
                   ]}
                 >
+                  <Ionicons
+                    name={item.icon as keyof typeof Ionicons.glyphMap}
+                    size={15}
+                    color={active ? '#fff' : theme.text}
+                  />
                   <Text style={[styles.chipText, { color: active ? '#fff' : theme.text }]}>
                     {item.label}
                   </Text>
@@ -738,16 +766,16 @@ export default function AdminPaymentsScreen() {
               style={[
                 styles.warningCard,
                 {
-                  backgroundColor: '#FFF6EA',
-                  borderColor: '#F2D4A4',
+                  backgroundColor: dark ? '#332711' : '#FFF6EA',
+                  borderColor: dark ? '#735315' : '#F2D4A4',
                 },
               ]}
             >
-              <Text style={[styles.warningTitle, { color: '#8E5A00' }]}>
+              <Text style={[styles.warningTitle, { color: dark ? '#FFD37A' : '#8E5A00' }]}>
                 Доходы ещё не подключены на backend
               </Text>
-              <Text style={[styles.warningText, { color: '#8E5A00' }]}>
-                Свободные доходы вне сделки будут работать сразу, как только на сервере появится `analytics/cashflow/`.
+              <Text style={[styles.warningText, { color: dark ? '#FFE0A3' : '#8E5A00' }]}>
+                Свободные доходы вне сделки будут работать сразу, как только на сервере появится analytics/cashflow/.
               </Text>
             </View>
           )}
@@ -757,12 +785,12 @@ export default function AdminPaymentsScreen() {
               style={[
                 styles.emptyCard,
                 {
-                  backgroundColor: theme.card,
+                  backgroundColor: theme.surface,
                   borderColor: theme.border,
                 },
               ]}
             >
-              <Ionicons name="wallet-outline" size={24} color={theme.textMuted} />
+              <Ionicons name="wallet-outline" size={26} color={theme.textMuted} />
               <Text style={[styles.emptyText, { color: theme.textSecondary }]}>Записей пока нет</Text>
             </View>
           ) : (
@@ -771,38 +799,18 @@ export default function AdminPaymentsScreen() {
 
               if (tab === 'payments') {
                 return (
-                  <View
+                  <FinanceCard
                     key={`payment-${item.id}`}
-                    style={[
-                      styles.card,
-                      {
-                        backgroundColor: theme.card,
-                        borderColor: theme.border,
-                        shadowColor: theme.shadow,
-                      },
-                    ]}
+                    theme={theme}
+                    icon="card-outline"
+                    iconColor={theme.blue}
+                    iconBg={theme.blueSoft}
+                    title={`Платёж #${item.id}`}
+                    subtitle={`Сделка #${item.deal || '-'} · ${methodLabel(item.method)}`}
+                    amount={money(toNumber(item.amount_usd ?? item.amount))}
+                    amountColor={theme.text}
+                    lines={[`${managerName(item)} · ${officeName(item)}`, `Дата: ${formatDate(item.payment_date)}`]}
                   >
-                    <View style={styles.cardTop}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.cardTitle, { color: theme.text }]}>Платёж #{item.id}</Text>
-                        <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
-                          Сделка #{item.deal || '-'} · {methodLabel(item.method)}
-                        </Text>
-                      </View>
-
-                      <Text style={[styles.amount, { color: theme.text }]}>
-                        {money(toNumber(item.amount_usd ?? item.amount))}
-                      </Text>
-                    </View>
-
-                    <Text style={[styles.line, { color: theme.textSecondary }]}>
-                      {managerName(item)} · {officeName(item)}
-                    </Text>
-
-                    <Text style={[styles.line, { color: theme.textSecondary }]}>
-                      Дата: {formatDate(item.payment_date)}
-                    </Text>
-
                     <View
                       style={[
                         styles.statusPill,
@@ -825,19 +833,12 @@ export default function AdminPaymentsScreen() {
 
                     {!item.is_confirmed && isAdmin && (
                       <View style={styles.actionsRow}>
-                        <Pressable
-                          onPress={() => confirmPayment(item)}
-                          style={[styles.actionBtn, { backgroundColor: GREEN }]}
-                        >
-                          {busy ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                          ) : (
-                            <Text style={styles.actionBtnText}>Подтвердить</Text>
-                          )}
+                        <Pressable onPress={() => confirmPayment(item)} style={[styles.actionBtn, { backgroundColor: GREEN }]}>
+                          {busy ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.actionBtnText}>Подтвердить</Text>}
                         </Pressable>
                       </View>
                     )}
-                  </View>
+                  </FinanceCard>
                 );
               }
 
@@ -846,32 +847,21 @@ export default function AdminPaymentsScreen() {
                 const date = isCashflow ? item.entry_date : item.date;
 
                 return (
-                  <View
+                  <FinanceCard
                     key={`expense-${item.id}`}
-                    style={[
-                      styles.card,
-                      {
-                        backgroundColor: theme.card,
-                        borderColor: theme.border,
-                        shadowColor: theme.shadow,
-                      },
+                    theme={theme}
+                    icon="remove-circle-outline"
+                    iconColor={theme.red}
+                    iconBg={theme.redSoft}
+                    title={item.title || `Расход #${item.id}`}
+                    subtitle={`${managerName(item)} · ${officeName(item)}`}
+                    amount={`- ${money(toNumber(item.amount_usd ?? item.amount))}`}
+                    amountColor={theme.red}
+                    lines={[
+                      ...(item.comment ? [`Комментарий: ${item.comment}`] : []),
+                      `Дата: ${formatDate(date)}`,
                     ]}
                   >
-                    <View style={styles.cardTop}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.cardTitle, { color: theme.text }]}>
-                          {item.title || `Расход #${item.id}`}
-                        </Text>
-                        <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
-                          {managerName(item)} · {officeName(item)}
-                        </Text>
-                      </View>
-
-                      <Text style={[styles.amount, { color: theme.red }]}>
-                        - {money(toNumber(item.amount_usd ?? item.amount))}
-                      </Text>
-                    </View>
-
                     {isCashflow && (
                       <View style={[styles.categoryPill, { backgroundColor: theme.redSoft }]}>
                         <Text style={[styles.categoryPillText, { color: theme.red }]}>
@@ -879,63 +869,32 @@ export default function AdminPaymentsScreen() {
                         </Text>
                       </View>
                     )}
-
-                    {!!item.comment && (
-                      <Text style={[styles.line, { color: theme.textSecondary }]}>
-                        Комментарий: {item.comment}
-                      </Text>
-                    )}
-
-                    <Text style={[styles.line, { color: theme.textSecondary }]}>
-                      Дата: {formatDate(date)}
-                    </Text>
-                  </View>
+                  </FinanceCard>
                 );
               }
 
               return (
-                <View
+                <FinanceCard
                   key={`income-${item.id}`}
-                  style={[
-                    styles.card,
-                    {
-                      backgroundColor: theme.card,
-                      borderColor: theme.border,
-                      shadowColor: theme.shadow,
-                    },
+                  theme={theme}
+                  icon="add-circle-outline"
+                  iconColor={theme.success}
+                  iconBg={dark ? '#173526' : '#E7F8EC'}
+                  title={item.title || `Доход #${item.id}`}
+                  subtitle={`${item.created_by_name || 'Сотрудник'} · ${item.office_name || 'Офис'}`}
+                  amount={`+ ${money(toNumber(item.amount_usd ?? item.amount))}`}
+                  amountColor={theme.success}
+                  lines={[
+                    ...(item.comment ? [`Комментарий: ${item.comment}`] : []),
+                    `Дата: ${formatDate(item.entry_date)}`,
                   ]}
                 >
-                  <View style={styles.cardTop}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.cardTitle, { color: theme.text }]}>
-                        {item.title || `Доход #${item.id}`}
-                      </Text>
-                      <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>
-                        {item.created_by_name || 'Сотрудник'} · {item.office_name || 'Офис'}
-                      </Text>
-                    </View>
-
-                    <Text style={[styles.amount, { color: GREEN }]}>
-                      + {money(toNumber(item.amount_usd ?? item.amount))}
-                    </Text>
-                  </View>
-
-                  <View style={[styles.categoryPill, { backgroundColor: '#E7F8EC' }]}>
-                    <Text style={[styles.categoryPillText, { color: '#157347' }]}>
+                  <View style={[styles.categoryPill, { backgroundColor: dark ? '#173526' : '#E7F8EC' }]}>
+                    <Text style={[styles.categoryPillText, { color: theme.success }]}>
                       {item.category_label || categoryLabel(item.category)}
                     </Text>
                   </View>
-
-                  {!!item.comment && (
-                    <Text style={[styles.line, { color: theme.textSecondary }]}>
-                      Комментарий: {item.comment}
-                    </Text>
-                  )}
-
-                  <Text style={[styles.line, { color: theme.textSecondary }]}>
-                    Дата: {formatDate(item.entry_date)}
-                  </Text>
-                </View>
+                </FinanceCard>
               );
             })
           )}
@@ -947,353 +906,484 @@ export default function AdminPaymentsScreen() {
               style={[
                 styles.fabMenu,
                 {
-                  backgroundColor: theme.card,
+                  backgroundColor: theme.surface,
                   borderColor: theme.border,
-                  shadowColor: theme.shadow,
+                  shadowColor: '#000000',
                 },
               ]}
             >
-              <Pressable onPress={openExpenseModal} style={styles.fabMenuItem}>
-                <Ionicons name="remove-circle-outline" size={18} color={theme.red} />
-                <Text style={[styles.fabMenuText, { color: theme.text }]}>Добавить расход</Text>
+              <Pressable
+                onPress={openExpenseModal}
+                style={({ pressed }) => [
+                  styles.fabMenuItem,
+                  { backgroundColor: pressed ? theme.backgroundSoft : theme.surface },
+                ]}
+              >
+                <View style={[styles.fabMenuIcon, { backgroundColor: theme.redSoft }]}>
+                  <Ionicons name="remove-circle-outline" size={19} color={theme.red} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Добавить расход</Text>
+                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>Виза, билеты, офис</Text>
+                </View>
               </Pressable>
 
-              <Pressable onPress={openIncomeModal} style={styles.fabMenuItem}>
-                <Ionicons name="add-circle-outline" size={18} color={GREEN} />
-                <Text style={[styles.fabMenuText, { color: theme.text }]}>Добавить доход</Text>
-              </Pressable>
+              <View style={[styles.fabDivider, { backgroundColor: theme.border }]} />
 
-              {isAdmin && cashflowEnabled && (
-                <Pressable
-                  onPress={() => {
-                    setModalType('income');
-                    setTab('income');
-                    setTitle('Зарплата');
-                    setAmount('');
-                    setComment('Пополнение баланса офиса');
-                    setSelectedCategory('salary');
-                    setFabOpen(false);
-                  }}
-                  style={styles.fabMenuItem}
-                >
-                  <Ionicons name="business-outline" size={18} color={theme.blue} />
-                  <Text style={[styles.fabMenuText, { color: theme.text }]}>
-                    Пополнить баланс офиса
-                  </Text>
-                </Pressable>
-              )}
+              <Pressable
+                onPress={openIncomeModal}
+                style={({ pressed }) => [
+                  styles.fabMenuItem,
+                  { backgroundColor: pressed ? theme.backgroundSoft : theme.surface },
+                ]}
+              >
+                <View style={[styles.fabMenuIcon, { backgroundColor: dark ? '#173526' : '#E7F8EC' }]}>
+                  <Ionicons name="add-circle-outline" size={19} color={theme.success} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fabMenuTitle, { color: theme.text }]}>Добавить доход</Text>
+                  <Text style={[styles.fabMenuSub, { color: theme.textSecondary }]}>Пополнение или услуга</Text>
+                </View>
+              </Pressable>
             </View>
           )}
 
-          <Pressable
-            onPress={() => setFabOpen((v) => !v)}
-            style={[styles.fab, { backgroundColor: theme.blue }]}
-          >
+          <Pressable onPress={() => setFabOpen((v) => !v)} style={[styles.fab, { backgroundColor: theme.blue }]}>
             <Ionicons name={fabOpen ? 'close' : 'add'} size={28} color="#fff" />
           </Pressable>
         </View>
 
-        <Modal visible={!!modalType} transparent animationType="fade" onRequestClose={resetForm}>
-          <View style={styles.modalOverlay}>
-            <View
-              style={[
-                styles.modalCard,
-                {
-                  backgroundColor: theme.card,
-                  borderColor: theme.border,
-                  shadowColor: theme.shadow,
-                },
-              ]}
-            >
-              <Text style={[styles.modalTitle, { color: theme.text }]}>
-                {modalType === 'expense' ? 'Новый расход' : 'Новый доход'}
-              </Text>
-
-              <TextInput
-                value={title}
-                onChangeText={setTitle}
-                placeholder={
-                  modalType === 'expense'
-                    ? 'Например: виза, билет, офис'
-                    : 'Например: виза, авиабилеты'
-                }
-                placeholderTextColor={theme.textMuted}
-                style={[
-                  styles.modalInput,
-                  {
-                    borderColor: theme.border,
-                    color: theme.text,
-                    backgroundColor: theme.surface,
-                  },
-                ]}
-              />
-
-              <TextInput
-                value={amount}
-                onChangeText={setAmount}
-                placeholder="Сумма"
-                placeholderTextColor={theme.textMuted}
-                keyboardType="numeric"
-                style={[
-                  styles.modalInput,
-                  {
-                    borderColor: theme.border,
-                    color: theme.text,
-                    backgroundColor: theme.surface,
-                  },
-                ]}
-              />
-
-              <Text style={[styles.modalLabel, { color: theme.textSecondary }]}>Категория</Text>
-
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectorRow}>
-                {FINANCE_CATEGORIES.map((category) => {
-                  const active = selectedCategory === category.key;
-
-                  return (
-                    <Pressable
-                      key={category.key}
-                      onPress={() => setSelectedCategory(category.key)}
-                      style={[
-                        styles.selectorChip,
-                        {
-                          backgroundColor: active ? theme.blue : theme.surface,
-                          borderColor: active ? theme.blue : theme.border,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name={category.icon}
-                        size={15}
-                        color={active ? '#fff' : theme.text}
-                      />
-                      <Text style={[styles.selectorChipText, { color: active ? '#fff' : theme.text }]}>
-                        {category.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-
-              <TextInput
-                value={comment}
-                onChangeText={setComment}
-                placeholder="Комментарий"
-                placeholderTextColor={theme.textMuted}
-                multiline
-                style={[
-                  styles.modalInput,
-                  styles.modalInputArea,
-                  {
-                    borderColor: theme.border,
-                    color: theme.text,
-                    backgroundColor: theme.surface,
-                  },
-                ]}
-              />
-
-              <Text style={[styles.modalLabel, { color: theme.textSecondary }]}>Валюта</Text>
-
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectorRow}>
-                {currencies.map((currency) => {
-                  const active = selectedCurrencyId === currency.id;
-
-                  return (
-                    <Pressable
-                      key={currency.id}
-                      onPress={() => setSelectedCurrencyId(currency.id)}
-                      style={[
-                        styles.selectorChip,
-                        {
-                          backgroundColor: active ? theme.blue : theme.surface,
-                          borderColor: active ? theme.blue : theme.border,
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.selectorChipText, { color: active ? '#fff' : theme.text }]}>
-                        {currency.code || currency.symbol || currency.name || `#${currency.id}`}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-
-              {cashflowEnabled && (
-                <>
-                  <Text style={[styles.modalLabel, { color: theme.textSecondary }]}>Офис</Text>
-
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.selectorRow}>
-                    {(offices.length
-                      ? offices
-                      : userOfficeId
-                      ? [
-                          {
-                            id: Number(userOfficeId),
-                            city: user?.office?.city || user?.access_profile?.managed_office?.city,
-                          },
-                        ]
-                      : []
-                    ).map((office) => {
-                      const active = selectedOfficeId === office.id;
-
-                      return (
-                        <Pressable
-                          key={office.id}
-                          onPress={() => setSelectedOfficeId(office.id)}
-                          style={[
-                            styles.selectorChip,
-                            {
-                              backgroundColor: active ? theme.blue : theme.surface,
-                              borderColor: active ? theme.blue : theme.border,
-                            },
-                          ]}
-                        >
-                          <Text style={[styles.selectorChipText, { color: active ? '#fff' : theme.text }]}>
-                            {office.city || `Офис #${office.id}`}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                </>
-              )}
-
-              <View style={styles.modalActions}>
-                <Pressable
-                  onPress={resetForm}
-                  style={[
-                    styles.modalGhostBtn,
-                    {
-                      borderColor: theme.border,
-                      backgroundColor: theme.surface,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.modalGhostText, { color: theme.text }]}>Отмена</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={modalType === 'expense' ? submitExpense : submitIncome}
-                  style={[
-                    styles.modalPrimaryBtn,
-                    {
-                      backgroundColor: theme.blue,
-                      opacity: submitting ? 0.7 : 1,
-                    },
-                  ]}
-                  disabled={submitting}
-                >
-                  {submitting ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.modalPrimaryText}>Сохранить</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
+        <FinanceModal
+          visible={modalType !== null}
+          type={modalType}
+          dark={dark}
+          theme={theme}
+          currencies={currencies}
+          offices={offices}
+          isAdmin={isAdmin}
+          title={title}
+          setTitle={setTitle}
+          amount={amount}
+          setAmount={setAmount}
+          comment={comment}
+          setComment={setComment}
+          selectedCategory={selectedCategory}
+          setSelectedCategory={setSelectedCategory}
+          selectedCurrencyId={selectedCurrencyId}
+          setSelectedCurrencyId={setSelectedCurrencyId}
+          selectedOfficeId={selectedOfficeId}
+          setSelectedOfficeId={setSelectedOfficeId}
+          submitting={submitting}
+          onClose={resetForm}
+          onSubmit={modalType === 'income' ? submitIncome : submitExpense}
+        />
       </View>
     </ScreenWrapper>
   );
 }
 
+function FinanceCard({
+  theme,
+  icon,
+  iconColor,
+  iconBg,
+  title,
+  subtitle,
+  amount,
+  amountColor,
+  lines,
+  children,
+}: {
+  theme: any;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+  iconBg: string;
+  title: string;
+  subtitle: string;
+  amount: string;
+  amountColor: string;
+  lines: string[];
+  children?: React.ReactNode;
+}) {
+  return (
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: theme.surface,
+          borderColor: theme.border,
+          shadowColor: theme.shadow,
+        },
+      ]}
+    >
+      <View style={styles.cardTop}>
+        <View style={[styles.cardIcon, { backgroundColor: iconBg }]}>
+          <Ionicons name={icon} size={20} color={iconColor} />
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cardTitle, { color: theme.text }]}>{title}</Text>
+          <Text style={[styles.cardMeta, { color: theme.textSecondary }]}>{subtitle}</Text>
+        </View>
+
+        <Text style={[styles.amount, { color: amountColor }]}>{amount}</Text>
+      </View>
+
+      {children}
+
+      {lines.map((line) => (
+        <Text key={line} style={[styles.line, { color: theme.textSecondary }]}>
+          {line}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
+function FinanceModal({
+  visible,
+  type,
+  dark,
+  theme,
+  currencies,
+  offices,
+  isAdmin,
+  title,
+  setTitle,
+  amount,
+  setAmount,
+  comment,
+  setComment,
+  selectedCategory,
+  setSelectedCategory,
+  selectedCurrencyId,
+  setSelectedCurrencyId,
+  selectedOfficeId,
+  setSelectedOfficeId,
+  submitting,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  type: 'expense' | 'income' | null;
+  dark: boolean;
+  theme: any;
+  currencies: CurrencyItem[];
+  offices: OfficeItem[];
+  isAdmin: boolean;
+  title: string;
+  setTitle: (value: string) => void;
+  amount: string;
+  setAmount: (value: string) => void;
+  comment: string;
+  setComment: (value: string) => void;
+  selectedCategory: string;
+  setSelectedCategory: (value: string) => void;
+  selectedCurrencyId: number | null;
+  setSelectedCurrencyId: (value: number | null) => void;
+  selectedOfficeId: number | null;
+  setSelectedOfficeId: (value: number | null) => void;
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  const isIncome = type === 'income';
+  const accent = isIncome ? theme.success : theme.red;
+  const accentBg = isIncome ? (dark ? '#173526' : '#E7F8EC') : theme.redSoft;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={[styles.modalRoot, { backgroundColor: theme.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View
+          style={[
+            styles.modalHeader,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          <View style={[styles.modalIcon, { backgroundColor: accentBg }]}>
+            <Ionicons name={isIncome ? 'add-circle-outline' : 'remove-circle-outline'} size={24} color={accent} />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              {isIncome ? 'Добавить доход' : 'Добавить расход'}
+            </Text>
+            <Text style={[styles.modalSub, { color: theme.textSecondary }]}>
+              Фон теперь непрозрачный, поля читаются нормально
+            </Text>
+          </View>
+
+          <Pressable onPress={onClose} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
+            <Ionicons name="close" size={20} color={theme.text} />
+          </Pressable>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Название</Text>
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder={isIncome ? 'Например: Виза / Пополнение офиса' : 'Например: Авиабилеты / Офис'}
+              placeholderTextColor={theme.textMuted}
+              style={[styles.input, { color: theme.text }]}
+            />
+          </View>
+
+          <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Сумма</Text>
+            <TextInput
+              value={amount}
+              onChangeText={setAmount}
+              placeholder="0"
+              placeholderTextColor={theme.textMuted}
+              style={[styles.input, { color: theme.text }]}
+              keyboardType="decimal-pad"
+            />
+          </View>
+
+          <Text style={[styles.sectionLabel, { color: theme.text }]}>Категория</Text>
+          <View style={styles.optionWrap}>
+            {FINANCE_CATEGORIES.map((cat) => {
+              const active = selectedCategory === cat.key;
+
+              return (
+                <Pressable
+                  key={cat.key}
+                  onPress={() => setSelectedCategory(cat.key)}
+                  style={[
+                    styles.optionChip,
+                    {
+                      backgroundColor: active ? accent : theme.surface,
+                      borderColor: active ? accent : theme.border,
+                    },
+                  ]}
+                >
+                  <Ionicons name={cat.icon} size={15} color={active ? '#fff' : theme.text} />
+                  <Text style={[styles.optionText, { color: active ? '#fff' : theme.text }]}>
+                    {cat.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.sectionLabel, { color: theme.text }]}>Валюта</Text>
+          <View style={styles.optionWrap}>
+            {currencies.map((currency) => {
+              const active = selectedCurrencyId === currency.id;
+
+              return (
+                <Pressable
+                  key={currency.id}
+                  onPress={() => setSelectedCurrencyId(currency.id)}
+                  style={[
+                    styles.optionChip,
+                    {
+                      backgroundColor: active ? theme.blue : theme.surface,
+                      borderColor: active ? theme.blue : theme.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.optionText, { color: active ? '#fff' : theme.text }]}>
+                    {currency.code || currency.symbol || currency.name || `#${currency.id}`}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {isAdmin && offices.length > 0 && (
+            <>
+              <Text style={[styles.sectionLabel, { color: theme.text }]}>Офис</Text>
+              <View style={styles.optionWrap}>
+                {offices.map((office) => {
+                  const active = selectedOfficeId === office.id;
+
+                  return (
+                    <Pressable
+                      key={office.id}
+                      onPress={() => setSelectedOfficeId(office.id)}
+                      style={[
+                        styles.optionChip,
+                        {
+                          backgroundColor: active ? theme.blue : theme.surface,
+                          borderColor: active ? theme.blue : theme.border,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.optionText, { color: active ? '#fff' : theme.text }]}>
+                        {officeLabel(office)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </>
+          )}
+
+          <View style={[styles.inputWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Комментарий</Text>
+            <TextInput
+              value={comment}
+              onChangeText={setComment}
+              placeholder="Комментарий к операции"
+              placeholderTextColor={theme.textMuted}
+              style={[styles.input, styles.textarea, { color: theme.text }]}
+              multiline
+              textAlignVertical="top"
+            />
+          </View>
+
+          <Pressable
+            onPress={onSubmit}
+            disabled={submitting}
+            style={[styles.submitBtn, { backgroundColor: accent, opacity: submitting ? 0.7 : 1 }]}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Ionicons name="save-outline" size={18} color="#fff" />
+            )}
+            <Text style={styles.submitText}>{submitting ? 'Сохранение...' : 'Сохранить'}</Text>
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
   center: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    justifyContent: 'center',
   },
   container: {
-    padding: 20,
-    paddingBottom: 140,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 132,
+    gap: 14,
   },
-  head: {
+  hero: {
+    borderWidth: 1,
+    borderRadius: 30,
+    padding: 18,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  heroTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 14,
+    marginBottom: 16,
+  },
+  heroIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 19,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '900',
+    letterSpacing: -0.4,
   },
   sub: {
     marginTop: 6,
     fontSize: 13,
     fontWeight: '700',
+    lineHeight: 19,
   },
   kpiRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 18,
+    gap: 12,
   },
   kpiCard: {
     flex: 1,
     borderWidth: 1,
-    borderRadius: 20,
+    borderRadius: 22,
     padding: 14,
+    minHeight: 128,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.06,
     shadowRadius: 14,
-    elevation: 3,
+    elevation: 2,
+  },
+  kpiIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
   },
   kpiValue: {
-    fontSize: 22,
+    fontSize: 23,
     fontWeight: '900',
   },
   kpiLabel: {
-    marginTop: 6,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  kpiHint: {
     marginTop: 4,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '900',
+  },
+  kpiHint: {
+    marginTop: 3,
+    fontSize: 11,
+    fontWeight: '700',
   },
   searchBox: {
     borderWidth: 1,
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginTop: 18,
+    borderRadius: 22,
+    minHeight: 54,
+    paddingHorizontal: 15,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
   searchInput: {
-    fontSize: 15,
-    fontWeight: '600',
     flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
   },
   chipsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 14,
-    paddingRight: 16,
+    gap: 10,
+    paddingRight: 8,
   },
   chip: {
+    minHeight: 42,
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
   },
   chipText: {
-    fontWeight: '800',
     fontSize: 13,
+    fontWeight: '900',
   },
   categoryFilterRow: {
-    flexDirection: 'row',
     gap: 8,
-    marginTop: 12,
-    paddingRight: 16,
+    paddingRight: 8,
   },
   categoryFilterChip: {
+    minHeight: 38,
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 12,
-    paddingVertical: 9,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -1303,228 +1393,264 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   warningCard: {
-    marginTop: 14,
     borderWidth: 1,
-    borderRadius: 20,
+    borderRadius: 22,
     padding: 14,
   },
   warningTitle: {
-    fontWeight: '900',
     fontSize: 14,
+    fontWeight: '900',
   },
   warningText: {
     marginTop: 6,
-    lineHeight: 19,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
+    lineHeight: 18,
   },
   emptyCard: {
-    marginTop: 14,
     borderWidth: 1,
-    borderRadius: 24,
-    padding: 22,
+    borderRadius: 26,
+    padding: 24,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 10,
   },
   emptyText: {
-    marginTop: 10,
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   card: {
-    marginTop: 14,
     borderWidth: 1,
-    borderRadius: 22,
-    padding: 16,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
+    borderRadius: 26,
+    padding: 15,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.07,
     shadowRadius: 16,
-    elevation: 4,
+    elevation: 3,
   },
   cardTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 12,
   },
+  cardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
   },
   cardMeta: {
-    marginTop: 5,
-    fontSize: 13,
-    fontWeight: '600',
+    marginTop: 3,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
   },
   amount: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '900',
+    maxWidth: 110,
     textAlign: 'right',
   },
   line: {
     marginTop: 8,
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12.5,
+    fontWeight: '700',
+    lineHeight: 18,
   },
   statusPill: {
-    marginTop: 10,
     alignSelf: 'flex-start',
+    marginTop: 12,
     borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 7,
   },
   statusText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
   },
   categoryPill: {
-    marginTop: 10,
     alignSelf: 'flex-start',
+    marginTop: 12,
     borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 7,
   },
   categoryPillText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
   },
   actionsRow: {
+    marginTop: 12,
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
   },
   actionBtn: {
-    flex: 1,
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
+    borderRadius: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   actionBtnText: {
     color: '#fff',
+    fontSize: 13,
     fontWeight: '900',
   },
   fabWrap: {
     position: 'absolute',
     right: 18,
-    bottom: 22,
+    bottom: 108,
     alignItems: 'flex-end',
+    zIndex: 50,
   },
   fabMenu: {
-    marginBottom: 12,
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 10,
-    minWidth: 220,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.14,
-    shadowRadius: 20,
-    elevation: 8,
-  },
-  fabMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 12,
-  },
-  fabMenuText: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  fab: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15,20,30,0.35)',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-  },
-  modalCard: {
+    width: 282,
     borderWidth: 1,
     borderRadius: 24,
-    padding: 18,
+    padding: 8,
+    marginBottom: 12,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  fabMenuItem: {
+    minHeight: 66,
+    borderRadius: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    paddingHorizontal: 11,
+  },
+  fabMenuIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fabMenuTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  fabMenuSub: {
+    marginTop: 3,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  fabDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 12,
+  },
+  fab: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.14,
-    shadowRadius: 18,
-    elevation: 8,
-    maxHeight: '90%',
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  modalRoot: {
+    flex: 1,
+    paddingTop: Platform.OS === 'ios' ? 58 : 26,
+  },
+  modalHeader: {
+    marginHorizontal: 16,
+    borderWidth: 1,
+    borderRadius: 28,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 21,
     fontWeight: '900',
-    marginBottom: 14,
   },
-  modalInput: {
-    borderWidth: 1,
+  modalSub: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  modalClose: {
+    width: 42,
+    height: 42,
     borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBody: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 34,
+    gap: 13,
+  },
+  inputWrap: {
+    borderWidth: 1,
+    borderRadius: 22,
     paddingHorizontal: 14,
-    paddingVertical: 13,
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 12,
+    paddingVertical: 12,
   },
-  modalInputArea: {
-    minHeight: 90,
-    textAlignVertical: 'top',
-  },
-  modalLabel: {
+  inputLabel: {
     fontSize: 12,
     fontWeight: '900',
-    marginBottom: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    marginBottom: 8,
   },
-  selectorRow: {
+  input: {
+    minHeight: 28,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  textarea: {
+    minHeight: 92,
+    lineHeight: 20,
+  },
+  sectionLabel: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  optionWrap: {
     flexDirection: 'row',
-    gap: 8,
-    paddingRight: 16,
-    marginBottom: 12,
+    flexWrap: 'wrap',
+    gap: 9,
   },
-  selectorChip: {
+  optionChip: {
+    minHeight: 40,
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 12,
-    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
   },
-  selectorChipText: {
-    fontSize: 13,
-    fontWeight: '800',
+  optionText: {
+    fontSize: 12.5,
+    fontWeight: '900',
   },
-  modalActions: {
+  submitBtn: {
+    minHeight: 56,
+    borderRadius: 20,
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 6,
-  },
-  modalGhostBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 16,
+    gap: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
   },
-  modalGhostText: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  modalPrimaryBtn: {
-    flex: 1,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-  },
-  modalPrimaryText: {
+  submitText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '900',
   },
 });
