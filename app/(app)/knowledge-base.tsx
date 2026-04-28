@@ -796,7 +796,7 @@ export default function KnowledgeBaseScreen() {
           style={styles.hero}
         >
           <View style={styles.heroTop}>
-            <Pressable onPress={() => safeGoBack(router)} style={styles.heroBackBtn}>
+            <Pressable onPress={() => safeGoBack(router, '/(app)/profile')} style={styles.heroBackBtn}>
               <Ionicons name="arrow-back" size={21} color="#fff" />
             </Pressable>
             {canEdit && (

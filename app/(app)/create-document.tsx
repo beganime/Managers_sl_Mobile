@@ -18,6 +18,7 @@ import {
 import ScreenWrapper from '../../components/ScreenWrapper';
 import apiClient, { fetchAllPages } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
+import { safeGoBack } from '../../src/navigation/safeGoBack';
 
 type TemplateField = {
   key: string;
@@ -207,7 +208,7 @@ export default function CreateDocumentScreen() {
       >
         <View style={styles.header}>
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => safeGoBack(router, '/(app)/documents')}
             style={[
               styles.backBtn,
               {

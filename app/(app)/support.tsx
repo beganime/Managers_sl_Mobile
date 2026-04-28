@@ -7,25 +7,26 @@ import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 
 import ScreenWrapper from '../../components/ScreenWrapper';
 import apiClient, {
-    buildAbsoluteFileUrl,
-    extractList,
-    multipartConfig,
-    normalizeUploadFile,
+  appendPreparedFile,
+  buildAbsoluteFileUrl,
+  extractList,
+  multipartConfig,
+  normalizeUploadFile,
 } from '../../src/api/apiClient';
 import { useTheme } from '../../src/context/ThemeContext';
 import { safeGoBack } from '../../src/navigation/safeGoBack';
@@ -165,8 +166,13 @@ export default function SupportScreen() {
         fd.append('category', category);
         fd.append('subject', subject.trim());
         fd.append('message', message.trim());
-        if (photo) fd.append('photo', normalizeUploadFile(photo, 'photo.jpg'));
-        if (file) fd.append('file', normalizeUploadFile(file, file.name || 'file'));
+        if (photo) {
+          await appendPreparedFile(fd, 'photo', photo, 'photo.jpg');
+        }
+
+        if (file) {
+          await appendPreparedFile(fd, 'file', file, file.name || 'file');
+        }
 
         await apiClient.post('support/messages/', fd, multipartConfig);
         } else {

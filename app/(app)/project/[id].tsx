@@ -7,27 +7,28 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 
 import ScreenWrapper from '../../../components/ScreenWrapper';
 import apiClient, {
-    buildAbsoluteFileUrl,
-    fetchAllPages,
-    multipartConfig,
-    normalizeUploadFile,
+  appendPreparedFile,
+  buildAbsoluteFileUrl,
+  fetchAllPages,
+  multipartConfig,
+  normalizeUploadFile,
 } from '../../../src/api/apiClient';
 import { useTheme } from '../../../src/context/ThemeContext';
 import { safeGoBack } from '../../../src/navigation/safeGoBack';
@@ -520,6 +521,7 @@ export default function ProjectDetailScreen() {
 
     try {
       const fd = new FormData();
+
       fd.append('project', String(projectId));
       fd.append('attachment_type', attachmentType);
       fd.append('title', attachmentTitle.trim());
@@ -528,7 +530,12 @@ export default function ProjectDetailScreen() {
       if (attachmentType === 'link') {
         fd.append('url', attachmentUrl.trim());
       } else if (selectedFile) {
-        fd.append('file', normalizeUploadFile(selectedFile, selectedFile.name || 'file'));
+        await appendPreparedFile(
+          fd,
+          'file',
+          selectedFile,
+          attachmentType === 'image' ? 'image.jpg' : selectedFile.name || 'file'
+        );
       }
 
       await apiClient.post('tasks/project-attachments/', fd, multipartConfig);
@@ -573,7 +580,7 @@ export default function ProjectDetailScreen() {
       <ScreenWrapper>
         <View style={styles.center}>
           <Text style={[styles.emptyTitle, { color: theme.text }]}>Проект не найден</Text>
-          <Pressable onPress={() => safeGoBack(router)} style={[styles.backWideBtn, { backgroundColor: theme.blue }]}>
+          <Pressable onPress={() => safeGoBack(router, '/(app)/projects')} style={[styles.backWideBtn, { backgroundColor: theme.blue }]}>
             <Text style={styles.backWideText}>Назад</Text>
           </Pressable>
         </View>

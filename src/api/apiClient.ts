@@ -1,10 +1,18 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
+import { Platform } from 'react-native';
 
 import { deleteToken, getToken, saveToken } from '../utils/storage';
 
 export const BASE_URL = 'https://manager-sl.ru/api/';
 
 export const API_ORIGIN = BASE_URL.replace(/\/api\/?$/i, '').replace(/\/$/, '');
+
+type UploadInput = {
+  uri: string;
+  name?: string;
+  type?: string;
+  mimeType?: string;
+};
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
@@ -26,7 +34,7 @@ export function buildAbsoluteFileUrl(value?: string | null) {
   const raw = String(value).trim();
   if (!raw) return null;
 
-  if (/^(https?:|mailto:|tel:)/i.test(raw)) {
+  if (/^(https?:|mailto:|tel:|blob:|data:)/i.test(raw)) {
     return raw;
   }
 
@@ -42,6 +50,7 @@ function isFormDataPayload(data: unknown) {
   if (typeof FormData !== 'undefined' && data instanceof FormData) return true;
 
   const maybeFormData = data as any;
+
   return (
     typeof maybeFormData === 'object' &&
     typeof maybeFormData.append === 'function' &&
@@ -65,7 +74,9 @@ function stripJsonContentType(config: AxiosRequestConfig) {
 }
 
 export const multipartConfig: AxiosRequestConfig = {
-  headers: { Accept: 'application/json' },
+  headers: {
+    Accept: 'application/json',
+  },
   transformRequest: [(data) => data],
 };
 
@@ -159,22 +170,83 @@ export async function updateMyProfile(payload: Record<string, any>) {
   return response.data;
 }
 
-export function normalizeUploadFile(
-  file: { uri: string; name?: string; type?: string },
-  fallbackName = 'file'
-) {
-  const cleanName = file.name || file.uri?.split('/')?.pop() || fallbackName;
+export function getFileNameFromUri(uri?: string, fallbackName = 'file') {
+  if (!uri) return fallbackName;
+
+  try {
+    const clean = uri.split('?')[0].split('#')[0];
+    const last = clean.split('/').pop();
+    return last || fallbackName;
+  } catch {
+    return fallbackName;
+  }
+}
+
+export function ensureFileNameHasExtension(name: string, mimeType?: string) {
+  const cleanName = String(name || 'file').trim() || 'file';
+
+  if (/\.[a-zA-Z0-9]{2,8}$/.test(cleanName)) {
+    return cleanName;
+  }
+
+  const type = String(mimeType || '').toLowerCase();
+
+  if (type.includes('jpeg')) return `${cleanName}.jpg`;
+  if (type.includes('jpg')) return `${cleanName}.jpg`;
+  if (type.includes('png')) return `${cleanName}.png`;
+  if (type.includes('webp')) return `${cleanName}.webp`;
+  if (type.includes('gif')) return `${cleanName}.gif`;
+  if (type.includes('pdf')) return `${cleanName}.pdf`;
+  if (type.includes('msword')) return `${cleanName}.doc`;
+  if (type.includes('wordprocessingml')) return `${cleanName}.docx`;
+  if (type.includes('spreadsheetml')) return `${cleanName}.xlsx`;
+
+  return cleanName;
+}
+
+export function normalizeUploadFile(file: UploadInput, fallbackName = 'file') {
+  const mimeType = file.type || file.mimeType || 'application/octet-stream';
+  const rawName = file.name || getFileNameFromUri(file.uri, fallbackName);
+  const name = ensureFileNameHasExtension(rawName, mimeType);
 
   return {
     uri: file.uri,
-    name: cleanName,
-    type: file.type || 'application/octet-stream',
+    name,
+    type: mimeType,
   } as any;
 }
 
-export async function uploadMyAvatar(file: { uri: string; name?: string; type?: string }) {
+export async function prepareUploadFile(file: UploadInput, fallbackName = 'file') {
+  const normalized = normalizeUploadFile(file, fallbackName);
+
+  if (Platform.OS !== 'web') {
+    return normalized;
+  }
+
+  const response = await fetch(normalized.uri);
+  const blob = await response.blob();
+  const fileType = normalized.type || blob.type || 'application/octet-stream';
+
+  if (typeof File !== 'undefined') {
+    return new File([blob], normalized.name, { type: fileType });
+  }
+
+  return blob;
+}
+
+export async function appendPreparedFile(
+  fd: FormData,
+  fieldName: string,
+  file: UploadInput,
+  fallbackName = 'file'
+) {
+  const prepared = await prepareUploadFile(file, fallbackName);
+  fd.append(fieldName, prepared as any);
+}
+
+export async function uploadMyAvatar(file: UploadInput) {
   const fd = new FormData();
-  fd.append('avatar', normalizeUploadFile(file, 'avatar.jpg'));
+  await appendPreparedFile(fd, 'avatar', file, 'avatar.jpg');
 
   const response = await apiClient.patch('users/users/me/', fd, multipartConfig);
 
@@ -224,6 +296,7 @@ apiClient.interceptors.response.use(
         if (!refreshToken) throw new Error('No refresh token');
 
         let refreshResponse;
+
         try {
           refreshResponse = await axios.post(`${BASE_URL}auth/refresh/`, { refresh: refreshToken });
         } catch {
@@ -246,6 +319,7 @@ apiClient.interceptors.response.use(
             delete originalRequest.headers['Content-Type'];
             delete originalRequest.headers['content-type'];
           }
+
           originalRequest.transformRequest = [(data: any) => data];
         }
 
