@@ -26,6 +26,7 @@ import Markdown from 'react-native-markdown-display';
 import ScreenWrapper from '../../components/ScreenWrapper';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import apiClient, {
+  appendPreparedFile,
   buildAbsoluteFileUrl,
   extractList,
   fetchAllPages,
@@ -600,21 +601,51 @@ export default function KnowledgeBaseScreen() {
           return;
         }
 
-        const fd = new FormData();
-        fd.append('title', sectionTitle.trim());
-        fd.append('description', sectionDescription.trim());
-        fd.append('icon', sectionIcon || 'folder');
-        fd.append('parent', sectionParent ? String(sectionParent) : '');
-        fd.append('external_url', sectionUrl.trim());
-        fd.append('is_active', 'true');
-        sectionResponsibles.forEach((id) => fd.append('responsible_users', String(id)));
-        if (sectionCover?.uri) fd.append('cover_image', sectionCover as any);
-        if (sectionFile?.uri) fd.append('file', sectionFile as any);
+        const hasSectionFiles = Boolean(sectionCover?.uri || sectionFile?.uri);
 
-        if (editorMode === 'create') {
-          await apiClient.post('documents/knowledge-sections/', fd, multipartConfig);
+        if (hasSectionFiles) {
+          const fd = new FormData();
+
+          fd.append('title', sectionTitle.trim());
+          fd.append('description', sectionDescription.trim());
+          fd.append('icon', sectionIcon || 'folder');
+          fd.append('parent', sectionParent ? String(sectionParent) : '');
+          fd.append('external_url', sectionUrl.trim());
+          fd.append('is_active', 'true');
+
+          sectionResponsibles.forEach((id) => {
+            fd.append('responsible_users', String(id));
+          });
+
+          if (sectionCover?.uri) {
+            await appendPreparedFile(fd, 'cover_image', sectionCover, 'cover.jpg');
+          }
+
+          if (sectionFile?.uri) {
+            await appendPreparedFile(fd, 'file', sectionFile, sectionFile.name || 'file');
+          }
+
+          if (editorMode === 'create') {
+            await apiClient.post('documents/knowledge-sections/', fd, multipartConfig);
+          } else {
+            await apiClient.patch(`documents/knowledge-sections/${editingId}/`, fd, multipartConfig);
+          }
         } else {
-          await apiClient.patch(`documents/knowledge-sections/${editingId}/`, fd, multipartConfig);
+          const payload = {
+            title: sectionTitle.trim(),
+            description: sectionDescription.trim(),
+            icon: sectionIcon || 'folder',
+            parent: sectionParent || null,
+            external_url: sectionUrl.trim(),
+            is_active: true,
+            responsible_users: sectionResponsibles,
+          };
+
+          if (editorMode === 'create') {
+            await apiClient.post('documents/knowledge-sections/', payload);
+          } else {
+            await apiClient.patch(`documents/knowledge-sections/${editingId}/`, payload);
+          }
         }
       }
 
@@ -661,10 +692,13 @@ export default function KnowledgeBaseScreen() {
         fd.append('attachment_type', attachmentType);
         fd.append('title', attachmentTitle.trim());
         fd.append('note', attachmentNote.trim());
-        if (attachmentType === 'link') fd.append('url', attachmentUrl.trim());
-        else fd.append('file', attachmentFile as any);
 
-        
+        if (attachmentType === 'link') {
+          fd.append('url', attachmentUrl.trim());
+        } else {
+          await appendPreparedFile(fd, 'file', attachmentFile, attachmentFile.name || 'file');
+        }
+
         await apiClient.post('documents/knowledge-section-attachments/', fd, multipartConfig);
       }
 
@@ -674,7 +708,16 @@ export default function KnowledgeBaseScreen() {
       Alert.alert('Готово', editorMode === 'create' ? 'Добавлено.' : 'Обновлено.');
     } catch (error: any) {
       const data = error?.response?.data;
-      const detail = data?.detail || data?.title?.[0] || data?.file?.[0] || data?.url?.[0] || data?.parent?.[0] || 'Не удалось сохранить.';
+      const detail =
+        data?.detail ||
+        data?.title?.[0] ||
+        data?.file?.[0] ||
+        data?.url?.[0] ||
+        data?.parent?.[0] ||
+        data?.external_url?.[0] ||
+        data?.responsible_users?.[0] ||
+        'Не удалось сохранить.';
+
       Alert.alert('Ошибка', String(detail));
     } finally {
       setSaving(false);
@@ -682,23 +725,43 @@ export default function KnowledgeBaseScreen() {
   };
 
   const deleteSection = (section: KnowledgeSection) => {
-    if (!isAdmin) return;
-    Alert.alert('Удалить раздел?', section.title, [
-      { text: 'Отмена', style: 'cancel' },
-      {
-        text: 'Удалить',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await apiClient.delete(`documents/knowledge-sections/${section.id}/`);
-            if (activeSectionId === section.id) setActiveSectionId(section.parent ?? null);
-            await loadData(true);
-          } catch (error: any) {
-            Alert.alert('Ошибка', error?.response?.data?.detail || 'Удалять может только администратор.');
-          }
+    if (!canEdit) {
+      Alert.alert('Нет доступа', 'Удалять разделы могут только авторизованные пользователи.');
+      return;
+    }
+
+    Alert.alert(
+      'Удалить раздел?',
+      `Раздел "${section.title}" будет удалён. Если внутри есть подразделы или файлы, они тоже могут удалиться.`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await apiClient.delete(`documents/knowledge-sections/${section.id}/`);
+
+              if (activeSectionId === section.id) {
+                setActiveSectionId(section.parent ?? null);
+              }
+
+              setSections((prev) => prev.filter((item) => item.id !== section.id));
+              await loadData(true);
+
+              Alert.alert('Готово', 'Раздел удалён.');
+            } catch (error: any) {
+              const detail =
+                error?.response?.data?.detail ||
+                error?.response?.data?.non_field_errors?.[0] ||
+                'Не удалось удалить раздел. Проверь права доступа.';
+
+              Alert.alert('Ошибка', String(detail));
+            }
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   const deleteSnippet = (snippet: Snippet) => {
@@ -984,7 +1047,7 @@ export default function KnowledgeBaseScreen() {
                         <Ionicons name="create-outline" size={16} color={theme.blue} />
                       </Pressable>
                     )}
-                    {isAdmin && (
+                    {canEdit && (
                       <Pressable onPress={() => deleteSection(section)} style={[styles.smallIconBtn, { backgroundColor: theme.redSoft, borderColor: theme.border }]}>
                         <Ionicons name="trash-outline" size={16} color={theme.red} />
                       </Pressable>

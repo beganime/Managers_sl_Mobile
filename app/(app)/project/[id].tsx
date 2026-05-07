@@ -19,7 +19,7 @@ import {
 
 import ScreenWrapper from '../../../components/ScreenWrapper';
 import { useCurrentUser } from '../../../hooks/useCurrentUser';
-import apiClient, { extractList } from '../../../src/api/apiClient';
+import apiClient, { extractList, fetchAllPages } from '../../../src/api/apiClient';
 import { useTheme } from '../../../src/context/ThemeContext';
 import { safeGoBack } from '../../../src/navigation/safeGoBack';
 
@@ -32,6 +32,30 @@ type UserMini = {
 };
 
 type ProjectStatus = 'active' | 'paused' | 'done' | 'archived';
+type TaskStatus = 'todo' | 'process' | 'review' | 'done';
+type TaskPriority = 'low' | 'medium' | 'high';
+
+type ProjectTask = {
+  id: number;
+  project: number;
+  parent?: number | null;
+  subtasks?: ProjectTask[];
+  subtasks_count?: number;
+  title: string;
+  description?: string;
+  assigned_to?: number | null;
+  assigned_to_data?: UserMini | null;
+  created_by?: number | null;
+  created_by_data?: UserMini | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  deadline?: string | null;
+  order?: number;
+  created_at?: string;
+  updated_at?: string;
+  can_manage?: boolean;
+  can_change_status?: boolean;
+};
 
 type Project = {
   id: number;
@@ -45,6 +69,10 @@ type Project = {
   created_by_data?: UserMini | null;
   participants_data?: UserMini[];
   responsible_users_data?: UserMini[];
+  items?: ProjectTask[];
+  tasks_count?: number;
+  done_tasks_count?: number;
+  subtasks_count?: number;
   sections_count?: number;
   posts_count?: number;
   created_at?: string;
@@ -87,6 +115,23 @@ type ProjectSection = {
   updated_at?: string;
   can_manage?: boolean;
 };
+
+const TASK_STATUSES: Array<{
+  value: TaskStatus;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}> = [
+  { value: 'todo', label: 'План', icon: 'ellipse-outline' },
+  { value: 'process', label: 'В работе', icon: 'flash-outline' },
+  { value: 'review', label: 'Проверка', icon: 'eye-outline' },
+  { value: 'done', label: 'Готово', icon: 'checkmark-done-outline' },
+];
+
+const PRIORITIES: Array<{ value: TaskPriority; label: string }> = [
+  { value: 'low', label: 'Низкий' },
+  { value: 'medium', label: 'Средний' },
+  { value: 'high', label: 'Высокий' },
+];
 
 const SECTION_ICONS: Array<keyof typeof Ionicons.glyphMap> = [
   'albums-outline',
@@ -158,6 +203,21 @@ function projectStatusLabel(status?: string) {
   return status || '—';
 }
 
+function taskStatusLabel(status?: string) {
+  if (status === 'todo') return 'План';
+  if (status === 'process') return 'В работе';
+  if (status === 'review') return 'Проверка';
+  if (status === 'done') return 'Готово';
+  return status || '—';
+}
+
+function priorityLabel(priority?: string) {
+  if (priority === 'low') return 'Низкий';
+  if (priority === 'medium') return 'Средний';
+  if (priority === 'high') return 'Высокий';
+  return priority || '—';
+}
+
 function normalizeDeadline(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -173,6 +233,34 @@ function cleanText(value?: string | null) {
   return String(value || '').trim();
 }
 
+function taskStatusColor(status: string | undefined, theme: any) {
+  if (status === 'done') return theme.success || '#1AAE6F';
+  if (status === 'review') return theme.warning || '#F59E0B';
+  if (status === 'process') return theme.blue;
+  return theme.textMuted;
+}
+
+function priorityColor(priority: string | undefined, theme: any) {
+  if (priority === 'high') return theme.red;
+  if (priority === 'medium') return theme.warning || '#F59E0B';
+  return theme.success || '#1AAE6F';
+}
+
+function deadlineMeta(value?: string | null) {
+  if (!value) return { label: 'Без дедлайна', tone: 'muted' as const };
+
+  const now = new Date();
+  const date = new Date(value);
+  const diff = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (Number.isNaN(diff)) return { label: formatDate(value), tone: 'muted' as const };
+  if (diff < 0) return { label: `Просрочено ${Math.abs(diff)} дн.`, tone: 'danger' as const };
+  if (diff === 0) return { label: 'Сегодня', tone: 'warning' as const };
+  if (diff <= 3) return { label: `Через ${diff} дн.`, tone: 'warning' as const };
+
+  return { label: formatDate(value), tone: 'ok' as const };
+}
+
 function flattenProjectError(error: any) {
   const data = error?.response?.data;
 
@@ -183,6 +271,20 @@ function flattenProjectError(error: any) {
     data?.responsible_users?.[0] ||
     data?.deadline?.[0] ||
     'Не удалось сохранить проект.'
+  );
+}
+
+function flattenTaskError(error: any) {
+  const data = error?.response?.data;
+
+  return (
+    data?.detail ||
+    data?.title?.[0] ||
+    data?.parent?.[0] ||
+    data?.project?.[0] ||
+    data?.assigned_to?.[0] ||
+    data?.deadline?.[0] ||
+    'Не удалось сохранить задачу.'
   );
 }
 
@@ -300,7 +402,9 @@ export default function ProjectDetailScreen() {
 
   const [project, setProject] = useState<Project | null>(null);
   const [sections, setSections] = useState<ProjectSection[]>([]);
+  const [users, setUsers] = useState<UserMini[]>([]);
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'sections'>('tasks');
 
   const [editProjectOpen, setEditProjectOpen] = useState(false);
   const [savingProject, setSavingProject] = useState(false);
@@ -310,6 +414,15 @@ export default function ProjectDetailScreen() {
   const [editCity, setEditCity] = useState('');
   const [editDeadline, setEditDeadline] = useState('');
   const [editStatus, setEditStatus] = useState<ProjectStatus>('active');
+
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [savingTask, setSavingTask] = useState(false);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskDescription, setTaskDescription] = useState('');
+  const [taskAssignedTo, setTaskAssignedTo] = useState<number | null>(null);
+  const [taskStatus, setTaskStatus] = useState<TaskStatus>('todo');
+  const [taskPriority, setTaskPriority] = useState<TaskPriority>('medium');
+  const [taskDeadline, setTaskDeadline] = useState('');
 
   const [sectionModalOpen, setSectionModalOpen] = useState(false);
   const [editingSection, setEditingSection] = useState<ProjectSection | null>(null);
@@ -330,6 +443,8 @@ export default function ProjectDetailScreen() {
   const [postNote, setPostNote] = useState('');
   const [postPinned, setPostPinned] = useState(false);
 
+  const tasks = useMemo(() => project?.items || [], [project?.items]);
+
   const canManageProject = useMemo(() => {
     if (!project) return false;
     if (project.can_manage) return true;
@@ -339,6 +454,8 @@ export default function ProjectDetailScreen() {
   }, [project, isAdmin, currentUserId]);
 
   const stats = useMemo(() => {
+    const totalTasks = tasks.length;
+    const doneTasks = tasks.filter((task) => task.status === 'done').length;
     const posts = sections.reduce((sum, section) => sum + Number(section.posts?.length || section.posts_count || 0), 0);
     const pinnedSections = sections.filter((section) => section.is_pinned).length;
     const pinnedPosts = sections.reduce(
@@ -347,12 +464,34 @@ export default function ProjectDetailScreen() {
     );
 
     return {
+      totalTasks,
+      doneTasks,
       sections: sections.length,
       posts,
-      pinnedSections,
-      pinnedPosts,
+      pinned: pinnedSections + pinnedPosts,
+      progress: totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : project?.status === 'done' ? 100 : 0,
     };
-  }, [sections]);
+  }, [tasks, sections, project?.status]);
+
+  const taskGroups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    const filtered = !q
+      ? tasks
+      : tasks.filter((task) => {
+          return (
+            task.title.toLowerCase().includes(q) ||
+            String(task.description || '').toLowerCase().includes(q) ||
+            userName(task.assigned_to_data).toLowerCase().includes(q) ||
+            userName(task.created_by_data).toLowerCase().includes(q)
+          );
+        });
+
+    return TASK_STATUSES.map((status) => ({
+      ...status,
+      items: filtered.filter((task) => task.status === status.value),
+    }));
+  }, [tasks, search]);
 
   const filteredSections = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -389,13 +528,23 @@ export default function ProjectDetailScreen() {
     if (!projectId) return;
 
     try {
-      const [projectRes, sectionsRes] = await Promise.all([
+      const [projectRes, sectionsRes, usersRes] = await Promise.allSettled([
         apiClient.get(`tasks/projects/${projectId}/`),
         apiClient.get(`tasks/project-sections/?project=${projectId}&limit=200&offset=0`),
+        fetchAllPages('users/users/?limit=100&offset=0'),
       ]);
 
-      setProject(projectRes.data);
-      setSections(extractList(sectionsRes.data) as ProjectSection[]);
+      if (projectRes.status === 'fulfilled') {
+        setProject(projectRes.value.data);
+      }
+
+      if (sectionsRes.status === 'fulfilled') {
+        setSections(extractList(sectionsRes.value.data) as ProjectSection[]);
+      }
+
+      if (usersRes.status === 'fulfilled') {
+        setUsers(usersRes.value as UserMini[]);
+      }
     } catch (error: any) {
       Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось загрузить проект.');
     } finally {
@@ -451,6 +600,68 @@ export default function ProjectDetailScreen() {
     } finally {
       setSavingProject(false);
     }
+  };
+
+  const resetTaskForm = () => {
+    setTaskTitle('');
+    setTaskDescription('');
+    setTaskAssignedTo(null);
+    setTaskStatus('todo');
+    setTaskPriority('medium');
+    setTaskDeadline('');
+  };
+
+  const createTask = async () => {
+    if (!taskTitle.trim()) {
+      Alert.alert('Ошибка', 'Напиши название задачи.');
+      return;
+    }
+
+    setSavingTask(true);
+
+    try {
+      await apiClient.post('tasks/project-tasks/', {
+        project: projectId,
+        parent: null,
+        title: taskTitle.trim(),
+        description: taskDescription.trim(),
+        assigned_to: taskAssignedTo,
+        status: taskStatus,
+        priority: taskPriority,
+        deadline: normalizeDeadline(taskDeadline),
+      });
+
+      setTaskModalOpen(false);
+      resetTaskForm();
+      await load();
+    } catch (error: any) {
+      Alert.alert('Ошибка', String(flattenTaskError(error)));
+    } finally {
+      setSavingTask(false);
+    }
+  };
+
+  const updateTaskStatus = async (task: ProjectTask, nextStatus: TaskStatus) => {
+    try {
+      await apiClient.patch(`tasks/project-tasks/${task.id}/`, { status: nextStatus });
+      await load();
+    } catch (error: any) {
+      Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось обновить статус задачи.');
+    }
+  };
+
+  const toggleTaskDone = async (task: ProjectTask) => {
+    await updateTaskStatus(task, task.status === 'done' ? 'todo' : 'done');
+  };
+
+  const openTask = (task: ProjectTask) => {
+    router.push({
+      pathname: '/(app)/task/[id]',
+      params: {
+        id: String(task.id),
+        projectId: String(projectId),
+      },
+    } as any);
   };
 
   const resetSectionForm = () => {
@@ -518,25 +729,21 @@ export default function ProjectDetailScreen() {
   };
 
   const deleteSection = async (section: ProjectSection) => {
-    Alert.alert(
-      'Удалить раздел?',
-      'Все записи внутри этого раздела тоже удалятся.',
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Удалить',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await apiClient.delete(`tasks/project-sections/${section.id}/`);
-              await load();
-            } catch (error: any) {
-              Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось удалить раздел.');
-            }
-          },
+    Alert.alert('Удалить раздел?', 'Все записи внутри этого раздела тоже удалятся.', [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Удалить',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiClient.delete(`tasks/project-sections/${section.id}/`);
+            await load();
+          } catch (error: any) {
+            Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось удалить раздел.');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const resetPostForm = () => {
@@ -612,25 +819,21 @@ export default function ProjectDetailScreen() {
   };
 
   const deletePost = async (post: ProjectSectionPost) => {
-    Alert.alert(
-      'Удалить запись?',
-      'Запись будет удалена из раздела.',
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Удалить',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await apiClient.delete(`tasks/project-section-posts/${post.id}/`);
-              await load();
-            } catch (error: any) {
-              Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось удалить запись.');
-            }
-          },
+    Alert.alert('Удалить запись?', 'Запись будет удалена из раздела.', [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Удалить',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiClient.delete(`tasks/project-section-posts/${post.id}/`);
+            await load();
+          } catch (error: any) {
+            Alert.alert('Ошибка', error?.response?.data?.detail || 'Не удалось удалить запись.');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const copyPost = async (post: ProjectSectionPost) => {
@@ -743,6 +946,16 @@ export default function ProjectDetailScreen() {
 
             <View style={styles.statsGrid}>
               <View style={[styles.statCard, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                <Text style={[styles.statValue, { color: theme.text }]}>{stats.totalTasks}</Text>
+                <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Задач</Text>
+              </View>
+
+              <View style={[styles.statCard, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+                <Text style={[styles.statValue, { color: theme.text }]}>{stats.doneTasks}</Text>
+                <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Готово</Text>
+              </View>
+
+              <View style={[styles.statCard, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
                 <Text style={[styles.statValue, { color: theme.text }]}>{stats.sections}</Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Разделов</Text>
               </View>
@@ -751,12 +964,15 @@ export default function ProjectDetailScreen() {
                 <Text style={[styles.statValue, { color: theme.text }]}>{stats.posts}</Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Записей</Text>
               </View>
-
-              <View style={[styles.statCard, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-                <Text style={[styles.statValue, { color: theme.text }]}>{stats.pinnedSections + stats.pinnedPosts}</Text>
-                <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Закреплено</Text>
-              </View>
             </View>
+
+            <View style={[styles.progressTrack, { backgroundColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)' }]}>
+              <View style={[styles.progressFill, { width: `${stats.progress}%`, backgroundColor: theme.blue }]} />
+            </View>
+
+            <Text style={[styles.progressText, { color: theme.textSecondary }]}>
+              Прогресс по задачам: {stats.progress}%
+            </Text>
 
             <MetaUser label="Проект создал" user={project.created_by_data} date={project.created_at} theme={theme} />
           </View>
@@ -776,7 +992,7 @@ export default function ProjectDetailScreen() {
               <TextInput
                 value={search}
                 onChangeText={setSearch}
-                placeholder="Поиск по разделам и записям"
+                placeholder={activeTab === 'tasks' ? 'Поиск по задачам' : 'Поиск по разделам и записям'}
                 placeholderTextColor={theme.textMuted}
                 style={[styles.searchInput, { color: theme.text }]}
               />
@@ -787,13 +1003,171 @@ export default function ProjectDetailScreen() {
               )}
             </View>
 
-            <Pressable onPress={openCreateSection} style={[styles.addSectionBtn, { backgroundColor: theme.blue }]}>
+            <View style={[styles.tabs, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
+              <Pressable
+                onPress={() => setActiveTab('tasks')}
+                style={[styles.tab, { backgroundColor: activeTab === 'tasks' ? theme.blue : 'transparent' }]}
+              >
+                <Ionicons name="checkbox-outline" size={16} color={activeTab === 'tasks' ? '#fff' : theme.textSecondary} />
+                <Text style={[styles.tabText, { color: activeTab === 'tasks' ? '#fff' : theme.textSecondary }]}>
+                  Задачи
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setActiveTab('sections')}
+                style={[styles.tab, { backgroundColor: activeTab === 'sections' ? theme.blue : 'transparent' }]}
+              >
+                <Ionicons name="albums-outline" size={16} color={activeTab === 'sections' ? '#fff' : theme.textSecondary} />
+                <Text style={[styles.tabText, { color: activeTab === 'sections' ? '#fff' : theme.textSecondary }]}>
+                  Разделы
+                </Text>
+              </Pressable>
+            </View>
+
+            <Pressable
+              onPress={activeTab === 'tasks' ? () => setTaskModalOpen(true) : openCreateSection}
+              style={[styles.addSectionBtn, { backgroundColor: theme.blue }]}
+            >
               <Ionicons name="add-circle-outline" size={18} color="#fff" />
-              <Text style={styles.addSectionText}>Раздел</Text>
+              <Text style={styles.addSectionText}>{activeTab === 'tasks' ? 'Задача' : 'Раздел'}</Text>
             </Pressable>
           </View>
 
-          {filteredSections.length === 0 ? (
+          {activeTab === 'tasks' ? (
+            <View style={styles.taskBoard}>
+              {taskGroups.map((group) => {
+                const color = taskStatusColor(group.value, theme);
+
+                return (
+                  <View
+                    key={group.value}
+                    style={[styles.taskColumn, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                  >
+                    <View style={styles.columnHeader}>
+                      <View style={[styles.columnIcon, { backgroundColor: `${color}18` }]}>
+                        <Ionicons name={group.icon} size={17} color={color} />
+                      </View>
+                      <Text style={[styles.columnTitle, { color: theme.text }]}>{group.label}</Text>
+                      <View style={[styles.countBadge, { backgroundColor: theme.backgroundSoft }]}>
+                        <Text style={[styles.countBadgeText, { color: theme.textSecondary }]}>{group.items.length}</Text>
+                      </View>
+                    </View>
+
+                    {group.items.length === 0 ? (
+                      <Text style={[styles.emptyColumnText, { color: theme.textMuted }]}>Нет задач</Text>
+                    ) : (
+                      <View style={styles.tasksList}>
+                        {group.items.map((task) => {
+                          const statusColor = taskStatusColor(task.status, theme);
+                          const pColor = priorityColor(task.priority, theme);
+                          const d = deadlineMeta(task.deadline);
+                          const dColor =
+                            d.tone === 'danger'
+                              ? theme.red
+                              : d.tone === 'warning'
+                                ? theme.warning || '#F59E0B'
+                                : theme.textMuted;
+
+                          return (
+                            <Pressable
+                              key={task.id}
+                              onPress={() => openTask(task)}
+                              style={[
+                                styles.taskCard,
+                                {
+                                  backgroundColor: dark ? '#0F172A' : '#FFFFFF',
+                                  borderColor: theme.border,
+                                },
+                              ]}
+                            >
+                              <View style={styles.taskTop}>
+                                <Pressable
+                                  onPress={(event) => {
+                                    event.stopPropagation();
+                                    void toggleTaskDone(task);
+                                  }}
+                                  style={[
+                                    styles.taskCheck,
+                                    {
+                                      borderColor: statusColor,
+                                      backgroundColor: task.status === 'done' ? statusColor : 'transparent',
+                                    },
+                                  ]}
+                                >
+                                  {task.status === 'done' && <Ionicons name="checkmark" size={13} color="#fff" />}
+                                </Pressable>
+
+                                <View style={{ flex: 1 }}>
+                                  <Text style={[styles.taskTitle, { color: theme.text }]} numberOfLines={2}>
+                                    {task.title}
+                                  </Text>
+
+                                  {!!task.description && (
+                                    <Text style={[styles.taskDescription, { color: theme.textSecondary }]} numberOfLines={2}>
+                                      {task.description.replace(/[#*_`>-]/g, '').trim()}
+                                    </Text>
+                                  )}
+                                </View>
+
+                                <Ionicons name="chevron-forward" size={17} color={theme.textMuted} />
+                              </View>
+
+                              <View style={styles.taskMetaRow}>
+                                <View style={[styles.smallPill, { backgroundColor: `${pColor}18` }]}>
+                                  <Text style={[styles.smallPillText, { color: pColor }]}>{priorityLabel(task.priority)}</Text>
+                                </View>
+
+                                <View style={[styles.smallPill, { backgroundColor: theme.backgroundSoft }]}>
+                                  <Text style={[styles.smallPillText, { color: dColor }]}>{d.label}</Text>
+                                </View>
+
+                                <View style={[styles.smallPill, { backgroundColor: theme.backgroundSoft }]}>
+                                  <Text style={[styles.smallPillText, { color: theme.textSecondary }]}>
+                                    {task.subtasks_count || task.subtasks?.length || 0} подз.
+                                  </Text>
+                                </View>
+                              </View>
+
+                              <MetaUser label="Ответственный" user={task.assigned_to_data} date={task.updated_at} theme={theme} />
+
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusActions}>
+                                {TASK_STATUSES.map((item) => {
+                                  const active = task.status === item.value;
+                                  const itemColor = taskStatusColor(item.value, theme);
+
+                                  return (
+                                    <Pressable
+                                      key={item.value}
+                                      onPress={(event) => {
+                                        event.stopPropagation();
+                                        void updateTaskStatus(task, item.value);
+                                      }}
+                                      style={[
+                                        styles.statusMini,
+                                        {
+                                          backgroundColor: active ? itemColor : theme.backgroundSoft,
+                                          borderColor: active ? itemColor : theme.border,
+                                        },
+                                      ]}
+                                    >
+                                      <Text style={[styles.statusMiniText, { color: active ? '#fff' : theme.textSecondary }]}>
+                                        {item.label}
+                                      </Text>
+                                    </Pressable>
+                                  );
+                                })}
+                              </ScrollView>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          ) : filteredSections.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <View style={[styles.emptyIcon, { backgroundColor: theme.blueSoft }]}>
                 <Ionicons name="albums-outline" size={36} color={theme.blue} />
@@ -899,20 +1273,16 @@ export default function ProjectDetailScreen() {
                               },
                             ]}
                           >
-                            <View style={styles.postTop}>
-                              <View style={{ flex: 1 }}>
-                                <View style={styles.postTitleRow}>
-                                  <Text style={[styles.postTitle, { color: theme.text }]}>
-                                    {post.title || 'Без заголовка'}
-                                  </Text>
-                                  {post.is_pinned && <Ionicons name="pin" size={14} color={theme.blue} />}
-                                </View>
-
-                                {!!post.body && (
-                                  <Text style={[styles.postBody, { color: theme.textSecondary }]}>{post.body}</Text>
-                                )}
-                              </View>
+                            <View style={styles.postTitleRow}>
+                              <Text style={[styles.postTitle, { color: theme.text }]}>
+                                {post.title || 'Без заголовка'}
+                              </Text>
+                              {post.is_pinned && <Ionicons name="pin" size={14} color={theme.blue} />}
                             </View>
+
+                            {!!post.body && (
+                              <Text style={[styles.postBody, { color: theme.textSecondary }]}>{post.body}</Text>
+                            )}
 
                             {!!copyText && (
                               <View style={[styles.copyBox, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
@@ -980,218 +1350,82 @@ export default function ProjectDetailScreen() {
           )}
         </ScrollView>
 
-        <Modal visible={editProjectOpen} animationType="slide" transparent={false} onRequestClose={() => setEditProjectOpen(false)}>
-          <KeyboardAvoidingView
-            style={[styles.modalRoot, { backgroundColor: theme.background }]}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>Редактировать проект</Text>
-              <Pressable onPress={() => setEditProjectOpen(false)} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
-                <Ionicons name="close" size={20} color={theme.text} />
-              </Pressable>
-            </View>
+        <ProjectEditModal
+          visible={editProjectOpen}
+          theme={theme}
+          title={editTitle}
+          setTitle={setEditTitle}
+          description={editDescription}
+          setDescription={setEditDescription}
+          city={editCity}
+          setCity={setEditCity}
+          deadline={editDeadline}
+          setDeadline={setEditDeadline}
+          statusValue={editStatus}
+          setStatusValue={setEditStatus}
+          saving={savingProject}
+          onClose={() => setEditProjectOpen(false)}
+          onSubmit={saveProject}
+        />
 
-            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
-              <InputBlock label="Название" value={editTitle} onChangeText={setEditTitle} theme={theme} />
-              <InputBlock label="Описание" value={editDescription} onChangeText={setEditDescription} theme={theme} multiline />
-              <InputBlock label="Город" value={editCity} onChangeText={setEditCity} theme={theme} />
-              <InputBlock label="Дедлайн" value={editDeadline} onChangeText={setEditDeadline} theme={theme} placeholder="2026-05-20" />
+        <TaskModal
+          visible={taskModalOpen}
+          theme={theme}
+          users={users}
+          title={taskTitle}
+          setTitle={setTaskTitle}
+          description={taskDescription}
+          setDescription={setTaskDescription}
+          assignedTo={taskAssignedTo}
+          setAssignedTo={setTaskAssignedTo}
+          statusValue={taskStatus}
+          setStatusValue={setTaskStatus}
+          priority={taskPriority}
+          setPriority={setTaskPriority}
+          deadline={taskDeadline}
+          setDeadline={setTaskDeadline}
+          saving={savingTask}
+          onClose={() => setTaskModalOpen(false)}
+          onSubmit={createTask}
+        />
 
-              <Text style={[styles.formTitle, { color: theme.text }]}>Статус</Text>
-              <View style={styles.optionWrap}>
-                {PROJECT_STATUSES.map((item) => {
-                  const active = editStatus === item.value;
+        <SectionModal
+          visible={sectionModalOpen}
+          theme={theme}
+          editing={Boolean(editingSection)}
+          title={sectionTitle}
+          setTitle={setSectionTitle}
+          description={sectionDescription}
+          setDescription={setSectionDescription}
+          icon={sectionIcon}
+          setIcon={setSectionIcon}
+          order={sectionOrder}
+          setOrder={setSectionOrder}
+          pinned={sectionPinned}
+          setPinned={setSectionPinned}
+          saving={savingSection}
+          onClose={closeSectionModal}
+          onSubmit={saveSection}
+        />
 
-                  return (
-                    <Pressable
-                      key={item.value}
-                      onPress={() => setEditStatus(item.value)}
-                      style={[
-                        styles.optionChip,
-                        {
-                          backgroundColor: active ? theme.blue : theme.surface,
-                          borderColor: active ? theme.blue : theme.border,
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.optionChipText, { color: active ? '#fff' : theme.text }]}>
-                        {item.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
-
-            <View style={[styles.modalFooter, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Pressable
-                onPress={() => setEditProjectOpen(false)}
-                style={[styles.secondaryBtn, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}
-              >
-                <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Отмена</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={saveProject}
-                disabled={savingProject}
-                style={[styles.saveBtn, { backgroundColor: savingProject ? theme.textMuted : theme.blue }]}
-              >
-                {savingProject ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Сохранить</Text>}
-              </Pressable>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
-
-        <Modal visible={sectionModalOpen} animationType="slide" transparent={false} onRequestClose={closeSectionModal}>
-          <KeyboardAvoidingView
-            style={[styles.modalRoot, { backgroundColor: theme.background }]}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>
-                {editingSection ? 'Редактировать раздел' : 'Новый раздел'}
-              </Text>
-              <Pressable onPress={closeSectionModal} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
-                <Ionicons name="close" size={20} color={theme.text} />
-              </Pressable>
-            </View>
-
-            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
-              <InputBlock label="Название раздела" value={sectionTitle} onChangeText={setSectionTitle} theme={theme} />
-              <InputBlock label="Описание" value={sectionDescription} onChangeText={setSectionDescription} theme={theme} multiline />
-              <InputBlock label="Порядок" value={sectionOrder} onChangeText={setSectionOrder} theme={theme} keyboardType="numeric" />
-
-              <Text style={[styles.formTitle, { color: theme.text }]}>Иконка</Text>
-              <View style={styles.iconGrid}>
-                {SECTION_ICONS.map((icon) => {
-                  const active = sectionIcon === icon;
-
-                  return (
-                    <Pressable
-                      key={icon}
-                      onPress={() => setSectionIcon(icon)}
-                      style={[
-                        styles.iconOption,
-                        {
-                          backgroundColor: active ? theme.blue : theme.surface,
-                          borderColor: active ? theme.blue : theme.border,
-                        },
-                      ]}
-                    >
-                      <Ionicons name={icon} size={22} color={active ? '#fff' : theme.textSecondary} />
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              <Pressable
-                onPress={() => setSectionPinned((v) => !v)}
-                style={[styles.checkboxRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
-              >
-                <Ionicons
-                  name={sectionPinned ? 'checkbox-outline' : 'square-outline'}
-                  size={22}
-                  color={sectionPinned ? theme.blue : theme.textMuted}
-                />
-                <Text style={[styles.checkboxText, { color: theme.text }]}>Закрепить раздел сверху</Text>
-              </Pressable>
-            </ScrollView>
-
-            <View style={[styles.modalFooter, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Pressable
-                onPress={closeSectionModal}
-                style={[styles.secondaryBtn, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}
-              >
-                <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Отмена</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={saveSection}
-                disabled={savingSection}
-                style={[styles.saveBtn, { backgroundColor: savingSection ? theme.textMuted : theme.blue }]}
-              >
-                {savingSection ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Сохранить</Text>}
-              </Pressable>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
-
-        <Modal visible={postModalOpen} animationType="slide" transparent={false} onRequestClose={closePostModal}>
-          <KeyboardAvoidingView
-            style={[styles.modalRoot, { backgroundColor: theme.background }]}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>
-                {editingPost ? 'Редактировать запись' : 'Новая запись'}
-              </Text>
-              <Pressable onPress={closePostModal} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
-                <Ionicons name="close" size={20} color={theme.text} />
-              </Pressable>
-            </View>
-
-            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
-              <InputBlock label="Заголовок" value={postTitle} onChangeText={setPostTitle} theme={theme} />
-
-              <InputBlock
-                label="Основной текст"
-                value={postBody}
-                onChangeText={setPostBody}
-                theme={theme}
-                multiline
-                placeholder="Например: инструкция, контакты, данные, описание..."
-              />
-
-              <InputBlock
-                label="Текст для копирования"
-                value={postCopyText}
-                onChangeText={setPostCopyText}
-                theme={theme}
-                multiline
-                placeholder="Если оставить пустым, будет копироваться основной текст."
-              />
-
-              <InputBlock
-                label="Внутренняя заметка"
-                value={postNote}
-                onChangeText={setPostNote}
-                theme={theme}
-                multiline
-                placeholder="Например: кто должен использовать эту информацию."
-              />
-
-              <Pressable
-                onPress={() => setPostPinned((v) => !v)}
-                style={[styles.checkboxRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
-              >
-                <Ionicons
-                  name={postPinned ? 'checkbox-outline' : 'square-outline'}
-                  size={22}
-                  color={postPinned ? theme.blue : theme.textMuted}
-                />
-                <Text style={[styles.checkboxText, { color: theme.text }]}>Закрепить запись сверху</Text>
-              </Pressable>
-            </ScrollView>
-
-            <View style={[styles.modalFooter, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Pressable
-                onPress={closePostModal}
-                style={[styles.secondaryBtn, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}
-              >
-                <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Отмена</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={savePost}
-                disabled={savingPost}
-                style={[styles.saveBtn, { backgroundColor: savingPost ? theme.textMuted : theme.blue }]}
-              >
-                {savingPost ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Сохранить</Text>}
-              </Pressable>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
+        <PostModal
+          visible={postModalOpen}
+          theme={theme}
+          editing={Boolean(editingPost)}
+          title={postTitle}
+          setTitle={setPostTitle}
+          body={postBody}
+          setBody={setPostBody}
+          copyText={postCopyText}
+          setCopyText={setPostCopyText}
+          note={postNote}
+          setNote={setPostNote}
+          pinned={postPinned}
+          setPinned={setPostPinned}
+          saving={savingPost}
+          onClose={closePostModal}
+          onSubmit={savePost}
+        />
       </View>
     </ScreenWrapper>
   );
@@ -1233,6 +1467,443 @@ function InputBlock({
           },
         ]}
       />
+    </View>
+  );
+}
+
+function ProjectEditModal({
+  visible,
+  theme,
+  title,
+  setTitle,
+  description,
+  setDescription,
+  city,
+  setCity,
+  deadline,
+  setDeadline,
+  statusValue,
+  setStatusValue,
+  saving,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  theme: any;
+  title: string;
+  setTitle: (value: string) => void;
+  description: string;
+  setDescription: (value: string) => void;
+  city: string;
+  setCity: (value: string) => void;
+  deadline: string;
+  setDeadline: (value: string) => void;
+  statusValue: ProjectStatus;
+  setStatusValue: (value: ProjectStatus) => void;
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={[styles.modalRoot, { backgroundColor: theme.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.modalTitle, { color: theme.text }]}>Редактировать проект</Text>
+          <Pressable onPress={onClose} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
+            <Ionicons name="close" size={20} color={theme.text} />
+          </Pressable>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+          <InputBlock label="Название" value={title} onChangeText={setTitle} theme={theme} />
+          <InputBlock label="Описание" value={description} onChangeText={setDescription} theme={theme} multiline />
+          <InputBlock label="Город" value={city} onChangeText={setCity} theme={theme} />
+          <InputBlock label="Дедлайн" value={deadline} onChangeText={setDeadline} theme={theme} placeholder="2026-05-20" />
+
+          <Text style={[styles.formTitle, { color: theme.text }]}>Статус</Text>
+          <View style={styles.optionWrap}>
+            {PROJECT_STATUSES.map((item) => {
+              const active = statusValue === item.value;
+
+              return (
+                <Pressable
+                  key={item.value}
+                  onPress={() => setStatusValue(item.value)}
+                  style={[
+                    styles.optionChip,
+                    {
+                      backgroundColor: active ? theme.blue : theme.surface,
+                      borderColor: active ? theme.blue : theme.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.optionChipText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        <ModalFooter theme={theme} saving={saving} onClose={onClose} onSubmit={onSubmit} />
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function TaskModal({
+  visible,
+  theme,
+  users,
+  title,
+  setTitle,
+  description,
+  setDescription,
+  assignedTo,
+  setAssignedTo,
+  statusValue,
+  setStatusValue,
+  priority,
+  setPriority,
+  deadline,
+  setDeadline,
+  saving,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  theme: any;
+  users: UserMini[];
+  title: string;
+  setTitle: (value: string) => void;
+  description: string;
+  setDescription: (value: string) => void;
+  assignedTo: number | null;
+  setAssignedTo: (value: number | null) => void;
+  statusValue: TaskStatus;
+  setStatusValue: (value: TaskStatus) => void;
+  priority: TaskPriority;
+  setPriority: (value: TaskPriority) => void;
+  deadline: string;
+  setDeadline: (value: string) => void;
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={[styles.modalRoot, { backgroundColor: theme.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.modalTitle, { color: theme.text }]}>Новая задача</Text>
+          <Pressable onPress={onClose} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
+            <Ionicons name="close" size={20} color={theme.text} />
+          </Pressable>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+          <InputBlock label="Название задачи" value={title} onChangeText={setTitle} theme={theme} />
+          <InputBlock label="Описание" value={description} onChangeText={setDescription} theme={theme} multiline />
+          <InputBlock label="Дедлайн" value={deadline} onChangeText={setDeadline} theme={theme} placeholder="2026-05-20" />
+
+          <Text style={[styles.formTitle, { color: theme.text }]}>Статус</Text>
+          <View style={styles.optionWrap}>
+            {TASK_STATUSES.map((item) => {
+              const active = statusValue === item.value;
+
+              return (
+                <Pressable
+                  key={item.value}
+                  onPress={() => setStatusValue(item.value)}
+                  style={[
+                    styles.optionChip,
+                    {
+                      backgroundColor: active ? taskStatusColor(item.value, theme) : theme.surface,
+                      borderColor: active ? taskStatusColor(item.value, theme) : theme.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.optionChipText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.formTitle, { color: theme.text }]}>Приоритет</Text>
+          <View style={styles.optionWrap}>
+            {PRIORITIES.map((item) => {
+              const active = priority === item.value;
+
+              return (
+                <Pressable
+                  key={item.value}
+                  onPress={() => setPriority(item.value)}
+                  style={[
+                    styles.optionChip,
+                    {
+                      backgroundColor: active ? priorityColor(item.value, theme) : theme.surface,
+                      borderColor: active ? priorityColor(item.value, theme) : theme.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.optionChipText, { color: active ? '#fff' : theme.text }]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.formTitle, { color: theme.text }]}>Ответственный</Text>
+          <View style={styles.usersWrap}>
+            <Pressable
+              onPress={() => setAssignedTo(null)}
+              style={[
+                styles.userChip,
+                {
+                  backgroundColor: assignedTo === null ? theme.blue : theme.surface,
+                  borderColor: assignedTo === null ? theme.blue : theme.border,
+                },
+              ]}
+            >
+              <Text style={[styles.userChipText, { color: assignedTo === null ? '#fff' : theme.text }]}>Не назначен</Text>
+            </Pressable>
+
+            {users.map((item) => {
+              const active = Number(assignedTo) === Number(item.id);
+
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() => setAssignedTo(Number(item.id))}
+                  style={[
+                    styles.userChip,
+                    {
+                      backgroundColor: active ? theme.blue : theme.surface,
+                      borderColor: active ? theme.blue : theme.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.userChipText, { color: active ? '#fff' : theme.text }]} numberOfLines={1}>
+                    {userName(item)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        <ModalFooter theme={theme} saving={saving} onClose={onClose} onSubmit={onSubmit} />
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function SectionModal({
+  visible,
+  theme,
+  editing,
+  title,
+  setTitle,
+  description,
+  setDescription,
+  icon,
+  setIcon,
+  order,
+  setOrder,
+  pinned,
+  setPinned,
+  saving,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  theme: any;
+  editing: boolean;
+  title: string;
+  setTitle: (value: string) => void;
+  description: string;
+  setDescription: (value: string) => void;
+  icon: keyof typeof Ionicons.glyphMap;
+  setIcon: (value: keyof typeof Ionicons.glyphMap) => void;
+  order: string;
+  setOrder: (value: string) => void;
+  pinned: boolean;
+  setPinned: (value: boolean) => void;
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={[styles.modalRoot, { backgroundColor: theme.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.modalTitle, { color: theme.text }]}>{editing ? 'Редактировать раздел' : 'Новый раздел'}</Text>
+          <Pressable onPress={onClose} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
+            <Ionicons name="close" size={20} color={theme.text} />
+          </Pressable>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+          <InputBlock label="Название раздела" value={title} onChangeText={setTitle} theme={theme} />
+          <InputBlock label="Описание" value={description} onChangeText={setDescription} theme={theme} multiline />
+          <InputBlock label="Порядок" value={order} onChangeText={setOrder} theme={theme} keyboardType="numeric" />
+
+          <Text style={[styles.formTitle, { color: theme.text }]}>Иконка</Text>
+          <View style={styles.iconGrid}>
+            {SECTION_ICONS.map((item) => {
+              const active = icon === item;
+
+              return (
+                <Pressable
+                  key={item}
+                  onPress={() => setIcon(item)}
+                  style={[
+                    styles.iconOption,
+                    {
+                      backgroundColor: active ? theme.blue : theme.surface,
+                      borderColor: active ? theme.blue : theme.border,
+                    },
+                  ]}
+                >
+                  <Ionicons name={item} size={22} color={active ? '#fff' : theme.textSecondary} />
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Pressable
+            onPress={() => setPinned(!pinned)}
+            style={[styles.checkboxRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          >
+            <Ionicons
+              name={pinned ? 'checkbox-outline' : 'square-outline'}
+              size={22}
+              color={pinned ? theme.blue : theme.textMuted}
+            />
+            <Text style={[styles.checkboxText, { color: theme.text }]}>Закрепить раздел сверху</Text>
+          </Pressable>
+        </ScrollView>
+
+        <ModalFooter theme={theme} saving={saving} onClose={onClose} onSubmit={onSubmit} />
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function PostModal({
+  visible,
+  theme,
+  editing,
+  title,
+  setTitle,
+  body,
+  setBody,
+  copyText,
+  setCopyText,
+  note,
+  setNote,
+  pinned,
+  setPinned,
+  saving,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  theme: any;
+  editing: boolean;
+  title: string;
+  setTitle: (value: string) => void;
+  body: string;
+  setBody: (value: string) => void;
+  copyText: string;
+  setCopyText: (value: string) => void;
+  note: string;
+  setNote: (value: string) => void;
+  pinned: boolean;
+  setPinned: (value: boolean) => void;
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={[styles.modalRoot, { backgroundColor: theme.background }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={[styles.modalHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.modalTitle, { color: theme.text }]}>{editing ? 'Редактировать запись' : 'Новая запись'}</Text>
+          <Pressable onPress={onClose} style={[styles.modalClose, { backgroundColor: theme.backgroundSoft }]}>
+            <Ionicons name="close" size={20} color={theme.text} />
+          </Pressable>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+          <InputBlock label="Заголовок" value={title} onChangeText={setTitle} theme={theme} />
+          <InputBlock label="Основной текст" value={body} onChangeText={setBody} theme={theme} multiline />
+          <InputBlock
+            label="Текст для копирования"
+            value={copyText}
+            onChangeText={setCopyText}
+            theme={theme}
+            multiline
+            placeholder="Если оставить пустым, будет копироваться основной текст."
+          />
+          <InputBlock label="Внутренняя заметка" value={note} onChangeText={setNote} theme={theme} multiline />
+
+          <Pressable
+            onPress={() => setPinned(!pinned)}
+            style={[styles.checkboxRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          >
+            <Ionicons
+              name={pinned ? 'checkbox-outline' : 'square-outline'}
+              size={22}
+              color={pinned ? theme.blue : theme.textMuted}
+            />
+            <Text style={[styles.checkboxText, { color: theme.text }]}>Закрепить запись сверху</Text>
+          </Pressable>
+        </ScrollView>
+
+        <ModalFooter theme={theme} saving={saving} onClose={onClose} onSubmit={onSubmit} />
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function ModalFooter({
+  theme,
+  saving,
+  onClose,
+  onSubmit,
+}: {
+  theme: any;
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <View style={[styles.modalFooter, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+      <Pressable
+        onPress={onClose}
+        disabled={saving}
+        style={[styles.secondaryBtn, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}
+      >
+        <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Отмена</Text>
+      </Pressable>
+
+      <Pressable
+        onPress={onSubmit}
+        disabled={saving}
+        style={[styles.saveBtn, { backgroundColor: saving ? theme.textMuted : theme.blue }]}
+      >
+        {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Сохранить</Text>}
+      </Pressable>
     </View>
   );
 }
@@ -1326,15 +1997,30 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderRadius: 20,
-    padding: 12,
+    padding: 10,
   },
   statValue: {
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '900',
   },
   statLabel: {
     marginTop: 2,
-    fontSize: 11,
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  progressTrack: {
+    marginTop: 14,
+    height: 9,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  progressText: {
+    marginTop: 7,
+    fontSize: 12,
     fontWeight: '800',
   },
   metaUser: {
@@ -1387,6 +2073,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  tabs: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 4,
+    flexDirection: 'row',
+    gap: 4,
+  },
+  tab: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 7,
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
   addSectionBtn: {
     minHeight: 48,
     borderRadius: 18,
@@ -1398,6 +2104,114 @@ const styles = StyleSheet.create({
   addSectionText: {
     color: '#fff',
     fontSize: 14,
+    fontWeight: '900',
+  },
+  taskBoard: {
+    gap: 12,
+  },
+  taskColumn: {
+    borderWidth: 1,
+    borderRadius: 26,
+    padding: 12,
+  },
+  columnHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    marginBottom: 10,
+  },
+  columnIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  columnTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  countBadge: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  countBadgeText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  emptyColumnText: {
+    padding: 10,
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  tasksList: {
+    gap: 10,
+  },
+  taskCard: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 12,
+  },
+  taskTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  taskCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  taskTitle: {
+    fontSize: 15.5,
+    fontWeight: '900',
+  },
+  taskDescription: {
+    marginTop: 5,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 19,
+  },
+  taskMetaRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  smallPill: {
+    minHeight: 28,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smallPillText: {
+    fontSize: 11.5,
+    fontWeight: '900',
+  },
+  statusActions: {
+    marginTop: 10,
+    gap: 7,
+  },
+  statusMini: {
+    minHeight: 32,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusMiniText: {
+    fontSize: 11.5,
     fontWeight: '900',
   },
   emptyCard: {
@@ -1526,10 +2340,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 24,
     padding: 13,
-  },
-  postTop: {
-    flexDirection: 'row',
-    gap: 10,
   },
   postTitleRow: {
     flexDirection: 'row',
@@ -1675,6 +2485,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   optionChipText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  usersWrap: {
+    gap: 8,
+  },
+  userChip: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+  },
+  userChipText: {
     fontSize: 13,
     fontWeight: '900',
   },
