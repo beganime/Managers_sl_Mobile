@@ -1,3 +1,4 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -62,17 +63,27 @@ export function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <LinearGradient
+        colors={theme.gradients.screen as [string, string, ...string[]]}
+        style={StyleSheet.absoluteFillObject}
+      />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboard}
       >
         <View style={styles.content}>
-          <View style={styles.brand}>
+          <LinearGradient
+            colors={theme.gradients.hero as [string, string, ...string[]]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.hero}
+          >
+            <Text style={styles.kicker}>Students Life Program for Managers</Text>
             <Text style={styles.logo}>ManagerSL</Text>
-            <Text style={styles.subtitle}>ERP / CRM / HRM cabinet</Text>
-          </View>
+            <Text style={styles.subtitle}>ManagerSL ERP/CRM workspace</Text>
+          </LinearGradient>
 
-          <Card style={styles.card}>
+          <Card glass style={styles.card}>
             <Text style={styles.title}>Вход в систему</Text>
             <Text style={styles.description}>
               Используйте рабочий аккаунт ManagerSL для доступа к мобильному кабинету.
@@ -130,16 +141,27 @@ const styles = StyleSheet.create({
     gap: theme.spacing.xl,
     padding: theme.spacing.lg,
   },
-  brand: {
-    gap: 6,
+  hero: {
+    overflow: 'hidden',
+    borderRadius: theme.radius.xl,
+    gap: theme.spacing.sm,
+    padding: theme.spacing.xl,
+    ...theme.shadow.floating,
+  },
+  kicker: {
+    color: 'rgba(255,255,255,0.76)',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   logo: {
-    color: theme.colors.primary,
-    fontSize: 34,
+    color: theme.colors.white,
+    fontSize: 36,
     fontWeight: '900',
   },
   subtitle: {
-    color: theme.colors.textMuted,
+    color: 'rgba(255,255,255,0.82)',
     fontSize: 15,
     fontWeight: '800',
   },

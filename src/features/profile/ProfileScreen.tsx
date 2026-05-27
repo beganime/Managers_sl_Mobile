@@ -1,3 +1,4 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -21,9 +22,14 @@ export function ProfileScreen() {
 
   return (
     <ScreenContainer>
-      <Header title="Профиль" subtitle="Данные текущего пользователя." />
+      <Header title="Профиль" subtitle="Students Life Program for Managers" showBack />
 
-      <Card style={styles.card}>
+      <LinearGradient
+        colors={theme.gradients.hero as [string, string, ...string[]]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.hero}
+      >
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{getUserDisplayName(user).slice(0, 1).toUpperCase()}</Text>
         </View>
@@ -32,6 +38,11 @@ export function ProfileScreen() {
           <Text style={styles.meta}>{user?.email || 'Email не указан'}</Text>
           <Text style={styles.meta}>{user?.role || 'Роль не указана'}</Text>
         </View>
+      </LinearGradient>
+
+      <Card style={styles.card}>
+        <Text style={styles.cardTitle}>ManagerSL ERP/CRM workspace</Text>
+        <Text style={styles.cardText}>Профиль синхронизируется через текущий backend endpoint пользователя.</Text>
       </Card>
 
       <Button title="Выйти" variant="danger" onPress={handleLogout} />
@@ -40,10 +51,27 @@ export function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  card: {
+  hero: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.lg,
+    borderRadius: theme.radius.xl,
+    padding: theme.spacing.xl,
+    ...theme.shadow.floating,
+  },
+  card: {
+    gap: theme.spacing.sm,
+  },
+  cardTitle: {
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  cardText: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
   },
   avatar: {
     width: 64,
@@ -51,10 +79,12 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.primarySoft,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
   },
   avatarText: {
-    color: theme.colors.primary,
+    color: theme.colors.white,
     fontSize: 28,
     fontWeight: '900',
   },
@@ -63,12 +93,12 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   name: {
-    color: theme.colors.text,
+    color: theme.colors.white,
     fontSize: 18,
     fontWeight: '900',
   },
   meta: {
-    color: theme.colors.textMuted,
+    color: 'rgba(255,255,255,0.78)',
     fontSize: 14,
     fontWeight: '700',
   },

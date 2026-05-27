@@ -9,12 +9,19 @@ export function getUserDisplayName(user?: AppUser | null) {
 }
 
 export function getItemTitle(item: ApiListItem) {
-  return (
+  const title =
     item.title ||
     item.name ||
     item.full_name ||
-    String(item.email || item.phone || item.id || 'Запись')
-  );
+    item.client_name ||
+    item.university_name ||
+    item.program_name ||
+    item.email ||
+    item.phone ||
+    item.id ||
+    'Запись';
+
+  return String(title);
 }
 
 export function getItemSubtitle(item: ApiListItem) {
@@ -31,7 +38,11 @@ export function formatWorkdayStatus(workday?: Workday | null) {
     return 'Рабочий день открыт';
   }
 
-  if (status === 'closed' || status === 'finished') {
+  if (status === 'not_started') {
+    return 'Рабочий день ещё не начат';
+  }
+
+  if (status === 'closed' || status === 'finished' || status === 'auto_closed') {
     return 'Рабочий день закрыт';
   }
 

@@ -20,4 +20,53 @@ For profile editing and avatar updates in later sprints, confirm one of these co
 - `PATCH /api/v1/profile/`
 - dedicated avatar upload/remove endpoints.
 
-Current app behavior: Sprint 1 profile screen reads the current user only and does not submit profile edits.
+Current app behavior: Sprint 2 uses the existing backend fallback `GET/PATCH /api/users/users/me/` after `/api/v1/me/` returns 404.
+
+## Mobile Auth/Profile/Dashboard
+
+Backend `students_life/urls.py` currently has:
+
+- `POST /api/auth/login/`
+- `POST /api/auth/refresh/`
+- `POST /api/auth/logout/`
+- `GET /api/app/dashboard/`
+- `/api/v1/crm/`, `/api/v1/education/`, `/api/v1/services/`, `/api/v1/finance/`, `/api/v1/attendance/`, `/api/v1/projects/`, `/api/v1/knowledge/`, `/api/v1/notifications/`
+
+Missing mobile-friendly endpoints documented in `api_doc.md` but not mounted yet:
+
+- `GET /api/v1/me/`
+- `PATCH /api/v1/me/`
+- `GET /api/v1/dashboard/`
+- `GET /api/v1/mobile/bootstrap/`
+- `GET /api/v1/mobile/search/?q=...`
+
+Current app behavior: auth uses `/api/auth/...`; profile falls back to `/api/users/users/me/`; dashboard is composed from existing `/api/v1/...` resources and can fall back to `/api/app/dashboard/`.
+
+Live check on `https://manager-sl.ru` during Sprint 2:
+
+- `GET /api/v1/me/` returned `404`.
+- `GET /api/v1/dashboard/` returned `404`.
+- `GET /api/users/users/me/` returned `401`, which confirms the URL exists and requires auth.
+- `GET /api/app/dashboard/` returned `401`, which confirms the URL exists and requires auth.
+- `GET /api/v1/crm/leads/`, `/api/v1/crm/clients/`, `/api/v1/education/universities/`, `/api/v1/finance/incomes/`, `/api/v1/projects/tasks/`, `/api/v1/attendance/workdays/today/` returned `401`, which confirms the URLs exist and require auth.
+
+## Incoming Leads Ownership
+
+CRM leads exist at `GET/POST /api/v1/crm/leads/`, but there is no confirmed endpoint for "take responsibility" on an incoming lead.
+
+Required for the mobile "Входящие" responsibility action:
+
+- `POST /api/v1/crm/leads/{id}/take/`
+
+Current app behavior: incoming leads are shown from `/api/v1/crm/leads/?status=new`, while the responsibility action displays a clear "soon available" message instead of calling an unconfirmed URL.
+
+## CRM Documents Shortcut
+
+Document templates and generated documents exist under `/api/v1/documents/`. A direct "create document for client" shortcut endpoint is not confirmed.
+
+Required for one-tap client document creation:
+
+- `POST /api/v1/documents/templates/{template_id}/generate/` with a documented `client` payload, or
+- a dedicated `POST /api/v1/crm/clients/{id}/documents/`.
+
+Current app behavior: client cards show the document action only as navigation context for later document sprint; no unconfirmed URL is called.

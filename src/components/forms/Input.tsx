@@ -13,7 +13,7 @@ export function Input({ label, error, style, ...props }: InputProps) {
     <View style={styles.wrap}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
-        placeholderTextColor={theme.colors.textMuted}
+        placeholderTextColor={theme.colors.textSoft}
         style={[styles.input, Boolean(error) && styles.inputError, style]}
         {...props}
       />
@@ -29,17 +29,18 @@ const styles = StyleSheet.create({
   label: {
     color: theme.colors.textMuted,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   input: {
     minHeight: 50,
     borderRadius: theme.radius.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: theme.colors.surfaceStrong,
     color: theme.colors.text,
     paddingHorizontal: theme.spacing.lg,
     fontSize: 16,
+    fontWeight: '700',
   },
   inputError: {
     borderColor: theme.colors.danger,
@@ -47,6 +48,6 @@ const styles = StyleSheet.create({
   error: {
     color: theme.colors.danger,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
   },
 });

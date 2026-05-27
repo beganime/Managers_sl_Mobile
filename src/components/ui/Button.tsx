@@ -45,7 +45,7 @@ export function Button({
       {...props}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' || variant === 'danger' ? '#FFFFFF' : theme.colors.primary} />
+        <ActivityIndicator color={variant === 'secondary' || variant === 'ghost' ? theme.colors.primary : '#FFFFFF'} />
       ) : (
         <Text style={[styles.text, styles[`${variant}Text`]]}>{title}</Text>
       )}
@@ -68,12 +68,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
   },
   secondary: {
-    backgroundColor: theme.colors.primarySoft,
+    backgroundColor: theme.colors.surfaceStrong,
     borderColor: theme.colors.border,
     borderWidth: 1,
   },
   danger: {
-    backgroundColor: theme.colors.danger,
+    backgroundColor: theme.colors.accent,
   },
   ghost: {
     backgroundColor: 'transparent',
@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '900',
   },
   primaryText: {
     color: '#FFFFFF',
@@ -95,6 +95,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   ghostText: {
-    color: theme.colors.primary,
+    color: theme.colors.accent,
   },
 });

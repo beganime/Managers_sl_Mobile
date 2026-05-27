@@ -4,6 +4,7 @@ import {
   ApiRequestConfig,
   CACHED_PROFILE_KEY,
   REFRESH_TOKEN_KEY,
+  requestFirst,
   toApiError,
   v1,
 } from './client';
@@ -27,6 +28,8 @@ async function postFirst<T>(paths: string[], payload?: unknown): Promise<T> {
       return response.data;
     } catch (error) {
       lastError = error;
+      const apiError = toApiError(error);
+      if (apiError.status && apiError.status !== 404) throw apiError;
     }
   }
 
@@ -34,7 +37,7 @@ async function postFirst<T>(paths: string[], payload?: unknown): Promise<T> {
 }
 
 export async function login(credentials: LoginCredentials) {
-  const data = await postFirst<AuthResponse>([v1('/auth/login/'), '/api/auth/login/'], {
+  const data = await postFirst<AuthResponse>(['/api/auth/login/'], {
     email: credentials.email,
     password: credentials.password,
   });
@@ -57,16 +60,36 @@ export async function login(credentials: LoginCredentials) {
 }
 
 export async function getMe() {
-  const response = await apiClient.get<AppUser>(v1('/me/'));
-  await saveJSON(CACHED_PROFILE_KEY, response.data);
-  return response.data;
+  const user = await requestFirst<AppUser>(
+    [v1('/me/'), '/api/users/users/me/'],
+    async (path) => {
+      const response = await apiClient.get<AppUser>(path);
+      return response.data;
+    }
+  );
+
+  await saveJSON(CACHED_PROFILE_KEY, user);
+  return user;
+}
+
+export async function updateMe(payload: Record<string, unknown>) {
+  const user = await requestFirst<AppUser>(
+    [v1('/me/'), '/api/users/users/me/'],
+    async (path) => {
+      const response = await apiClient.patch<AppUser>(path, payload);
+      return response.data;
+    }
+  );
+
+  await saveJSON(CACHED_PROFILE_KEY, user);
+  return user;
 }
 
 export async function logout() {
   const refresh = await getToken(REFRESH_TOKEN_KEY);
 
   try {
-    await postFirst([v1('/auth/logout/'), '/api/auth/logout/'], refresh ? { refresh } : {});
+    await postFirst(['/api/auth/logout/'], refresh ? { refresh } : {});
   } catch {
   } finally {
     await clearSession();

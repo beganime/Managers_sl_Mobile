@@ -32,7 +32,7 @@ export function EducationScreen() {
 
   return (
     <ScreenContainer>
-      <Header title="Вузы" subtitle="Новый каталог образования через /api/v1/education/." />
+      <Header title="Вузы" subtitle="Новый каталог образования через /api/v1/education/." showBack />
 
       {loading && !data ? <LoadingState /> : null}
       {error && !data ? <ErrorState message={error} actionTitle="Повторить" onAction={reload} /> : null}

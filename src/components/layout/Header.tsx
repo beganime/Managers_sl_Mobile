@@ -1,17 +1,66 @@
+import { Ionicons } from '@expo/vector-icons';
+import { usePathname, useRouter } from 'expo-router';
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { theme } from '../../theme/theme';
 
 type HeaderProps = {
   title: string;
   subtitle?: string;
+  eyebrow?: string;
+  showBack?: boolean;
+  onBack?: () => void;
 };
 
-export function Header({ title, subtitle }: HeaderProps) {
+export function Header({
+  title,
+  subtitle,
+  eyebrow = 'ManagerSL',
+  showBack = false,
+  onBack,
+}: HeaderProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+      return;
+    }
+
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    const cleanPath = pathname.split('?')[0].replace(/\/$/, '');
+    const parentPath = cleanPath.split('/').slice(0, -1).join('/');
+
+    if (parentPath && parentPath !== '/(app)' && parentPath !== '/(app)/crm') {
+      router.replace(parentPath as any);
+      return;
+    }
+
+    router.replace('/(app)/(tabs)/more' as any);
+  };
+
   return (
     <View style={styles.wrap}>
-      <Text style={styles.eyebrow}>ManagerSL</Text>
+      <View style={styles.topRow}>
+        {showBack ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Назад"
+            hitSlop={10}
+            onPress={handleBack}
+            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="chevron-back" size={22} color={theme.colors.primary} />
+          </Pressable>
+        ) : null}
+        <Text style={styles.eyebrow}>{eyebrow}</Text>
+      </View>
       <Text style={styles.title}>{title}</Text>
       {Boolean(subtitle) && <Text style={styles.subtitle}>{subtitle}</Text>}
     </View>
@@ -20,20 +69,40 @@ export function Header({ title, subtitle }: HeaderProps) {
 
 const styles = StyleSheet.create({
   wrap: {
-    gap: 5,
+    gap: 6,
+  },
+  topRow: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceStrong,
+    ...theme.shadow.card,
+  },
+  pressed: {
+    opacity: 0.72,
   },
   eyebrow: {
     color: theme.colors.accent,
     fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 0.6,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   title: {
     color: theme.colors.text,
-    fontSize: 28,
+    fontSize: 27,
     fontWeight: '900',
-    lineHeight: 34,
+    lineHeight: 33,
   },
   subtitle: {
     color: theme.colors.textMuted,

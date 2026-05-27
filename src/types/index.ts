@@ -82,6 +82,8 @@ export type DashboardSummary = {
     tasks: number;
     deals: number;
     notifications: number;
+    rating: number;
+    balance: number;
   };
   warnings: string[];
 };

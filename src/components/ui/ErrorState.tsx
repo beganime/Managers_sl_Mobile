@@ -28,12 +28,13 @@ export function ErrorState({
 
 const styles = StyleSheet.create({
   wrap: {
-    borderRadius: theme.radius.md,
+    borderRadius: theme.radius.lg,
     borderWidth: 1,
     borderColor: theme.colors.dangerSoft,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.surfaceStrong,
     gap: theme.spacing.md,
     padding: theme.spacing.lg,
+    ...theme.shadow.card,
   },
   title: {
     color: theme.colors.danger,

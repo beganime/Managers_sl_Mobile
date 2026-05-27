@@ -19,10 +19,10 @@ export function EmptyState({ title, message }: EmptyStateProps) {
 
 const styles = StyleSheet.create({
   wrap: {
-    borderRadius: theme.radius.md,
+    borderRadius: theme.radius.lg,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: theme.colors.surfaceStrong,
     alignItems: 'center',
     gap: theme.spacing.sm,
     padding: theme.spacing.xl,

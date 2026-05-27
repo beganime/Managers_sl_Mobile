@@ -1,3 +1,4 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { ScrollView, StyleSheet, View, ViewProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,21 +7,37 @@ import { theme } from '../../theme/theme';
 
 type ScreenContainerProps = ViewProps & {
   scroll?: boolean;
+  padded?: boolean;
 };
 
-export function ScreenContainer({ children, scroll = true, style }: ScreenContainerProps) {
+export function ScreenContainer({
+  children,
+  scroll = true,
+  padded = true,
+  style,
+}: ScreenContainerProps) {
+  const contentStyle = [styles.content, !padded && styles.noPadding, style];
+
   if (!scroll) {
     return (
       <SafeAreaView style={styles.safe}>
-        <View style={[styles.content, style]}>{children}</View>
+        <LinearGradient
+          colors={theme.gradients.screen as [string, string, ...string[]]}
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={contentStyle}>{children}</View>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.safe}>
+      <LinearGradient
+        colors={theme.gradients.screen as [string, string, ...string[]]}
+        style={StyleSheet.absoluteFillObject}
+      />
       <ScrollView
-        contentContainerStyle={[styles.content, styles.scrollContent, style]}
+        contentContainerStyle={[contentStyle, styles.scrollContent]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -37,8 +54,13 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
+    gap: theme.spacing.lg,
     paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.lg,
+    paddingTop: theme.spacing.md,
+  },
+  noPadding: {
+    paddingHorizontal: 0,
+    paddingTop: 0,
   },
   scrollContent: {
     paddingBottom: 112,

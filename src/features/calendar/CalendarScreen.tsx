@@ -13,7 +13,7 @@ export function CalendarScreen() {
 
   return (
     <ScreenContainer>
-      <Header title="Календарь" subtitle="Раздел готов к подключению после backend endpoint." />
+      <Header title="Календарь" subtitle="Раздел готов к подключению после backend endpoint." showBack />
       {loading ? <LoadingState /> : null}
       {error ? (
         <ErrorState

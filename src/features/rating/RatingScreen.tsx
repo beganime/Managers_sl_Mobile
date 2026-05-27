@@ -21,7 +21,7 @@ export function RatingScreen() {
 
   return (
     <ScreenContainer>
-      <Header title="Рейтинг" subtitle="Командный рейтинг ManagerSL." />
+      <Header title="Рейтинг" subtitle="Командный рейтинг ManagerSL." showBack />
       {loading && !data ? <LoadingState /> : null}
       {error && !data ? <ErrorState message={error} actionTitle="Повторить" onAction={reload} /> : null}
       {data ? (

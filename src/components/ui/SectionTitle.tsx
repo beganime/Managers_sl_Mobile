@@ -11,7 +11,10 @@ type SectionTitleProps = {
 export function SectionTitle({ title, subtitle }: SectionTitleProps) {
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>{title}</Text>
+      <View style={styles.row}>
+        <View style={styles.bar} />
+        <Text style={styles.title}>{title}</Text>
+      </View>
       {Boolean(subtitle) && <Text style={styles.subtitle}>{subtitle}</Text>}
     </View>
   );
@@ -19,7 +22,18 @@ export function SectionTitle({ title, subtitle }: SectionTitleProps) {
 
 const styles = StyleSheet.create({
   wrap: {
-    gap: 4,
+    gap: 5,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  bar: {
+    width: 5,
+    height: 20,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.accent,
   },
   title: {
     color: theme.colors.text,

@@ -33,7 +33,7 @@ export function DocumentsScreen() {
 
   return (
     <ScreenContainer>
-      <Header title="Документы" subtitle="Шаблоны и сформированные документы ERP." />
+      <Header title="Документы" subtitle="Шаблоны и сформированные документы ERP." showBack />
 
       {loading && !data ? <LoadingState /> : null}
       {error && !data ? <ErrorState message={error} actionTitle="Повторить" onAction={reload} /> : null}

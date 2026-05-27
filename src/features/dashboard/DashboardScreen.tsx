@@ -1,8 +1,14 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useCallback } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { getDashboardSummary } from '../../api/dashboard';
+import { startWorkday } from '../../api/attendance';
+import { listNotifications } from '../../api/notifications';
+import { listProjectTasks } from '../../api/projects';
+import { extractItems, toApiError } from '../../api/client';
+import { ApiListItem, DashboardSummary } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/cards/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -15,18 +21,51 @@ import { StatCard } from '../../components/cards/StatCard';
 import { theme } from '../../theme/theme';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { useAuth } from '../../store/auth';
-import { formatWorkdayStatus, getUserDisplayName } from '../../utils/format';
+import { formatWorkdayStatus, getItemTitle, getUserDisplayName } from '../../utils/format';
+
+type DashboardData = DashboardSummary & {
+  todayTasks: ApiListItem[];
+  notifications: ApiListItem[];
+};
 
 export function DashboardScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const loadDashboard = useCallback(() => getDashboardSummary(), []);
+  const [startingDay, setStartingDay] = useState(false);
+
+  const loadDashboard = useCallback(async (): Promise<DashboardData> => {
+    const [summary, tasks, notifications] = await Promise.all([
+      getDashboardSummary(),
+      listProjectTasks({ limit: 3 }).catch(() => []),
+      listNotifications({ limit: 3 }).catch(() => []),
+    ]);
+
+    return {
+      ...summary,
+      todayTasks: extractItems<ApiListItem>(tasks),
+      notifications: extractItems<ApiListItem>(notifications),
+    };
+  }, []);
+
   const { data, loading, error, reload } = useAsyncResource(loadDashboard);
+
+  const handleStartDay = async () => {
+    setStartingDay(true);
+
+    try {
+      await startWorkday();
+      await reload();
+    } catch (requestError) {
+      Alert.alert('Рабочий день', toApiError(requestError).message);
+    } finally {
+      setStartingDay(false);
+    }
+  };
 
   if (loading && !data) {
     return (
-      <ScreenContainer scroll={false}>
-        <LoadingState title="Готовим дашборд" />
+      <ScreenContainer>
+        <DashboardSkeleton />
       </ScreenContainer>
     );
   }
@@ -34,7 +73,7 @@ export function DashboardScreen() {
   if (error && !data) {
     return (
       <ScreenContainer>
-        <Header title="Дашборд" subtitle="Стартовая панель ManagerSL" />
+        <Header title="Главная" subtitle="ManagerSL ERP/CRM workspace" />
         <ErrorState message={error} actionTitle="Повторить" onAction={reload} />
       </ScreenContainer>
     );
@@ -43,7 +82,7 @@ export function DashboardScreen() {
   if (!data) {
     return (
       <ScreenContainer>
-        <Header title="Дашборд" subtitle="Стартовая панель ManagerSL" />
+        <Header title="Главная" subtitle="ManagerSL ERP/CRM workspace" />
         <EmptyState title="Пока нет данных" message="После синхронизации здесь появятся показатели." />
       </ScreenContainer>
     );
@@ -52,13 +91,30 @@ export function DashboardScreen() {
   return (
     <ScreenContainer>
       <Header
-        title={`Здравствуйте, ${getUserDisplayName(user)}`}
-        subtitle="Короткая сводка по рабочему дню, CRM, задачам и финансам."
+        title="Главная"
+        eyebrow="Students Life Program for Managers"
+        subtitle="ManagerSL ERP/CRM workspace"
       />
 
-      <Card style={styles.workday}>
-        <Text style={styles.workdayLabel}>Рабочий день</Text>
-        <Text style={styles.workdayStatus}>{formatWorkdayStatus(data.workday)}</Text>
+      <LinearGradient
+        colors={theme.gradients.hero as [string, string, ...string[]]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.hero}
+      >
+        <Text style={styles.heroKicker}>Students Life Program for Managers</Text>
+        <Text style={styles.heroTitle}>Здравствуйте, {getUserDisplayName(user)}</Text>
+        <Text style={styles.heroText}>
+          Сегодняшний рабочий день, CRM, задачи и уведомления собраны в одном кабинете.
+        </Text>
+      </LinearGradient>
+
+      <Card glass style={styles.workday}>
+        <View style={styles.workdayText}>
+          <Text style={styles.workdayLabel}>Рабочий день</Text>
+          <Text style={styles.workdayStatus}>{formatWorkdayStatus(data.workday)}</Text>
+        </View>
+        <Button title="Начать день" loading={startingDay} onPress={handleStartDay} />
       </Card>
 
       {data.warnings.length ? (
@@ -70,34 +126,119 @@ export function DashboardScreen() {
         />
       ) : null}
 
-      <SectionTitle title="Статистика" subtitle="Данные собраны через новые /api/v1 endpoints." />
+      <SectionTitle title="Показатели" subtitle="Сводка из рабочих endpoints /api/v1." />
 
       <View style={styles.stats}>
-        <StatCard label="Лиды" value={data.stats.leads} tone="primary" />
-        <StatCard label="Клиенты" value={data.stats.clients} tone="accent" />
-        <StatCard label="Задачи" value={data.stats.tasks} tone="warning" />
-        <StatCard label="Сделки" value={data.stats.deals} tone="primary" />
+        <StatCard label="Мои лиды" value={data.stats.leads} tone="accent" />
+        <StatCard label="Мои клиенты" value={data.stats.clients} tone="primary" />
+        <StatCard label="Мои задачи" value={data.stats.tasks} tone="warning" />
+        <StatCard label="Рейтинг" value={data.stats.rating} tone="success" />
+        <StatCard label="Баланс" value={data.stats.balance} tone="primary" />
       </View>
 
       <SectionTitle title="Быстрые действия" />
 
       <View style={styles.actions}>
-        <Button title="Открыть CRM" variant="secondary" onPress={() => router.push('/(app)/(tabs)/crm' as any)} />
-        <Button title="Задачи" variant="secondary" onPress={() => router.push('/(app)/(tabs)/tasks' as any)} />
-        <Button title="Финансы" variant="secondary" onPress={() => router.push('/(app)/(tabs)/finance' as any)} />
+        <QuickAction title="Добавить клиента" onPress={() => router.push('/(app)/crm/clients/create' as any)} />
+        <QuickAction title="Добавить доход" onPress={() => router.push('/(app)/(tabs)/finance' as any)} />
+        <QuickAction title="Добавить задачу" onPress={() => router.push('/(app)/(tabs)/tasks' as any)} />
       </View>
+
+      <SectionTitle title="Сегодня" subtitle="Календарь будет подключён после backend endpoint." />
+
+      <Card style={styles.today}>
+        <Text style={styles.todayTitle}>Календарные события</Text>
+        <Text style={styles.todayText}>Раздел скоро будет доступен после `GET /api/v1/calendar/events/`.</Text>
+      </Card>
+
+      <Card style={styles.today}>
+        <Text style={styles.todayTitle}>Задачи</Text>
+        {data.todayTasks.length ? (
+          data.todayTasks.map((task) => (
+            <Text key={String(task.id)} style={styles.todayText}>• {getItemTitle(task)}</Text>
+          ))
+        ) : (
+          <Text style={styles.todayText}>На сегодня задач не найдено.</Text>
+        )}
+      </Card>
+
+      <SectionTitle title="Уведомления" />
+      <Card style={styles.today}>
+        {data.notifications.length ? (
+          data.notifications.map((notification) => (
+            <Text key={String(notification.id)} style={styles.todayText}>
+              • {getItemTitle(notification)}
+            </Text>
+          ))
+        ) : (
+          <Text style={styles.todayText}>Новых уведомлений нет.</Text>
+        )}
+      </Card>
     </ScreenContainer>
   );
 }
 
+function QuickAction({ title, onPress }: { title: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.quick, pressed && styles.pressed]}>
+      <Text style={styles.quickText}>{title}</Text>
+    </Pressable>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <>
+      <Header title="Главная" subtitle="ManagerSL ERP/CRM workspace" />
+      <View style={styles.skeletonHero} />
+      <View style={styles.skeletonGrid}>
+        <View style={styles.skeletonCard} />
+        <View style={styles.skeletonCard} />
+        <View style={styles.skeletonCard} />
+        <View style={styles.skeletonCard} />
+      </View>
+      <LoadingState title="Синхронизируем кабинет" />
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
-  workday: {
+  hero: {
+    overflow: 'hidden',
+    borderRadius: theme.radius.xl,
     gap: theme.spacing.sm,
+    padding: theme.spacing.xl,
+    ...theme.shadow.floating,
+  },
+  heroKicker: {
+    color: 'rgba(255,255,255,0.76)',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  heroTitle: {
+    color: theme.colors.white,
+    fontSize: 28,
+    fontWeight: '900',
+    lineHeight: 34,
+  },
+  heroText: {
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  workday: {
+    gap: theme.spacing.md,
+  },
+  workdayText: {
+    gap: 5,
   },
   workdayLabel: {
     color: theme.colors.textMuted,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '900',
   },
   workdayStatus: {
     color: theme.colors.text,
@@ -110,6 +251,58 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
   },
   actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: theme.spacing.md,
+  },
+  quick: {
+    flexGrow: 1,
+    minWidth: 148,
+    minHeight: 48,
+    borderRadius: theme.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.surfaceStrong,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  quickText: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  pressed: {
+    opacity: 0.75,
+  },
+  today: {
+    gap: theme.spacing.sm,
+  },
+  todayTitle: {
+    color: theme.colors.text,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  todayText: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+  },
+  skeletonHero: {
+    height: 164,
+    borderRadius: theme.radius.xl,
+    backgroundColor: theme.colors.surfaceStrong,
+  },
+  skeletonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md,
+  },
+  skeletonCard: {
+    flex: 1,
+    minWidth: 142,
+    height: 96,
+    borderRadius: theme.radius.lg,
+    backgroundColor: theme.colors.surfaceStrong,
   },
 });

@@ -33,7 +33,7 @@ export function KnowledgeScreen() {
 
   return (
     <ScreenContainer>
-      <Header title="База знаний" subtitle="Папки и статьи из нового knowledge API." />
+      <Header title="База знаний" subtitle="Папки и статьи из нового knowledge API." showBack />
 
       {loading && !data ? <LoadingState /> : null}
       {error && !data ? <ErrorState message={error} actionTitle="Повторить" onAction={reload} /> : null}

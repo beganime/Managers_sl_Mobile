@@ -230,6 +230,28 @@ export async function deleteJson<T>(path: string, config?: AxiosRequestConfig) {
   return response.data;
 }
 
+export async function requestFirst<T>(
+  paths: string[],
+  request: (path: string) => Promise<T>
+): Promise<T> {
+  let lastError: unknown = null;
+
+  for (const path of paths) {
+    try {
+      return await request(path);
+    } catch (error) {
+      lastError = error;
+
+      const apiError = toApiError(error);
+      if (apiError.status && apiError.status !== 404) {
+        throw apiError;
+      }
+    }
+  }
+
+  throw toApiError(lastError);
+}
+
 export function createMissingEndpointError(feature: string, expectedEndpoint: string) {
   return new ApiRequestError(
     `Для ${feature} нужен backend endpoint: ${expectedEndpoint}. Запрос добавлен в docs/mobile_api_required.md.`

@@ -21,7 +21,7 @@ export function NotificationsScreen() {
 
   return (
     <ScreenContainer>
-      <Header title="Уведомления" subtitle="Последние уведомления из ERP." />
+      <Header title="Уведомления" subtitle="Последние уведомления из ERP." showBack />
       {loading && !data ? <LoadingState /> : null}
       {error && !data ? <ErrorState message={error} actionTitle="Повторить" onAction={reload} /> : null}
       {data ? (

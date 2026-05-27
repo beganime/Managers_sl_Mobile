@@ -14,7 +14,11 @@ export function SettingsScreen() {
 
   return (
     <ScreenContainer>
-      <Header title="Настройки" subtitle="Базовые параметры мобильного приложения." />
+      <Header
+        title="Настройки"
+        subtitle="Базовые параметры мобильного приложения."
+        showBack
+      />
 
       <Card style={styles.card}>
         <Text style={styles.label}>API base URL</Text>

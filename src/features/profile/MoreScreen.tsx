@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { Card } from '../../components/cards/Card';
 import { Header } from '../../components/layout/Header';
 import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { theme } from '../../theme/theme';
@@ -43,7 +44,7 @@ export function MoreScreen() {
     },
     {
       title: 'Календарь',
-      subtitle: 'Запрошен backend endpoint для событий',
+      subtitle: 'Раздел скоро будет доступен после backend endpoint',
       icon: 'calendar-outline',
       route: '/(app)/calendar',
     },
@@ -94,7 +95,16 @@ export function MoreScreen() {
 
   return (
     <ScreenContainer>
-      <Header title="Ещё" subtitle="Дополнительные разделы ManagerSL." />
+      <Header
+        title="Ещё"
+        eyebrow="Students Life Program for Managers"
+        subtitle="Дополнительные разделы ManagerSL ERP/CRM workspace."
+      />
+
+      <Card glass style={styles.hero}>
+        <Text style={styles.heroTitle}>ManagerSL mobile cabinet</Text>
+        <Text style={styles.heroText}>Навигация по ERP, CRM, HRM и сервисным разделам.</Text>
+      </Card>
 
       <View style={styles.list}>
         {items.map((item) => (
@@ -129,6 +139,19 @@ export function MoreScreen() {
 }
 
 const styles = StyleSheet.create({
+  hero: {
+    gap: theme.spacing.sm,
+  },
+  heroTitle: {
+    color: theme.colors.text,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  heroText: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+  },
   list: {
     gap: theme.spacing.md,
   },
@@ -137,10 +160,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.md,
-    borderRadius: theme.radius.md,
+    borderRadius: theme.radius.lg,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: theme.colors.surfaceStrong,
     padding: theme.spacing.md,
     ...theme.shadow.card,
   },

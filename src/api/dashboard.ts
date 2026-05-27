@@ -1,10 +1,11 @@
 import { DashboardSummary } from '../types';
-import { extractCount, toApiError } from './client';
+import { extractCount, getJson, toApiError, v1 } from './client';
 import { getTodayWorkday } from './attendance';
 import { listClients, listLeads } from './crm';
-import { listDeals } from './finance';
+import { listDeals, listTransactions } from './finance';
 import { listNotifications } from './notifications';
 import { listProjectTasks } from './projects';
+import { getRating } from './rating';
 
 type DashboardPart<T> = {
   key: keyof DashboardSummary['stats'] | 'workday';
@@ -18,7 +19,13 @@ const dashboardParts: DashboardPart<unknown>[] = [
   { key: 'tasks', load: () => listProjectTasks({ limit: 1 }) },
   { key: 'deals', load: () => listDeals({ limit: 1 }) },
   { key: 'notifications', load: () => listNotifications({ limit: 1 }) },
+  { key: 'rating', load: () => getRating({ limit: 1 }) },
+  { key: 'balance', load: () => listTransactions({ limit: 1 }) },
 ];
+
+export async function getLegacyDashboard() {
+  return getJson('/api/app/dashboard/');
+}
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const settled = await Promise.allSettled(dashboardParts.map((part) => part.load()));
@@ -31,6 +38,8 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
       tasks: 0,
       deals: 0,
       notifications: 0,
+      rating: 0,
+      balance: 0,
     },
     warnings,
   };
@@ -52,7 +61,11 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   });
 
   if (warnings.length === dashboardParts.length) {
-    throw toApiError(new Error(warnings[0]));
+    try {
+      await getJson(v1('/dashboard/'));
+    } catch {
+      await getLegacyDashboard();
+    }
   }
 
   return summary;

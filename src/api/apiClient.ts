@@ -7,10 +7,9 @@ import {
   extractItems,
   getJson,
   normalizeApiPath,
-  patchJson,
   v1,
 } from './client';
-import { getMe, login, logout } from './auth';
+import { getMe, login, logout, updateMe } from './auth';
 
 export const BASE_URL = API_BASE_URL;
 export const API_ORIGIN = API_BASE_URL;
@@ -103,7 +102,7 @@ export async function getMyProfile() {
 }
 
 export async function updateMyProfile(payload: Record<string, any>) {
-  return patchJson(v1('/me/'), payload);
+  return updateMe(payload);
 }
 
 export function getFileNameFromUri(uri?: string, fallbackName = 'file') {
@@ -181,11 +180,11 @@ export async function uploadMyAvatar(file: UploadInput) {
   const fd = new FormData();
   await appendPreparedFile(fd, 'avatar', file, 'avatar.jpg');
 
-  return patchJson(v1('/me/'), fd, multipartConfig);
+  return updateMe({ avatar: fd } as any);
 }
 
 export async function removeMyAvatar() {
-  return patchJson(v1('/me/'), { remove_avatar: true });
+  return updateMe({ remove_avatar: true });
 }
 
 export default apiClient;
