@@ -110,13 +110,13 @@ export default function CreateDocumentScreen() {
     [deals, selectedDealId]
   );
 
-  const fields = useMemo(() => {
+  const fields = useMemo<TemplateField[]>(() => {
     if (!selectedTemplate?.fields_config) return [];
 
     try {
       return Array.isArray(selectedTemplate.fields_config)
         ? selectedTemplate.fields_config
-        : JSON.parse(selectedTemplate.fields_config);
+        : (JSON.parse(selectedTemplate.fields_config) as TemplateField[]);
     } catch {
       return [];
     }

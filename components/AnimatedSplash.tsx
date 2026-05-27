@@ -4,8 +4,8 @@ import { Animated, Dimensions, StyleSheet, View } from 'react-native';
 import Svg, { G, Path } from 'react-native-svg';
 
 const { width, height } = Dimensions.get('window');
-const AnimatedG = Animated.createAnimatedComponent(G);
-const AnimatedPath = Animated.createAnimatedComponent(Path);
+const AnimatedG = Animated.createAnimatedComponent(G) as any;
+const AnimatedPath = Animated.createAnimatedComponent(Path) as any;
 
 interface Props {
   onAnimationFinish: () => void;
@@ -81,7 +81,7 @@ export default function AnimatedSplash({ onAnimationFinish }: Props) {
       <View style={styles.svgContainer}>
         <Svg width="271" height="65" viewBox="0 0 271 65" fill="none">
           {/* АНИМИРОВАННАЯ ИКОНКА СЛЕВА */}
-          <AnimatedG style={{ transform: [{ translateX: iconTranslateX }, { scale: iconScale }] }}>
+          <AnimatedG style={{ transform: [{ translateX: iconTranslateX }, { scale: iconScale }] } as any}>
             <Path d="M27.6688 47.1472C33.1961 47.1472 37.6768 42.6671 37.6768 37.1408C37.6768 31.6144 33.1961 27.1344 27.6688 27.1344C22.1415 27.1344 17.6608 31.6144 17.6608 37.1408C17.6608 42.6671 22.1415 47.1472 27.6688 47.1472Z" fill="#0D416D"/>
             <Path d="M40.2732 34.8842C41.0691 34.8842 41.7143 34.239 41.7143 33.4431C41.7143 32.6472 41.0691 32.002 40.2732 32.002C39.4773 32.002 38.8322 32.6472 38.8322 33.4431C38.8322 34.239 39.4773 34.8842 40.2732 34.8842Z" fill="#B71D17"/>
             <Path d="M41.0048 16.4604H13.3982V19.6324H41.0048V16.4604Z" fill="#B71D17"/>
@@ -114,7 +114,7 @@ export default function AnimatedSplash({ onAnimationFinish }: Props) {
                 key={index}
                 d={item.d}
                 fill={item.color}
-                style={{ opacity, transform: [{ translateX }] }}
+                style={{ opacity, transform: [{ translateX }] } as any}
               />
             );
           })}

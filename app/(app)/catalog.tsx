@@ -76,7 +76,7 @@ export default function CatalogScreen() {
       const payload = extractPagePayload(response.data);
       const list = Array.from(
         new Set(payload.results.map((u: any) => u.country).filter(Boolean))
-      ).sort((a, b) => String(a).localeCompare(String(b)));
+      ).map(String).sort((a, b) => a.localeCompare(b));
       setCountries(['all', ...list]);
     } catch (e) {
       console.log('Countries load error', e);

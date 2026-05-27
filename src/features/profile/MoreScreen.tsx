@@ -1,0 +1,182 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { Header } from '../../components/layout/Header';
+import { ScreenContainer } from '../../components/layout/ScreenContainer';
+import { theme } from '../../theme/theme';
+import { useAuth } from '../../store/auth';
+
+type MoreItem = {
+  title: string;
+  subtitle: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  route?: string;
+  danger?: boolean;
+  onPress?: () => void;
+};
+
+export function MoreScreen() {
+  const router = useRouter();
+  const { logout } = useAuth();
+
+  const confirmLogout = () => {
+    Alert.alert('Выход', 'Завершить текущую сессию?', [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Выйти',
+        style: 'destructive',
+        onPress: () => {
+          void logout().then(() => router.replace('/login' as any));
+        },
+      },
+    ]);
+  };
+
+  const items: MoreItem[] = [
+    {
+      title: 'Вузы',
+      subtitle: 'Страны, города, университеты и программы',
+      icon: 'school-outline',
+      route: '/(app)/education',
+    },
+    {
+      title: 'Календарь',
+      subtitle: 'Запрошен backend endpoint для событий',
+      icon: 'calendar-outline',
+      route: '/(app)/calendar',
+    },
+    {
+      title: 'Документы',
+      subtitle: 'Шаблоны и созданные документы',
+      icon: 'document-text-outline',
+      route: '/(app)/documents-v2',
+    },
+    {
+      title: 'База знаний',
+      subtitle: 'Папки и статьи',
+      icon: 'library-outline',
+      route: '/(app)/knowledge',
+    },
+    {
+      title: 'Рейтинг',
+      subtitle: 'Командный рейтинг',
+      icon: 'trophy-outline',
+      route: '/(app)/rating',
+    },
+    {
+      title: 'Уведомления',
+      subtitle: 'Последние события кабинета',
+      icon: 'notifications-outline',
+      route: '/(app)/notifications',
+    },
+    {
+      title: 'Профиль',
+      subtitle: 'Текущий пользователь и сессия',
+      icon: 'person-circle-outline',
+      route: '/(app)/profile-v2',
+    },
+    {
+      title: 'Настройки',
+      subtitle: 'API, тема и параметры приложения',
+      icon: 'settings-outline',
+      route: '/(app)/settings',
+    },
+    {
+      title: 'Выход',
+      subtitle: 'Завершить сессию на устройстве',
+      icon: 'log-out-outline',
+      danger: true,
+      onPress: confirmLogout,
+    },
+  ];
+
+  return (
+    <ScreenContainer>
+      <Header title="Ещё" subtitle="Дополнительные разделы ManagerSL." />
+
+      <View style={styles.list}>
+        {items.map((item) => (
+          <Pressable
+            key={item.title}
+            onPress={() => (item.onPress ? item.onPress() : router.push(item.route as any))}
+            style={({ pressed }) => [
+              styles.row,
+              pressed && styles.rowPressed,
+              item.danger && styles.rowDanger,
+            ]}
+          >
+            <View style={[styles.icon, item.danger && styles.iconDanger]}>
+              <Ionicons
+                name={item.icon}
+                size={22}
+                color={item.danger ? theme.colors.danger : theme.colors.primary}
+              />
+            </View>
+            <View style={styles.rowText}>
+              <Text style={[styles.title, item.danger && styles.dangerText]}>{item.title}</Text>
+              <Text style={styles.subtitle}>{item.subtitle}</Text>
+            </View>
+            {!item.danger ? (
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+            ) : null}
+          </Pressable>
+        ))}
+      </View>
+    </ScreenContainer>
+  );
+}
+
+const styles = StyleSheet.create({
+  list: {
+    gap: theme.spacing.md,
+  },
+  row: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.md,
+    ...theme.shadow.card,
+  },
+  rowPressed: {
+    opacity: 0.76,
+  },
+  rowDanger: {
+    borderColor: theme.colors.dangerSoft,
+  },
+  icon: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.primarySoft,
+  },
+  iconDanger: {
+    backgroundColor: theme.colors.dangerSoft,
+  },
+  rowText: {
+    flex: 1,
+    gap: 4,
+  },
+  title: {
+    color: theme.colors.text,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  dangerText: {
+    color: theme.colors.danger,
+  },
+  subtitle: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+});

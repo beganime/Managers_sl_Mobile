@@ -29,6 +29,8 @@ export interface ThemePalette {
   success: string;
   warning: string;
   danger: string;
+  card: string;
+  white: string;
 
   gradientMain: string[];
   gradientSurface: string[];
@@ -78,6 +80,8 @@ function buildLightTheme(): ThemePalette {
     success: '#12A150',
     warning: '#D98B07',
     danger: '#D9363E',
+    card: '#FFFFFF',
+    white: '#FFFFFF',
 
     gradientMain: ['#F7F9FC', '#EEF4FF', '#FFF6F6'],
     gradientSurface: ['#FFFFFF', '#F8FBFF'],
@@ -127,6 +131,8 @@ function buildDarkTheme(): ThemePalette {
     success: '#35C979',
     warning: '#F3B43F',
     danger: '#FF6E73',
+    card: '#162235',
+    white: '#FFFFFF',
 
     gradientMain: ['#0E1724', '#132033', '#1B2433'],
     gradientSurface: ['#162235', '#1A2940'],

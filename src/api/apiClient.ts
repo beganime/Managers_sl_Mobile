@@ -1,11 +1,19 @@
-import axios, { AxiosError, AxiosRequestConfig } from 'axios';
+import { AxiosRequestConfig } from 'axios';
 import { Platform } from 'react-native';
 
-import { deleteToken, getToken, saveToken } from '../utils/storage';
+import {
+  API_BASE_URL,
+  apiClient,
+  extractItems,
+  getJson,
+  normalizeApiPath,
+  patchJson,
+  v1,
+} from './client';
+import { getMe, login, logout } from './auth';
 
-export const BASE_URL = 'https://manager-sl.ru/api/';
-
-export const API_ORIGIN = BASE_URL.replace(/\/api\/?$/i, '').replace(/\/$/, '');
+export const BASE_URL = API_BASE_URL;
+export const API_ORIGIN = API_BASE_URL;
 
 type UploadInput = {
   uri: string;
@@ -14,19 +22,12 @@ type UploadInput = {
   mimeType?: string;
 };
 
-const apiClient = axios.create({
-  baseURL: BASE_URL,
-  timeout: 30000,
+export const multipartConfig: AxiosRequestConfig = {
   headers: {
     Accept: 'application/json',
-    'Content-Type': 'application/json',
   },
-});
-
-function normalizePath(path: string) {
-  if (!path) return '';
-  return path.startsWith('/') ? path.slice(1) : path;
-}
+  transformRequest: [(data) => data],
+};
 
 export function buildAbsoluteFileUrl(value?: string | null) {
   if (!value) return null;
@@ -45,81 +46,44 @@ export function buildAbsoluteFileUrl(value?: string | null) {
   return `${API_ORIGIN}/${raw.replace(/^\/+/, '')}`;
 }
 
-function isFormDataPayload(data: unknown) {
-  if (!data) return false;
-  if (typeof FormData !== 'undefined' && data instanceof FormData) return true;
-
-  const maybeFormData = data as any;
-
-  return (
-    typeof maybeFormData === 'object' &&
-    typeof maybeFormData.append === 'function' &&
-    (typeof maybeFormData.getParts === 'function' || String(maybeFormData).includes('FormData'))
-  );
+export function extractList(payload: unknown): any[] {
+  return extractItems<any>(payload);
 }
 
-function stripJsonContentType(config: AxiosRequestConfig) {
-  if (!config.headers) return;
-
-  const headers: any = config.headers;
-
-  if (typeof headers.delete === 'function') {
-    headers.delete('Content-Type');
-    headers.delete('content-type');
-    return;
-  }
-
-  delete headers['Content-Type'];
-  delete headers['content-type'];
+export function extractResults(payload: unknown): any[] {
+  return extractList(payload);
 }
 
-export const multipartConfig: AxiosRequestConfig = {
-  headers: {
-    Accept: 'application/json',
-  },
-  transformRequest: [(data) => data],
-};
+function asV1Path(path: string) {
+  const normalized = normalizeApiPath(path);
 
-async function persistUserCacheFromResponse(payload: any) {
-  if (payload && typeof payload === 'object') {
-    if (payload.user) {
-      await saveToken('cache_my_profile', JSON.stringify(payload.user));
-      return;
-    }
+  if (normalized.startsWith('/api/')) return normalized;
 
-    if (payload.id && payload.email) {
-      await saveToken('cache_my_profile', JSON.stringify(payload));
-    }
-  }
-}
-
-export function extractList(payload: any): any[] {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.results)) return payload.results;
-  return [];
+  return v1(normalized);
 }
 
 export async function fetchAllPages(path: string, limit = 100) {
-  let url = normalizePath(path);
-
-  if (!url.includes('limit=')) {
-    url += `${url.includes('?') ? '&' : '?'}limit=${limit}&offset=0`;
-  }
-
   const all: any[] = [];
-  let nextUrl: string | null = url;
+  let offset = 0;
+  let nextPath: string | null = asV1Path(path);
 
-  while (nextUrl) {
-    const response = await apiClient.get(nextUrl);
-    const data = response.data;
+  while (nextPath) {
+    const currentPath: string = nextPath;
+    const separator = currentPath.includes('?') ? '&' : '?';
+    const url: string = currentPath.includes('limit=')
+      ? currentPath
+      : `${currentPath}${separator}limit=${limit}&offset=${offset}`;
+    const payload: any = await getJson<any>(url);
 
-    all.push(...extractList(data));
+    all.push(...extractList(payload));
 
-    if (typeof data?.next === 'string' && data.next.length > 0) {
-      const cleanBase = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
-      nextUrl = data.next.startsWith(cleanBase) ? data.next.replace(cleanBase, '') : data.next;
+    if (typeof payload?.next === 'string' && payload.next) {
+      nextPath = payload.next.startsWith(API_BASE_URL)
+        ? payload.next.slice(API_BASE_URL.length)
+        : payload.next;
+      offset += limit;
     } else {
-      nextUrl = null;
+      nextPath = null;
     }
   }
 
@@ -127,59 +91,28 @@ export async function fetchAllPages(path: string, limit = 100) {
 }
 
 export async function loginRequest(email: string, password: string) {
-  try {
-    const response = await apiClient.post('auth/login/', { email, password });
-
-    if (response.data?.access) await saveToken('access_token', response.data.access);
-    if (response.data?.refresh) await saveToken('refresh_token', response.data.refresh);
-
-    await persistUserCacheFromResponse(response.data);
-    return response.data;
-  } catch {
-    const fallback = await apiClient.post('token/', { email, password });
-
-    if (fallback.data?.access) await saveToken('access_token', fallback.data.access);
-    if (fallback.data?.refresh) await saveToken('refresh_token', fallback.data.refresh);
-
-    return fallback.data;
-  }
+  return login({ email, password });
 }
 
 export async function logoutRequest() {
-  const refresh = await getToken('refresh_token');
-
-  try {
-    if (refresh) await apiClient.post('auth/logout/', { refresh });
-  } catch {
-  } finally {
-    await deleteToken('access_token');
-    await deleteToken('refresh_token');
-    await deleteToken('cache_my_profile');
-  }
+  return logout();
 }
 
 export async function getMyProfile() {
-  const response = await apiClient.get('users/users/me/');
-  await persistUserCacheFromResponse(response.data);
-  return response.data;
+  return getMe();
 }
 
 export async function updateMyProfile(payload: Record<string, any>) {
-  const response = await apiClient.patch('users/users/me/', payload);
-  await persistUserCacheFromResponse(response.data);
-  return response.data;
+  return patchJson(v1('/me/'), payload);
 }
 
 export function getFileNameFromUri(uri?: string, fallbackName = 'file') {
   if (!uri) return fallbackName;
 
-  try {
-    const clean = uri.split('?')[0].split('#')[0];
-    const last = clean.split('/').pop();
-    return last || fallbackName;
-  } catch {
-    return fallbackName;
-  }
+  const clean = uri.split('?')[0].split('#')[0];
+  const last = clean.split('/').pop();
+
+  return last || fallbackName;
 }
 
 export function ensureFileNameHasExtension(name: string, mimeType?: string) {
@@ -248,92 +181,11 @@ export async function uploadMyAvatar(file: UploadInput) {
   const fd = new FormData();
   await appendPreparedFile(fd, 'avatar', file, 'avatar.jpg');
 
-  const response = await apiClient.patch('users/users/me/', fd, multipartConfig);
-
-  await persistUserCacheFromResponse(response.data);
-  return response.data;
+  return patchJson(v1('/me/'), fd, multipartConfig);
 }
 
 export async function removeMyAvatar() {
-  const response = await apiClient.patch('users/users/me/', { remove_avatar: true });
-  await persistUserCacheFromResponse(response.data);
-  return response.data;
+  return patchJson(v1('/me/'), { remove_avatar: true });
 }
-
-apiClient.interceptors.request.use(
-  async (config) => {
-    const token = await getToken('access_token');
-
-    config.headers = config.headers || {};
-
-    if (token) {
-      (config.headers as any).Authorization = `Bearer ${token}`;
-    }
-
-    if (isFormDataPayload(config.data)) {
-      stripJsonContentType(config);
-      config.transformRequest = [(data) => data];
-    }
-
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-apiClient.interceptors.response.use(
-  async (response) => {
-    await persistUserCacheFromResponse(response.data);
-    return response;
-  },
-  async (error: AxiosError & { config?: any }) => {
-    const originalRequest = error.config;
-
-    if (error?.response?.status === 401 && originalRequest && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      try {
-        const refreshToken = await getToken('refresh_token');
-        if (!refreshToken) throw new Error('No refresh token');
-
-        let refreshResponse;
-
-        try {
-          refreshResponse = await axios.post(`${BASE_URL}auth/refresh/`, { refresh: refreshToken });
-        } catch {
-          refreshResponse = await axios.post(`${BASE_URL}token/refresh/`, { refresh: refreshToken });
-        }
-
-        const newAccess = (refreshResponse as any).data?.access;
-        if (!newAccess) throw new Error('No new access token');
-
-        await saveToken('access_token', newAccess);
-
-        originalRequest.headers = originalRequest.headers || {};
-        originalRequest.headers.Authorization = `Bearer ${newAccess}`;
-
-        if (isFormDataPayload(originalRequest.data)) {
-          if (typeof originalRequest.headers.delete === 'function') {
-            originalRequest.headers.delete('Content-Type');
-            originalRequest.headers.delete('content-type');
-          } else {
-            delete originalRequest.headers['Content-Type'];
-            delete originalRequest.headers['content-type'];
-          }
-
-          originalRequest.transformRequest = [(data: any) => data];
-        }
-
-        return apiClient(originalRequest);
-      } catch (refreshError) {
-        await deleteToken('access_token');
-        await deleteToken('refresh_token');
-        await deleteToken('cache_my_profile');
-        return Promise.reject(refreshError);
-      }
-    }
-
-    return Promise.reject(error);
-  }
-);
 
 export default apiClient;

@@ -35,6 +35,7 @@ export async function scheduleTaskReminder(title: string, description: string, d
             priority: Notifications.AndroidNotificationPriority.HIGH,
         },
         trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
             date: date, // Точная дата и время срабатывания
         },
     });

@@ -1,28 +1,20 @@
 import { Redirect } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, View } from 'react-native';
 
-import { useCurrentUser } from '../hooks/useCurrentUser';
-import { useTheme } from '../src/context/ThemeContext';
+import { LoadingState } from '../src/components/ui/LoadingState';
+import { ScreenContainer } from '../src/components/layout/ScreenContainer';
+import { useAuth } from '../src/store/auth';
 
 export default function IndexScreen() {
-  const { theme } = useTheme();
-  const { user, loading } = useCurrentUser();
+  const { isAuthenticated, status } = useAuth();
 
-  if (loading) {
+  if (status === 'loading') {
     return (
-      <View
-        style={{
-          flex: 1,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: theme.background,
-        }}
-      >
-        <ActivityIndicator size="large" color={theme.blue} />
-      </View>
+      <ScreenContainer scroll={false}>
+        <LoadingState title="Проверяем сессию" />
+      </ScreenContainer>
     );
   }
 
-  return <Redirect href={user?.id ? '/(app)' : '/login'} />;
+  return <Redirect href={(isAuthenticated ? '/(app)/(tabs)' : '/login') as any} />;
 }

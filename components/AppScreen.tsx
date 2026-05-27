@@ -16,7 +16,10 @@ export default function AppScreen({ children, scroll = true, contentContainerSty
   const content = (
     <>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} translucent backgroundColor="transparent" />
-      <LinearGradient colors={theme.gradientMain} style={StyleSheet.absoluteFillObject} />
+      <LinearGradient
+        colors={theme.gradientMain as [string, string, ...string[]]}
+        style={StyleSheet.absoluteFillObject}
+      />
       <View style={[styles.orb, { top: -40, right: -30, backgroundColor: theme.red, opacity: isDark ? 0.10 : 0.08 }]} />
       <View style={[styles.orbLarge, { bottom: 80, left: -90, backgroundColor: theme.blue, opacity: isDark ? 0.10 : 0.08 }]} />
       {scroll ? (
