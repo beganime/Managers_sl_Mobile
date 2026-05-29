@@ -37,14 +37,26 @@ export function MoreScreen() {
 
   const items: MoreItem[] = [
     {
+      title: 'Проекты',
+      subtitle: 'Проекты, разделы и командные задачи',
+      icon: 'briefcase-outline',
+      route: '/(app)/projects-v2',
+    },
+    {
       title: 'Вузы',
       subtitle: 'Страны, города, университеты и программы',
       icon: 'school-outline',
       route: '/(app)/education',
     },
     {
+      title: 'Услуги',
+      subtitle: 'Категории, услуги и прайс-листы',
+      icon: 'pricetags-outline',
+      route: '/(app)/services-v2',
+    },
+    {
       title: 'Календарь',
-      subtitle: 'Раздел скоро будет доступен после backend endpoint',
+      subtitle: 'Shell готов, ожидает backend endpoint событий',
       icon: 'calendar-outline',
       route: '/(app)/calendar',
     },
@@ -56,13 +68,13 @@ export function MoreScreen() {
     },
     {
       title: 'База знаний',
-      subtitle: 'Папки и статьи',
+      subtitle: 'Категории, статьи, вложения и отметка прочтения',
       icon: 'library-outline',
       route: '/(app)/knowledge',
     },
     {
       title: 'Рейтинг',
-      subtitle: 'Командный рейтинг',
+      subtitle: 'Командный рейтинг и личные показатели',
       icon: 'trophy-outline',
       route: '/(app)/rating',
     },
@@ -103,7 +115,9 @@ export function MoreScreen() {
 
       <Card glass style={styles.hero}>
         <Text style={styles.heroTitle}>ManagerSL mobile cabinet</Text>
-        <Text style={styles.heroText}>Навигация по ERP, CRM, HRM и сервисным разделам.</Text>
+        <Text style={styles.heroText}>
+          Навигация по ERP, CRM, HRM, сервисам, знаниям и проектной работе.
+        </Text>
       </Card>
 
       <View style={styles.list}>
@@ -151,6 +165,7 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 13,
     fontWeight: '700',
+    lineHeight: 19,
   },
   list: {
     gap: theme.spacing.md,

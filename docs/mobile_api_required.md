@@ -70,3 +70,40 @@ Required for one-tap client document creation:
 - a dedicated `POST /api/v1/crm/clients/{id}/documents/`.
 
 Current app behavior: client cards show the document action only as navigation context for later document sprint; no unconfirmed URL is called.
+
+## Sprint 3 Projects, Education, Services, Knowledge
+
+Confirmed in backend routing and used by the mobile app:
+
+- `GET/POST /api/v1/projects/`
+- `GET/PATCH /api/v1/projects/{id}/`
+- `GET/POST /api/v1/projects/tasks/`
+- `GET/PATCH /api/v1/projects/tasks/{id}/`
+- `POST /api/v1/projects/tasks/{id}/complete_task/`
+- `POST /api/v1/projects/tasks/{id}/reopen_task/`
+- `POST /api/v1/projects/tasks/{id}/add_comment/`
+- `GET /api/v1/projects/comments/?task={id}`
+- `GET /api/v1/education/universities/`
+- `GET /api/v1/education/universities/{id}/`
+- `GET /api/v1/education/programs/`
+- `GET /api/v1/education/programs/{id}/`
+- `GET /api/v1/services/categories/`
+- `GET /api/v1/services/services/`
+- `GET /api/v1/services/services/{id}/`
+- `GET /api/v1/services/prices/`
+- `GET /api/v1/knowledge/categories/`
+- `GET /api/v1/knowledge/articles/`
+- `GET /api/v1/knowledge/articles/{id}/`
+- `POST /api/v1/knowledge/articles/{id}/mark-read/`
+
+Important Sprint 3 correction: the old mobile wrapper used `GET /api/v1/knowledge/folders/`.
+Backend exposes knowledge categories, not folders, so the app now calls `GET /api/v1/knowledge/categories/`.
+
+Still missing for Sprint 3 calendar:
+
+- `GET /api/v1/calendar/events/`
+- `POST /api/v1/calendar/events/`
+- `PATCH /api/v1/calendar/events/{id}/`
+- `DELETE /api/v1/calendar/events/{id}/`
+
+Current app behavior: Tasks, Projects, Education, Services and Knowledge use confirmed endpoints. Calendar remains a documented shell and shows "Раздел скоро будет доступен" instead of calling an unconfirmed URL.

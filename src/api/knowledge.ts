@@ -1,10 +1,26 @@
-import { ApiListItem, ApiParams, CollectionResponse } from '../types';
-import { getJson, v1 } from './client';
+import { ApiListItem, ApiParams, CollectionResponse, EntityId } from '../types';
+import { getJson, postJson, v1 } from './client';
+
+export function listKnowledgeCategories(params?: ApiParams) {
+  return getJson<CollectionResponse<ApiListItem>>(v1('/knowledge/categories/'), { params });
+}
+
+export function getKnowledgeCategory(id: EntityId) {
+  return getJson<ApiListItem>(v1(`/knowledge/categories/${id}/`));
+}
 
 export function listKnowledgeFolders(params?: ApiParams) {
-  return getJson<CollectionResponse<ApiListItem>>(v1('/knowledge/folders/'), { params });
+  return listKnowledgeCategories(params);
 }
 
 export function listKnowledgeArticles(params?: ApiParams) {
   return getJson<CollectionResponse<ApiListItem>>(v1('/knowledge/articles/'), { params });
+}
+
+export function getKnowledgeArticle(id: EntityId) {
+  return getJson<ApiListItem>(v1(`/knowledge/articles/${id}/`));
+}
+
+export function markKnowledgeArticleRead(id: EntityId) {
+  return postJson<ApiListItem>(v1(`/knowledge/articles/${id}/mark-read/`));
 }

@@ -11,6 +11,7 @@ type HeaderProps = {
   eyebrow?: string;
   showBack?: boolean;
   onBack?: () => void;
+  parentFallback?: string;
 };
 
 export function Header({
@@ -19,6 +20,7 @@ export function Header({
   eyebrow = 'ManagerSL',
   showBack = false,
   onBack,
+  parentFallback,
 }: HeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -31,6 +33,11 @@ export function Header({
 
     if (router.canGoBack()) {
       router.back();
+      return;
+    }
+
+    if (parentFallback) {
+      router.replace(parentFallback as any);
       return;
     }
 
