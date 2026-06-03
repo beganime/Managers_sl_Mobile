@@ -99,7 +99,7 @@ export function ProjectsScreen() {
             <Card glass style={styles.hero}>
               <Text style={styles.heroKicker}>Projects v2</Text>
               <Text style={styles.heroTitle}>Все проекты в одном списке</Text>
-              <Text style={styles.heroText}>Сейчас доступно {count} проектов из /api/v1/projects/.</Text>
+              <Text style={styles.heroText}>Сейчас доступно {count} проектов.</Text>
               <Button title="Новый проект" onPress={() => router.push('/(app)/projects-v2/create' as any)} />
             </Card>
 

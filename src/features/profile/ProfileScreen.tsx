@@ -5,19 +5,20 @@ import React from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '../../components/cards/Card';
+import { Header } from '../../components/layout/Header';
 import { ProfileAvatar } from '../../components/profile/ProfileAvatar';
 import { Button } from '../../components/ui/Button';
-import { Header } from '../../components/layout/Header';
-import { ScreenContainer } from '../../components/layout/ScreenContainer';
-import { theme } from '../../theme/theme';
 import { useAuth } from '../../store/auth';
-import { getUserDisplayName } from '../../utils/format';
+import { theme } from '../../theme/theme';
+import { getUserDisplayName, getUserPosition } from '../../utils/format';
+import { ScreenContainer } from '../../components/layout/ScreenContainer';
 
 export function ProfileScreen() {
   const router = useRouter();
   const { logout, user } = useAuth();
   const salary = user?.managersalary;
   const office = user?.office;
+  const position = getUserPosition(user);
 
   const confirmLogout = () => {
     Alert.alert('Выход', 'Завершить текущую сессию на этом устройстве?', [
@@ -56,7 +57,8 @@ export function ProfileScreen() {
           </View>
         </View>
         <View style={styles.heroPills}>
-          <HeroPill icon="shield-checkmark-outline" text={user?.role || 'Роль не указана'} />
+          <HeroPill icon="ribbon-outline" text={position} />
+          <HeroPill icon="shield-checkmark-outline" text={user?.role_display || user?.role || 'Роль не указана'} />
           <HeroPill icon="business-outline" text={office?.city || 'Офис не указан'} />
         </View>
       </LinearGradient>
@@ -70,6 +72,7 @@ export function ProfileScreen() {
       <Card style={styles.card}>
         <Text style={styles.cardTitle}>Рабочие данные</Text>
         <ProfileRow label="Имя" value={getUserDisplayName(user)} />
+        <ProfileRow label="Должность" value={position} />
         <ProfileRow label="Телефон офиса" value={office?.phone} />
         <ProfileRow label="Адрес офиса" value={office?.address} />
         <ProfileRow label="Описание работы" value={user?.job_description} />
@@ -77,6 +80,7 @@ export function ProfileScreen() {
 
       <Card style={styles.actions}>
         <Text style={styles.cardTitle}>Управление</Text>
+        <ActionRow icon="reader-outline" title="Мои отчёты" onPress={() => router.push('/(app)/reports-history' as any)} />
         <ActionRow icon="settings-outline" title="Настройки приложения" onPress={() => router.push('/(app)/settings' as any)} />
         <ActionRow icon="notifications-outline" title="Уведомления" onPress={() => router.push('/(app)/notifications' as any)} />
         <ActionRow icon="calendar-outline" title="Календарь" onPress={() => router.push('/(app)/calendar' as any)} />

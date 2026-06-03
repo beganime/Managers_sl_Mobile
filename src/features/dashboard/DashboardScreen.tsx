@@ -3,25 +3,25 @@ import { useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { getDashboardSummary } from '../../api/dashboard';
 import { startWorkday } from '../../api/attendance';
+import { extractItems, toApiError } from '../../api/client';
+import { getDashboardSummary } from '../../api/dashboard';
 import { listNotifications } from '../../api/notifications';
 import { listProjectTasks } from '../../api/projects';
-import { extractItems, toApiError } from '../../api/client';
-import { ApiListItem, DashboardSummary } from '../../types';
-import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/cards/Card';
+import { StatCard } from '../../components/cards/StatCard';
+import { Header } from '../../components/layout/Header';
+import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState } from '../../components/ui/ErrorState';
-import { Header } from '../../components/layout/Header';
 import { LoadingState } from '../../components/ui/LoadingState';
-import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { SectionTitle } from '../../components/ui/SectionTitle';
-import { StatCard } from '../../components/cards/StatCard';
-import { theme } from '../../theme/theme';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { useAuth } from '../../store/auth';
-import { formatWorkdayStatus, getItemTitle, getUserDisplayName } from '../../utils/format';
+import { theme } from '../../theme/theme';
+import { ApiListItem, DashboardSummary } from '../../types';
+import { formatWorkdayStatus, getItemTitle, getUserDisplayName, getUserPosition } from '../../utils/format';
+import { ScreenContainer } from '../../components/layout/ScreenContainer';
 
 type DashboardData = DashboardSummary & {
   todayTasks: ApiListItem[];
@@ -83,7 +83,7 @@ export function DashboardScreen() {
     return (
       <ScreenContainer>
         <Header title="Главная" subtitle="ManagerSL ERP/CRM workspace" />
-        <EmptyState title="Пока нет данных" message="После синхронизации здесь появятся показатели." />
+        <EmptyState title="Пока нет данных" message="После синхронизации здесь появятся показатели кабинета." />
       </ScreenContainer>
     );
   }
@@ -104,8 +104,9 @@ export function DashboardScreen() {
       >
         <Text style={styles.heroKicker}>Students Life Program for Managers</Text>
         <Text style={styles.heroTitle}>Здравствуйте, {getUserDisplayName(user)}</Text>
+        <Text style={styles.heroPosition}>{getUserPosition(user)}</Text>
         <Text style={styles.heroText}>
-          Сегодняшний рабочий день, CRM, задачи и уведомления собраны в одном кабинете.
+          Рабочий день, CRM, задачи и уведомления собраны в одном мобильном кабинете.
         </Text>
       </LinearGradient>
 
@@ -126,7 +127,7 @@ export function DashboardScreen() {
         />
       ) : null}
 
-      <SectionTitle title="Показатели" subtitle="Сводка из рабочих endpoints /api/v1." />
+      <SectionTitle title="Показатели" subtitle="Рабочая сводка по вашему кабинету." />
 
       <View style={styles.stats}>
         <StatCard label="Мои лиды" value={data.stats.leads} tone="accent" />
@@ -142,14 +143,14 @@ export function DashboardScreen() {
         <QuickAction title="Добавить клиента" onPress={() => router.push('/(app)/crm/clients/create' as any)} />
         <QuickAction title="Добавить доход" onPress={() => router.push('/(app)/finance-v2/incomes/create' as any)} />
         <QuickAction title="Добавить задачу" onPress={() => router.push('/(app)/tasks-v2/create' as any)} />
-        <QuickAction title="Проекты" onPress={() => router.push('/(app)/projects-v2' as any)} />
+        <QuickAction title="Мои отчёты" onPress={() => router.push('/(app)/reports-history' as any)} />
       </View>
 
-      <SectionTitle title="Сегодня" subtitle="Календарь будет подключён после backend endpoint." />
+      <SectionTitle title="Сегодня" subtitle="Календарь, задачи и рабочий день." />
 
       <Card style={styles.today}>
         <Text style={styles.todayTitle}>Календарные события</Text>
-        <Text style={styles.todayText}>Раздел скоро будет доступен после `GET /api/v1/calendar/events/`.</Text>
+        <Text style={styles.todayText}>События появятся здесь после синхронизации календаря.</Text>
       </Card>
 
       <Card style={styles.today}>
@@ -223,6 +224,19 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '900',
     lineHeight: 34,
+  },
+  heroPosition: {
+    alignSelf: 'flex-start',
+    overflow: 'hidden',
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    color: theme.colors.white,
+    fontSize: 12,
+    fontWeight: '900',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 7,
   },
   heroText: {
     color: 'rgba(255,255,255,0.82)',

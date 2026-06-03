@@ -6,8 +6,8 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Card } from '../../components/cards/Card';
 import { Header } from '../../components/layout/Header';
 import { ScreenContainer } from '../../components/layout/ScreenContainer';
-import { theme } from '../../theme/theme';
 import { useAuth } from '../../store/auth';
+import { theme } from '../../theme/theme';
 
 type MoreItem = {
   title: string;
@@ -37,10 +37,22 @@ export function MoreScreen() {
 
   const items: MoreItem[] = [
     {
+      title: 'Задачи',
+      subtitle: 'Мои задачи, проекты и командная работа',
+      icon: 'checkbox-outline',
+      route: '/(app)/(tabs)/tasks',
+    },
+    {
       title: 'Проекты',
       subtitle: 'Проекты, разделы и командные задачи',
       icon: 'briefcase-outline',
       route: '/(app)/projects-v2',
+    },
+    {
+      title: 'Мои отчёты',
+      subtitle: 'История рабочих отчётов за вчера, позавчера и другие дни',
+      icon: 'reader-outline',
+      route: '/(app)/reports-history',
     },
     {
       title: 'Вузы',
@@ -56,27 +68,21 @@ export function MoreScreen() {
     },
     {
       title: 'Календарь',
-      subtitle: 'Shell готов, ожидает backend endpoint событий',
+      subtitle: 'События, задачи и рабочий день',
       icon: 'calendar-outline',
       route: '/(app)/calendar',
     },
     {
       title: 'Документы',
-      subtitle: 'Шаблоны и созданные документы',
+      subtitle: 'Шаблоны, генерация и согласование',
       icon: 'document-text-outline',
       route: '/(app)/documents-v2',
     },
     {
       title: 'База знаний',
-      subtitle: 'Категории, статьи, вложения и отметка прочтения',
+      subtitle: 'Категории, статьи и вложения',
       icon: 'library-outline',
       route: '/(app)/knowledge',
-    },
-    {
-      title: 'Рейтинг',
-      subtitle: 'Командный рейтинг и личные показатели',
-      icon: 'trophy-outline',
-      route: '/(app)/rating',
     },
     {
       title: 'Уведомления',
@@ -86,13 +92,13 @@ export function MoreScreen() {
     },
     {
       title: 'Профиль',
-      subtitle: 'Текущий пользователь и сессия',
+      subtitle: 'Пользователь, должность, офис и сессия',
       icon: 'person-circle-outline',
       route: '/(app)/profile-v2',
     },
     {
       title: 'Настройки',
-      subtitle: 'API, тема и параметры приложения',
+      subtitle: 'Внешний вид, push и параметры приложения',
       icon: 'settings-outline',
       route: '/(app)/settings',
     },
@@ -116,7 +122,7 @@ export function MoreScreen() {
       <Card glass style={styles.hero}>
         <Text style={styles.heroTitle}>ManagerSL mobile cabinet</Text>
         <Text style={styles.heroText}>
-          Навигация по ERP, CRM, HRM, сервисам, знаниям и проектной работе.
+          Управление CRM, задачами, документами, знаниями, отчётами и настройками собрано в одном месте.
         </Text>
       </Card>
 

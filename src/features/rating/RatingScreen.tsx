@@ -25,15 +25,15 @@ import { theme } from '../../theme/theme';
 import { ApiListItem } from '../../types';
 import { getEntityId, getEntityNumber, getEntityString, getEntityTitle } from '../../utils/entity';
 
-const periodOptions = [
-  { label: 'Текущий', value: 'current' },
-  { label: 'Месяц', value: 'month' },
+const roleOptions = [
   { label: 'Все', value: 'all' },
+  { label: 'Менеджеры', value: 'manager' },
+  { label: 'Админы', value: 'admin' },
 ];
 
 export function RatingScreen() {
   const [search, setSearch] = useState('');
-  const [period, setPeriod] = useState('current');
+  const [role, setRole] = useState('all');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
 
   const loader = useCallback(
@@ -42,10 +42,9 @@ export function RatingScreen() {
         limit,
         offset,
         search: debouncedSearch || undefined,
-        current_period: period === 'current' ? true : undefined,
-        period: period === 'month' ? 'month' : undefined,
+        role: role === 'all' ? undefined : role,
       }),
-    [debouncedSearch, period]
+    [debouncedSearch, role]
   );
 
   const { items, count, loading, refreshing, loadingMore, error, refresh, loadMore } =
@@ -78,24 +77,28 @@ export function RatingScreen() {
           <View style={styles.headerStack}>
             <Header
               title="Рейтинг"
-              eyebrow="Sprint 4"
-              subtitle="Командный leaderboard. Если /api/v1/rating/ отсутствует, используется legacy fallback."
-              showBack
+              eyebrow="ManagerSL"
+              subtitle="Список сотрудников, KPI и фильтр по должностям."
             />
 
             <Card glass style={styles.hero}>
-              <Text style={styles.heroKicker}>ManagerSL rating</Text>
-              <Text style={styles.heroTitle}>Кто сегодня двигает результат</Text>
-              <Text style={styles.heroText}>
-                В рейтинге {count} участников. Поиск работает по имени, email и офису.
-              </Text>
+              <View style={styles.heroIcon}>
+                <Ionicons name="trophy-outline" size={26} color={theme.colors.accent} />
+              </View>
+              <View style={styles.heroTextWrap}>
+                <Text style={styles.heroKicker}>Students Life Program for Managers</Text>
+                <Text style={styles.heroTitle}>Командный рейтинг</Text>
+                <Text style={styles.heroText}>
+                  В списке {count} сотрудников. Можно искать по имени, email, офису или должности.
+                </Text>
+              </View>
             </Card>
 
-            <SegmentedControl options={periodOptions} value={period} onChange={setPeriod} />
+            <SegmentedControl options={roleOptions} value={role} onChange={setRole} />
 
             <Input
               label="Поиск"
-              placeholder="Сотрудник, email или офис"
+              placeholder="Сотрудник, должность, email или офис"
               value={search}
               onChangeText={setSearch}
               returnKeyType="search"
@@ -108,7 +111,7 @@ export function RatingScreen() {
           loading ? (
             <LoadingState title="Загружаем рейтинг" />
           ) : (
-            <EmptyState title="Рейтинг пока пуст" message="Данные появятся после расчёта KPI." />
+            <EmptyState title="Рейтинг пока пуст" message="Данные появятся после расчёта KPI сотрудников." />
           )
         }
         ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
@@ -126,10 +129,11 @@ const RatingRow = memo(function RatingRow({
   item: ApiListItem;
   fallbackRank: number;
 }) {
-  const rank = getEntityNumber(item, ['rank', 'position'], fallbackRank);
+  const rank = getEntityNumber(item, ['rank', 'position_index'], fallbackRank);
   const score = getEntityNumber(item, ['score', 'points', 'total_score', 'kpi_score'], 0);
   const revenue = getEntityNumber(item, ['revenue', 'revenue_usd', 'current_month_revenue'], 0);
   const office = getEntityString(item, ['office_name', 'office_city', 'office']);
+  const position = getEntityString(item, ['position', 'role_display', 'role'], 'Должность не указана');
 
   return (
     <Card style={styles.row}>
@@ -138,7 +142,8 @@ const RatingRow = memo(function RatingRow({
       </View>
       <View style={styles.rowText}>
         <Text style={styles.rowTitle}>{getEntityTitle(item, 'Сотрудник')}</Text>
-        <Text style={styles.rowSubtitle}>{office || getEntityString(item, ['email'], 'Офис не указан')}</Text>
+        <Text style={styles.rowSubtitle}>{position}</Text>
+        <Text style={styles.rowMeta}>{office || getEntityString(item, ['email'], 'Офис не указан')}</Text>
         <View style={styles.pills}>
           <StatusPill label={`${score.toLocaleString('ru-RU')} баллов`} tone={rank <= 3 ? 'accent' : 'primary'} />
           <StatusPill label={`${revenue.toLocaleString('ru-RU')} USD`} tone="success" />
@@ -161,11 +166,25 @@ const styles = StyleSheet.create({
     gap: theme.spacing.lg,
   },
   hero: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: theme.spacing.md,
+  },
+  heroIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: theme.radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.accentSoft,
+  },
+  heroTextWrap: {
+    flex: 1,
+    gap: 5,
   },
   heroKicker: {
     color: theme.colors.accent,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
     textTransform: 'uppercase',
   },
@@ -207,7 +226,7 @@ const styles = StyleSheet.create({
   },
   rowText: {
     flex: 1,
-    gap: theme.spacing.sm,
+    gap: 4,
   },
   rowTitle: {
     color: theme.colors.text,
@@ -215,13 +234,19 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   rowSubtitle: {
-    color: theme.colors.textMuted,
+    color: theme.colors.accent,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '900',
+  },
+  rowMeta: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '800',
   },
   pills: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: theme.spacing.sm,
+    marginTop: 4,
   },
 });

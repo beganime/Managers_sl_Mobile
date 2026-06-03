@@ -27,6 +27,8 @@ export type AppUser = {
   dob?: string | null;
   social_contacts?: string | null;
   job_description?: string | null;
+  role_display?: string | null;
+  position?: string | null;
   work_status?: string | null;
   is_effective?: boolean;
   office?: {

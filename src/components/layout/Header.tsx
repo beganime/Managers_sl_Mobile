@@ -3,6 +3,7 @@ import { usePathname, useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { NotificationBell } from '../notifications/NotificationBell';
 import { theme } from '../../theme/theme';
 
 type HeaderProps = {
@@ -12,6 +13,7 @@ type HeaderProps = {
   showBack?: boolean;
   onBack?: () => void;
   parentFallback?: string;
+  showNotifications?: boolean;
 };
 
 export function Header({
@@ -21,6 +23,7 @@ export function Header({
   showBack = false,
   onBack,
   parentFallback,
+  showNotifications = true,
 }: HeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -55,18 +58,21 @@ export function Header({
   return (
     <View style={styles.wrap}>
       <View style={styles.topRow}>
-        {showBack ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Назад"
-            hitSlop={10}
-            onPress={handleBack}
-            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
-          >
-            <Ionicons name="chevron-back" size={22} color={theme.colors.primary} />
-          </Pressable>
-        ) : null}
-        <Text style={styles.eyebrow}>{eyebrow}</Text>
+        <View style={styles.leftRow}>
+          {showBack ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Назад"
+              hitSlop={10}
+              onPress={handleBack}
+              style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="chevron-back" size={22} color={theme.colors.primary} />
+            </Pressable>
+          ) : null}
+          <Text style={styles.eyebrow} numberOfLines={1}>{eyebrow}</Text>
+        </View>
+        {showNotifications ? <NotificationBell /> : null}
       </View>
       <Text style={styles.title}>{title}</Text>
       {Boolean(subtitle) && <Text style={styles.subtitle}>{subtitle}</Text>}
@@ -79,7 +85,15 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   topRow: {
-    minHeight: 36,
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing.md,
+  },
+  leftRow: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.sm,
@@ -99,6 +113,7 @@ const styles = StyleSheet.create({
     opacity: 0.72,
   },
   eyebrow: {
+    flexShrink: 1,
     color: theme.colors.accent,
     fontSize: 12,
     fontWeight: '900',

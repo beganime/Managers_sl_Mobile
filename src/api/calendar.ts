@@ -62,7 +62,7 @@ async function buildFallbackAgenda(): Promise<CalendarAgenda> {
   ]);
 
   const warnings: string[] = [
-    'Calendar API ещё не доступен на сервере. Agenda временно собирается из задач и attendance.',
+    'Календарь временно собирается из задач и рабочего дня.',
   ];
   const items: CalendarAgendaItem[] = [];
 

@@ -90,7 +90,7 @@ export function ProjectFormScreen() {
     <ScreenContainer>
       <Header
         title={editId ? 'Редактировать проект' : 'Новый проект'}
-        subtitle="Создание использует /api/v1/projects/."
+        subtitle="Создайте проект и назначьте ответственных."
         showBack
         parentFallback="/(app)/(tabs)/tasks"
       />

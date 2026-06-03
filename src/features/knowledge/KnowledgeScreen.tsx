@@ -111,7 +111,7 @@ function KnowledgeList({
           <Header
             title="База знаний"
             eyebrow="Knowledge"
-            subtitle="Категории и статьи из /api/v1/knowledge/."
+            subtitle="Категории, статьи и материалы для команды."
             showBack
           />
 
@@ -119,7 +119,7 @@ function KnowledgeList({
             <Text style={styles.heroKicker}>ManagerSL knowledge base</Text>
             <Text style={styles.heroTitle}>Ответы, регламенты и инструкции рядом</Text>
             <Text style={styles.heroText}>
-              В разделе {count} записей. Используется подтверждённый endpoint /api/v1/knowledge/categories/.
+              В разделе {count} записей. Материалы синхронизируются с базой знаний.
             </Text>
           </Card>
 

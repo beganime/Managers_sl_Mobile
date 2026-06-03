@@ -8,6 +8,24 @@ export function getUserDisplayName(user?: AppUser | null) {
   return user.full_name || parts || user.email || user.username || 'Пользователь';
 }
 
+export function getUserPosition(user?: AppUser | null) {
+  if (!user) return 'Должность не указана';
+
+  const explicitPosition = String(user.position || '').trim();
+  if (explicitPosition) return explicitPosition;
+
+  const jobDescription = String(user.job_description || '').trim();
+  if (jobDescription) return jobDescription.split('\n')[0].trim();
+
+  const roleDisplay = String(user.role_display || '').trim();
+  if (roleDisplay) return roleDisplay;
+
+  if (user.role === 'admin' || user.is_superuser) return 'Администратор';
+  if (user.role === 'manager') return 'Менеджер';
+
+  return user.role ? String(user.role) : 'Должность не указана';
+}
+
 export function getItemTitle(item: ApiListItem) {
   const title =
     item.title ||

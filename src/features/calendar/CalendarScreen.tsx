@@ -63,11 +63,11 @@ export function CalendarScreen() {
               <Text style={styles.heroKicker}>Calendar</Text>
               <Text style={styles.heroTitle}>Сегодня, задачи и встречи</Text>
               <Text style={styles.heroText}>
-                События приходят из /api/v1/calendar/events/. Если сервер ещё не обновлён, экран мягко соберёт agenda из задач и attendance.
+                События, задачи и рабочий день собраны в единую повестку.
               </Text>
               <View style={styles.pills}>
                 <StatusPill label={`${items.length} событий`} tone="success" />
-                <StatusPill label="Без неподтверждённых URL" tone="primary" />
+                <StatusPill label="Готово к синхронизации" tone="primary" />
               </View>
             </Card>
 

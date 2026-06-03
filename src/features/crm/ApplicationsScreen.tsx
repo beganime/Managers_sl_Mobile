@@ -30,7 +30,7 @@ export function ApplicationsScreen() {
 
   return (
     <ScreenContainer scroll={false}>
-      <Header title="Заявки на поступление" subtitle="CRM applications из /api/v1/crm/applications/." showBack />
+      <Header title="Заявки на поступление" subtitle="Поступления клиентов, статусы и документы." showBack />
 
       <View style={styles.tools}>
         <SearchInput value={search} onChangeText={setSearch} placeholder="Поиск по клиенту или вузу" />

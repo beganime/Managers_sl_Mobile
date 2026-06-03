@@ -4,17 +4,16 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { API_BASE_URL } from '../../api/client';
 import { Card } from '../../components/cards/Card';
 import { Header } from '../../components/layout/Header';
 import { ProfileAvatar } from '../../components/profile/ProfileAvatar';
-import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { Button } from '../../components/ui/Button';
 import { useTheme } from '../../context/ThemeContext';
 import { ensurePushNotificationsRegistered } from '../../notifications/pushNotifications';
 import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
-import { getUserDisplayName } from '../../utils/format';
+import { getUserDisplayName, getUserPosition } from '../../utils/format';
+import { ScreenContainer } from '../../components/layout/ScreenContainer';
 
 export function SettingsScreen() {
   const router = useRouter();
@@ -29,7 +28,7 @@ export function SettingsScreen() {
     setPushStatus(
       token
         ? 'Push-уведомления подключены к ManagerSL.'
-        : 'Не удалось подключить push. Проверьте разрешения iOS/Android или запустите на реальном устройстве.'
+        : 'Не удалось подключить push. Проверьте разрешения iOS/Android или запустите приложение на реальном устройстве.'
     );
     setPushLoading(false);
   };
@@ -38,7 +37,7 @@ export function SettingsScreen() {
     <ScreenContainer>
       <Header
         title="Настройки"
-        subtitle="Профиль, внешний вид, уведомления и системные параметры."
+        subtitle="Профиль, внешний вид, уведомления и управление приложением."
         showBack
         parentFallback="/(app)/(tabs)/more"
       />
@@ -53,23 +52,22 @@ export function SettingsScreen() {
         <View style={styles.heroText}>
           <Text style={styles.kicker}>Students Life Program for Managers</Text>
           <Text style={styles.name}>{getUserDisplayName(user)}</Text>
-          <Text style={styles.meta}>{user?.email || 'Email не указан'}</Text>
+          <Text style={styles.meta}>{getUserPosition(user)}</Text>
         </View>
       </LinearGradient>
 
       <Card style={styles.card}>
         <View style={styles.cardHeader}>
           <View>
-            <Text style={styles.cardTitle}>Система</Text>
-            <Text style={styles.cardSubtitle}>Backend и mobile API.</Text>
+            <Text style={styles.cardTitle}>Состояние приложения</Text>
+            <Text style={styles.cardSubtitle}>Кабинет готов к работе после входа в аккаунт.</Text>
           </View>
           <View style={styles.okBadge}>
             <Text style={styles.okText}>Online</Text>
           </View>
         </View>
-        <InfoRow label="API base URL" value={API_BASE_URL} />
-        <InfoRow label="Profile endpoint" value="/api/v1/me/" />
-        <InfoRow label="Calendar endpoint" value="/api/v1/calendar/events/" />
+        <InfoRow icon="shield-checkmark-outline" label="Сессия" value="Защищённый вход активен" />
+        <InfoRow icon="phone-portrait-outline" label="Устройство" value="Мобильный кабинет ManagerSL" />
       </Card>
 
       <Card style={styles.card}>
@@ -97,6 +95,7 @@ export function SettingsScreen() {
       <Card style={styles.card}>
         <Text style={styles.cardTitle}>Быстрое управление</Text>
         <SettingsAction icon="person-circle-outline" title="Открыть профиль" onPress={() => router.push('/(app)/profile-v2' as any)} />
+        <SettingsAction icon="reader-outline" title="Мои отчёты" onPress={() => router.push('/(app)/reports-history' as any)} />
         <SettingsAction icon="notifications-outline" title="Уведомления" onPress={() => router.push('/(app)/notifications' as any)} />
         <SettingsAction icon="calendar-outline" title="Календарь" onPress={() => router.push('/(app)/calendar' as any)} />
       </Card>
@@ -104,11 +103,16 @@ export function SettingsScreen() {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }) {
   return (
     <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+      <View style={styles.infoIcon}>
+        <Ionicons name={icon} size={18} color={theme.colors.primary} />
+      </View>
+      <View style={styles.infoText}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={styles.infoValue}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -211,10 +215,22 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   infoRow: {
-    gap: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
     paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+  },
+  infoIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: theme.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.primarySoft,
+  },
+  infoText: {
+    flex: 1,
+    gap: 3,
   },
   infoLabel: {
     color: theme.colors.textMuted,

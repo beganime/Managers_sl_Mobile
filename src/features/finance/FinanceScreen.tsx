@@ -123,7 +123,7 @@ function FinanceList({
           <Header
             title="Финансы"
             eyebrow="Sprint 4"
-            subtitle="Доходы, расходы, сделки и транзакции из /api/v1/finance/."
+            subtitle="Доходы, расходы, сделки и транзакции."
           />
 
           <Card glass style={styles.hero}>

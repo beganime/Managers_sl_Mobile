@@ -264,7 +264,7 @@ export default function AdminReportsScreen() {
       setAiProvider('');
       setAiError(
         error?.response?.data?.detail ||
-          'AI summary пока недоступен. Проверь endpoint reports/daily/ai_summary/.'
+          'AI summary пока недоступен на сервере.'
       );
     } finally {
       setAiLoading(false);

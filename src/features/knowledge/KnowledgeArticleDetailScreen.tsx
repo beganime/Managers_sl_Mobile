@@ -111,7 +111,7 @@ export function KnowledgeArticleDetailScreen() {
               <Card key={String(getEntityId(attachment))} style={styles.block}>
                 <Text style={styles.rowTitle}>{getEntityTitle(attachment, 'Вложение')}</Text>
                 <Text style={styles.rowSubtitle}>
-                  {getEntityString(attachment, ['url', 'file_url', 'note'], 'Без ссылки')}
+                  {getEntityString(attachment, ['note'], 'Материал готов к открытию')}
                 </Text>
               </Card>
             ))}
@@ -127,7 +127,7 @@ export function KnowledgeArticleDetailScreen() {
               <Card key={String(getEntityId(test))} style={styles.block}>
                 <Text style={styles.rowTitle}>{getEntityTitle(test, 'Тест')}</Text>
                 <Text style={styles.rowSubtitle}>
-                  {getEntityString(test, ['description'], 'Тест доступен через backend knowledge API.')}
+                  {getEntityString(test, ['description'], 'Тест доступен в базе знаний.')}
                 </Text>
               </Card>
             ))}

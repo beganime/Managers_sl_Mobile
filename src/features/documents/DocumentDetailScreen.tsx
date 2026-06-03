@@ -256,7 +256,7 @@ function FileAction({ title, url }: { title: string; url: string }) {
         </View>
         <View style={styles.fileText}>
           <Text style={styles.rowTitle}>{title}</Text>
-          <Text style={styles.rowSubtitle}>{url || 'Файл пока недоступен'}</Text>
+          <Text style={styles.rowSubtitle}>{url ? 'Файл готов к открытию' : 'Файл пока недоступен'}</Text>
         </View>
         {url ? <Ionicons name="open-outline" size={19} color={theme.colors.textMuted} /> : null}
       </Card>

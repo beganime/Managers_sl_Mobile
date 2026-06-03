@@ -253,8 +253,9 @@ export async function requestFirst<T>(
 }
 
 export function createMissingEndpointError(feature: string, expectedEndpoint: string) {
+  void expectedEndpoint;
   return new ApiRequestError(
-    `Для ${feature} нужен backend endpoint: ${expectedEndpoint}. Запрос добавлен в docs/mobile_api_required.md.`
+    `Для раздела «${feature}» ещё нужен backend-метод. Запрос записан в документацию мобильного API.`
   );
 }
 

@@ -274,7 +274,7 @@ export default function AdminPaymentsScreen() {
 
   const openIncomeModal = useCallback(() => {
     if (!cashflowEnabled) {
-      Alert.alert('Доходы пока не готовы', 'На этом сервере пока не найден endpoint analytics/cashflow/.');
+      Alert.alert('Доходы пока не готовы', 'На этом сервере раздел аналитики пока недоступен.');
       setFabOpen(false);
       return;
     }

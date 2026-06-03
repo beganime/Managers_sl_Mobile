@@ -1,4 +1,4 @@
-import { ApiParams, Workday } from '../types';
+import { ApiListItem, ApiParams, CollectionResponse, Workday } from '../types';
 import { getJson, postJson, v1 } from './client';
 
 export function getTodayWorkday() {
@@ -11,6 +11,10 @@ export function startWorkday(payload?: Record<string, unknown>) {
 
 export function getWorkdayReport(params?: ApiParams) {
   return getJson(v1('/attendance/workdays/report/'), { params });
+}
+
+export function listDailyReports(params?: ApiParams) {
+  return getJson<CollectionResponse<ApiListItem>>(v1('/attendance/reports/'), { params });
 }
 
 export function closeWorkday(payload?: Record<string, unknown>) {

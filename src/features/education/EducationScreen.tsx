@@ -226,7 +226,6 @@ function CountryList({
         <View style={styles.headerStack}>
           <CatalogHeader
             count={count}
-            endpoint="/api/v1/education/countries/"
             mode={mode}
             subtitle="Страны, города, университеты и программы из backend education."
             title="Каталог обучения"
@@ -320,7 +319,6 @@ function CityList({
         <View style={styles.headerStack}>
           <CatalogHeader
             count={count}
-            endpoint="/api/v1/education/cities/"
             mode={mode}
             subtitle="Города фильтруются по стране и сразу используются в каталоге вузов."
             title="Города обучения"
@@ -428,7 +426,6 @@ function UniversityList({
         <View style={styles.headerStack}>
           <CatalogHeader
             count={count}
-            endpoint="/api/v1/education/universities/"
             mode={mode}
             subtitle="Вузы показываются по выбранной стране и городу из backend education."
             title="Вузы"
@@ -542,7 +539,6 @@ function ProgramList({
         <View style={styles.headerStack}>
           <CatalogHeader
             count={count}
-            endpoint="/api/v1/education/programs/"
             mode={mode}
             subtitle="Программы, fees, intakes и документы идут из backend education."
             title="Программы"
@@ -597,14 +593,12 @@ function ProgramList({
 
 function CatalogHeader({
   count,
-  endpoint,
   mode,
   subtitle,
   title,
   onModeChange,
 }: {
   count: number;
-  endpoint: string;
   mode: EducationMode;
   subtitle: string;
   title: string;
@@ -618,7 +612,7 @@ function CatalogHeader({
         <Text style={styles.heroKicker}>Students Life Program for Managers</Text>
         <Text style={styles.heroTitle}>Каталог для подбора обучения</Text>
         <Text style={styles.heroText}>
-          Найдено записей: {count}. Данные идут из {endpoint}.
+          Найдено записей: {count}. Данные готовы для подбора страны, города, вуза и программы.
         </Text>
       </Card>
 

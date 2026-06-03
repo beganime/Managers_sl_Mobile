@@ -124,7 +124,7 @@ function DocumentList({
             <Text style={styles.heroKicker}>ERP documents</Text>
             <Text style={styles.heroTitle}>Документы без ручной рутины</Text>
             <Text style={styles.heroText}>
-              В текущем разделе {count} записей. Генерация работает через подтверждённый `/api/v1/documents/templates/{'{id}'}/generate/`.
+              В текущем разделе {count} записей. Шаблоны, генерация и согласование готовы к работе.
             </Text>
           </Card>
 

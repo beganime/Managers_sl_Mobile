@@ -1224,7 +1224,7 @@ export default function KnowledgeBaseScreen() {
 
                   <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
                     <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Ссылка раздела</Text>
-                    <TextInput value={sectionUrl} onChangeText={setSectionUrl} placeholder="https://..." placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} autoCapitalize="none" keyboardType="url" />
+                    <TextInput value={sectionUrl} onChangeText={setSectionUrl} placeholder="Введите ссылку" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} autoCapitalize="none" keyboardType="url" />
                   </View>
 
                   <View style={styles.actionRow}>
@@ -1312,8 +1312,8 @@ export default function KnowledgeBaseScreen() {
                   </View>
                   {attachmentType === 'link' ? (
                     <View style={[styles.inputWrap, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>
-                      <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>URL</Text>
-                      <TextInput value={attachmentUrl} onChangeText={setAttachmentUrl} placeholder="https://..." placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} autoCapitalize="none" keyboardType="url" />
+                      <Text style={[styles.inputLabel, { color: theme.textSecondary }]}>Ссылка</Text>
+                      <TextInput value={attachmentUrl} onChangeText={setAttachmentUrl} placeholder="Введите ссылку" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} autoCapitalize="none" keyboardType="url" />
                     </View>
                   ) : (
                     <View style={[styles.selectedFileBox, { backgroundColor: theme.backgroundSoft, borderColor: theme.border }]}>

@@ -51,7 +51,7 @@ export function IncomingLeadsScreen() {
     <ScreenContainer scroll={false}>
       <Header
         title="Входящие"
-        subtitle="Свободные потенциальные клиенты из /api/v1/crm/incoming-leads/."
+        subtitle="Свободные потенциальные клиенты, которых можно взять в работу."
         showBack
         parentFallback="/(app)/(tabs)/crm"
       />

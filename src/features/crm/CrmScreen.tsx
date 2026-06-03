@@ -104,7 +104,7 @@ export function CrmScreen() {
         />
       </View>
 
-      <SectionTitle title="Разделы CRM" subtitle="Sprint 2 подключает реальные /api/v1/crm endpoints." />
+      <SectionTitle title="Разделы CRM" subtitle="Лиды, клиенты, входящие заявки и поступления." />
 
       <View style={styles.sections}>
         {sections.map((section) => (

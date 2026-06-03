@@ -120,7 +120,7 @@ function TaskList({ workspace, onWorkspaceChange }: WorkspaceHeaderProps) {
           <Header
             title="Задачи"
             eyebrow="Sprint 3 workspace"
-            subtitle="Проектные задачи из /api/v1/projects/tasks/."
+            subtitle="Проектные задачи и статусы исполнения."
           />
 
           <Card glass style={styles.hero}>

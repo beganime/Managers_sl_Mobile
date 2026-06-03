@@ -13,14 +13,16 @@ function TabBarIcon({
   name,
   color,
   focused,
+  center,
 }: {
   name: TabIconName;
   color: string;
   focused: boolean;
+  center?: boolean;
 }) {
   return (
-    <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
-      <Ionicons name={name} color={color} size={focused ? 21 : 20} />
+    <View style={[styles.iconWrap, center && styles.centerIcon, focused && styles.iconWrapActive]}>
+      <Ionicons name={name} color={center && focused ? theme.colors.white : color} size={center ? 22 : focused ? 21 : 20} />
     </View>
   );
 }
@@ -96,23 +98,23 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="tasks"
+        name="rating"
         options={{
-          title: 'Задачи',
+          title: 'Рейтинг',
           tabBarLabel: ({ color, focused }) => (
-            <TabLabel title="Задачи" color={color} focused={focused} />
+            <TabLabel title="Рейтинг" color={color} focused={focused} />
           ),
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name="checkbox-outline" color={color} focused={focused} />
+            <TabBarIcon name="trophy-outline" color={color} focused={focused} center />
           ),
         }}
       />
       <Tabs.Screen
         name="finance"
         options={{
-          title: 'Деньги',
+          title: 'Финансы',
           tabBarLabel: ({ color, focused }) => (
-            <TabLabel title="Деньги" color={color} focused={focused} />
+            <TabLabel title="Финансы" color={color} focused={focused} />
           ),
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name="wallet-outline" color={color} focused={focused} />
@@ -131,6 +133,7 @@ export default function TabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen name="tasks" options={{ href: null }} />
     </Tabs>
   );
 }
@@ -146,6 +149,11 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  centerIcon: {
+    minWidth: 42,
+    height: 30,
+    borderRadius: 15,
   },
   iconWrapActive: {
     backgroundColor: theme.colors.accentSoft,
