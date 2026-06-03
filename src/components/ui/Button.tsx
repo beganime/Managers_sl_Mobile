@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
@@ -30,6 +31,8 @@ export function Button({
   ...props
 }: ButtonProps) {
   const isDisabled = disabled || loading;
+  const appTheme = useAppTheme();
+  const variantStyle = getVariantStyle(variant, appTheme);
 
   return (
     <Pressable
@@ -37,7 +40,7 @@ export function Button({
       disabled={isDisabled}
       style={({ pressed }) => [
         styles.base,
-        styles[variant],
+        variantStyle.container,
         fullWidth && styles.fullWidth,
         (pressed || isDisabled) && styles.pressed,
         style,
@@ -45,12 +48,41 @@ export function Button({
       {...props}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'secondary' || variant === 'ghost' ? theme.colors.primary : '#FFFFFF'} />
+        <ActivityIndicator color={variantStyle.text.color} />
       ) : (
-        <Text style={[styles.text, styles[`${variant}Text`]]}>{title}</Text>
+        <Text style={[styles.text, variantStyle.text]}>{title}</Text>
       )}
     </Pressable>
   );
+}
+
+function getVariantStyle(variant: ButtonVariant, appTheme: typeof theme) {
+  const primary = {
+    container: { backgroundColor: appTheme.colors.primary },
+    text: { color: appTheme.colors.white },
+  };
+
+  const variants = {
+    primary,
+    secondary: {
+      container: {
+        backgroundColor: appTheme.colors.surfaceStrong,
+        borderColor: appTheme.colors.border,
+        borderWidth: 1,
+      },
+      text: { color: appTheme.colors.primary },
+    },
+    danger: {
+      container: { backgroundColor: appTheme.colors.accent },
+      text: { color: appTheme.colors.white },
+    },
+    ghost: {
+      container: { backgroundColor: 'transparent' },
+      text: { color: appTheme.dark ? appTheme.colors.screenText : appTheme.colors.accent },
+    },
+  };
+
+  return variants[variant] || primary;
 }
 
 const styles = StyleSheet.create({
@@ -64,37 +96,11 @@ const styles = StyleSheet.create({
   fullWidth: {
     width: '100%',
   },
-  primary: {
-    backgroundColor: theme.colors.primary,
-  },
-  secondary: {
-    backgroundColor: theme.colors.surfaceStrong,
-    borderColor: theme.colors.border,
-    borderWidth: 1,
-  },
-  danger: {
-    backgroundColor: theme.colors.accent,
-  },
-  ghost: {
-    backgroundColor: 'transparent',
-  },
   pressed: {
     opacity: 0.72,
   },
   text: {
     fontSize: 15,
     fontWeight: '900',
-  },
-  primaryText: {
-    color: '#FFFFFF',
-  },
-  secondaryText: {
-    color: theme.colors.primary,
-  },
-  dangerText: {
-    color: '#FFFFFF',
-  },
-  ghostText: {
-    color: theme.colors.accent,
   },
 });

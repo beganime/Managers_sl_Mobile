@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 export type StatusTone = 'primary' | 'accent' | 'success' | 'warning' | 'danger' | 'muted';
 
@@ -10,17 +11,16 @@ type StatusPillProps = {
   tone?: StatusTone;
 };
 
-const toneStyles: Record<StatusTone, { backgroundColor: string; color: string }> = {
-  accent: { backgroundColor: theme.colors.accentSoft, color: theme.colors.accent },
-  danger: { backgroundColor: theme.colors.dangerSoft, color: theme.colors.danger },
-  muted: { backgroundColor: theme.colors.surfaceSoft, color: theme.colors.textMuted },
-  primary: { backgroundColor: theme.colors.primarySoft, color: theme.colors.primary },
-  success: { backgroundColor: theme.colors.successSoft, color: theme.colors.success },
-  warning: { backgroundColor: theme.colors.warningSoft, color: theme.colors.warning },
-};
-
 export function StatusPill({ label, tone = 'primary' }: StatusPillProps) {
-  const colors = toneStyles[tone];
+  const appTheme = useAppTheme();
+  const colors = {
+    accent: { backgroundColor: appTheme.colors.accentSoft, color: appTheme.colors.accent },
+    danger: { backgroundColor: appTheme.colors.dangerSoft, color: appTheme.colors.danger },
+    muted: { backgroundColor: appTheme.colors.surfaceSoft, color: appTheme.colors.textMuted },
+    primary: { backgroundColor: appTheme.colors.primarySoft, color: appTheme.colors.primary },
+    success: { backgroundColor: appTheme.colors.successSoft, color: appTheme.colors.success },
+    warning: { backgroundColor: appTheme.colors.warningSoft, color: appTheme.colors.warning },
+  }[tone];
 
   return (
     <View style={[styles.wrap, { backgroundColor: colors.backgroundColor }]}>

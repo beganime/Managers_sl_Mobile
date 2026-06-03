@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { NotificationBell } from '../notifications/NotificationBell';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 type HeaderProps = {
   title: string;
@@ -27,6 +28,7 @@ export function Header({
 }: HeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const appTheme = useAppTheme();
 
   const handleBack = () => {
     if (onBack) {
@@ -65,17 +67,39 @@ export function Header({
               accessibilityLabel="Назад"
               hitSlop={10}
               onPress={handleBack}
-              style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.backButton,
+                {
+                  borderColor: appTheme.colors.glassBorder,
+                  backgroundColor: appTheme.dark ? 'rgba(255,255,255,0.14)' : appTheme.colors.surfaceStrong,
+                  ...appTheme.shadow.card,
+                },
+                pressed && styles.pressed,
+              ]}
             >
-              <Ionicons name="chevron-back" size={22} color={theme.colors.primary} />
+              <Ionicons
+                name="chevron-back"
+                size={22}
+                color={appTheme.dark ? appTheme.colors.screenText : appTheme.colors.primary}
+              />
             </Pressable>
           ) : null}
-          <Text style={styles.eyebrow} numberOfLines={1}>{eyebrow}</Text>
+          <Text
+            style={[
+              styles.eyebrow,
+              { color: appTheme.dark ? 'rgba(255,255,255,0.74)' : appTheme.colors.accent },
+            ]}
+            numberOfLines={1}
+          >
+            {eyebrow}
+          </Text>
         </View>
         {showNotifications ? <NotificationBell /> : null}
       </View>
-      <Text style={styles.title}>{title}</Text>
-      {Boolean(subtitle) && <Text style={styles.subtitle}>{subtitle}</Text>}
+      <Text style={[styles.title, { color: appTheme.colors.screenText }]}>{title}</Text>
+      {Boolean(subtitle) && (
+        <Text style={[styles.subtitle, { color: appTheme.colors.screenTextMuted }]}>{subtitle}</Text>
+      )}
     </View>
   );
 }
@@ -105,29 +129,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceStrong,
-    ...theme.shadow.card,
   },
   pressed: {
     opacity: 0.72,
   },
   eyebrow: {
     flexShrink: 1,
-    color: theme.colors.accent,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   title: {
-    color: theme.colors.text,
     fontSize: 27,
     fontWeight: '900',
     lineHeight: 33,
   },
   subtitle: {
-    color: theme.colors.textMuted,
     fontSize: 14,
     fontWeight: '700',
     lineHeight: 20,

@@ -1,7 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useColorScheme } from 'react-native';
+
+import { AppTheme, darkTheme, lightTheme } from '../theme/theme';
 import { getToken, saveToken } from '../utils/storage';
 
 export type ThemeMode = 'light' | 'dark';
+export type ThemePreference = ThemeMode | 'system';
 
 export interface ThemePalette {
   mode: ThemeMode;
@@ -157,44 +161,57 @@ function buildDarkTheme(): ThemePalette {
 
 interface ThemeContextValue {
   theme: ThemePalette;
+  appTheme: AppTheme;
   themeMode: ThemeMode;
+  themePreference: ThemePreference;
   isDark: boolean;
-  setTheme: (mode: ThemeMode) => void;
+  setTheme: (mode: ThemePreference) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
   theme: buildLightTheme(),
+  appTheme: lightTheme,
   themeMode: 'light',
+  themePreference: 'system',
   isDark: false,
   setTheme: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [themeMode, setThemeMode] = useState<ThemeMode>('light');
+  const systemColorScheme = useColorScheme();
+  const [themePreference, setThemePreference] = useState<ThemePreference>('system');
 
   useEffect(() => {
     getToken('app_theme').then((saved) => {
-      if (saved === 'light' || saved === 'dark') {
-        setThemeMode(saved);
+      if (saved === 'light' || saved === 'dark' || saved === 'system') {
+        setThemePreference(saved);
       }
     });
   }, []);
 
-  const setTheme = useCallback(async (mode: ThemeMode) => {
-    setThemeMode(mode);
+  const setTheme = useCallback(async (mode: ThemePreference) => {
+    setThemePreference(mode);
     await saveToken('app_theme', mode);
   }, []);
+
+  const themeMode: ThemeMode = useMemo(() => {
+    if (themePreference !== 'system') return themePreference;
+    return systemColorScheme === 'dark' ? 'dark' : 'light';
+  }, [systemColorScheme, themePreference]);
 
   const theme = useMemo(
     () => (themeMode === 'dark' ? buildDarkTheme() : buildLightTheme()),
     [themeMode]
   );
+  const appTheme = useMemo(() => (themeMode === 'dark' ? darkTheme : lightTheme), [themeMode]);
 
   return (
     <ThemeContext.Provider
       value={{
         theme,
+        appTheme,
         themeMode,
+        themePreference,
         isDark: themeMode === 'dark',
         setTheme,
       }}

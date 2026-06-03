@@ -6,6 +6,7 @@ import { Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { theme } from '../../../src/theme/theme';
+import { useAppTheme } from '../../../src/theme/useAppTheme';
 
 type TabIconName = keyof typeof Ionicons.glyphMap;
 
@@ -20,9 +21,17 @@ function TabBarIcon({
   focused: boolean;
   center?: boolean;
 }) {
+  const appTheme = useAppTheme();
+
   return (
-    <View style={[styles.iconWrap, center && styles.centerIcon, focused && styles.iconWrapActive]}>
-      <Ionicons name={name} color={center && focused ? theme.colors.white : color} size={center ? 22 : focused ? 21 : 20} />
+    <View
+      style={[
+        styles.iconWrap,
+        center && styles.centerIcon,
+        focused && { backgroundColor: appTheme.dark ? 'rgba(255,255,255,0.18)' : appTheme.colors.accentSoft },
+      ]}
+    >
+      <Ionicons name={name} color={center && focused ? appTheme.colors.white : color} size={center ? 22 : focused ? 21 : 20} />
     </View>
   );
 }
@@ -37,17 +46,18 @@ function TabLabel({ title, color, focused }: { title: string; color: string; foc
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const appTheme = useAppTheme();
   const useBlur = Platform.OS === 'ios';
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: theme.colors.accent,
-        tabBarInactiveTintColor: theme.colors.textMuted,
+        tabBarActiveTintColor: appTheme.dark ? appTheme.colors.white : appTheme.colors.accent,
+        tabBarInactiveTintColor: appTheme.dark ? appTheme.colors.screenTextMuted : appTheme.colors.textMuted,
         tabBarLabelPosition: 'below-icon',
         tabBarHideOnKeyboard: true,
-        sceneStyle: { backgroundColor: theme.colors.background },
+        sceneStyle: { backgroundColor: appTheme.colors.background },
         tabBarItemStyle: styles.item,
         tabBarStyle: {
           position: 'absolute',
@@ -58,8 +68,8 @@ export default function TabsLayout() {
           borderRadius: 22,
           borderTopWidth: 0,
           borderWidth: useBlur ? 0 : 1,
-          borderColor: theme.colors.glassBorder,
-          backgroundColor: useBlur ? 'transparent' : theme.colors.surfaceStrong,
+          borderColor: appTheme.colors.glassBorder,
+          backgroundColor: useBlur ? 'transparent' : appTheme.colors.surfaceStrong,
           paddingTop: 7,
           paddingBottom: Platform.OS === 'ios' ? 13 : 8,
           ...theme.shadow.floating,
@@ -67,8 +77,16 @@ export default function TabsLayout() {
         tabBarBackground: () =>
           useBlur ? (
             <View style={StyleSheet.absoluteFillObject}>
-              <BlurView intensity={54} tint="light" style={StyleSheet.absoluteFillObject} />
-              <View style={styles.tabOverlay} />
+              <BlurView intensity={appTheme.dark ? 38 : 54} tint={appTheme.dark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} />
+              <View
+                style={[
+                  styles.tabOverlay,
+                  {
+                    borderColor: appTheme.colors.glassBorder,
+                    backgroundColor: appTheme.dark ? 'rgba(7,17,31,0.72)' : 'rgba(255,255,255,0.66)',
+                  },
+                ]}
+              />
             </View>
           ) : null,
       }}

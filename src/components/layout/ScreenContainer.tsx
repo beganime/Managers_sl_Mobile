@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, View, ViewProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 type ScreenContainerProps = ViewProps & {
   scroll?: boolean;
@@ -16,13 +17,14 @@ export function ScreenContainer({
   padded = true,
   style,
 }: ScreenContainerProps) {
+  const appTheme = useAppTheme();
   const contentStyle = [styles.content, !padded && styles.noPadding, style];
 
   if (!scroll) {
     return (
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: appTheme.colors.background }]}>
         <LinearGradient
-          colors={theme.gradients.screen as [string, string, ...string[]]}
+          colors={appTheme.gradients.screen as [string, string, ...string[]]}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={contentStyle}>{children}</View>
@@ -31,9 +33,9 @@ export function ScreenContainer({
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: appTheme.colors.background }]}>
       <LinearGradient
-        colors={theme.gradients.screen as [string, string, ...string[]]}
+        colors={appTheme.gradients.screen as [string, string, ...string[]]}
         style={StyleSheet.absoluteFillObject}
       />
       <ScrollView
@@ -50,7 +52,6 @@ export function ScreenContainer({
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: theme.colors.background,
   },
   content: {
     flexGrow: 1,

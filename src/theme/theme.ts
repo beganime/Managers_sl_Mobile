@@ -1,4 +1,22 @@
-export const theme = {
+const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
+  xxl: 32,
+};
+
+const radius = {
+  sm: 8,
+  md: 14,
+  lg: 20,
+  xl: 28,
+  pill: 999,
+};
+
+export const lightTheme = {
+  dark: false,
   colors: {
     navy900: '#071A33',
     navy800: '#0B2545',
@@ -8,6 +26,8 @@ export const theme = {
     red700: '#B4233A',
     background: '#F5F7FB',
     backgroundAlt: '#EEF2F7',
+    screenText: '#071A33',
+    screenTextMuted: '#60738C',
     surface: 'rgba(255,255,255,0.78)',
     surfaceStrong: 'rgba(255,255,255,0.92)',
     surfaceSoft: 'rgba(255,255,255,0.62)',
@@ -35,21 +55,8 @@ export const theme = {
     red: ['#7A1020', '#981B2E', '#B4233A'],
     navy: ['#071A33', '#0B2545'],
   },
-  spacing: {
-    xs: 4,
-    sm: 8,
-    md: 12,
-    lg: 16,
-    xl: 24,
-    xxl: 32,
-  },
-  radius: {
-    sm: 8,
-    md: 14,
-    lg: 20,
-    xl: 28,
-    pill: 999,
-  },
+  spacing,
+  radius,
   shadow: {
     card: {
       shadowColor: '#071A33',
@@ -68,4 +75,66 @@ export const theme = {
   },
 };
 
-export type AppTheme = typeof theme;
+export const darkTheme = {
+  dark: true,
+  colors: {
+    navy900: '#071A33',
+    navy800: '#0B2545',
+    navy700: '#102A43',
+    red900: '#5E0C19',
+    red800: '#7A1020',
+    red700: '#981B2E',
+    background: '#07111F',
+    backgroundAlt: '#0B1728',
+    screenText: '#F5F7FB',
+    screenTextMuted: '#B8C4D6',
+    surface: 'rgba(255,255,255,0.82)',
+    surfaceStrong: 'rgba(255,255,255,0.94)',
+    surfaceSoft: 'rgba(255,255,255,0.68)',
+    glass: 'rgba(255,255,255,0.78)',
+    glassBorder: 'rgba(255,255,255,0.18)',
+    border: 'rgba(7,26,51,0.14)',
+    text: '#071A33',
+    textMuted: '#60738C',
+    textSoft: '#8A9AAF',
+    primary: '#071A33',
+    primarySoft: 'rgba(7,26,51,0.08)',
+    accent: '#981B2E',
+    accentSoft: 'rgba(152,27,46,0.11)',
+    success: '#147D4B',
+    successSoft: 'rgba(20,125,75,0.12)',
+    danger: '#B4233A',
+    dangerSoft: 'rgba(180,35,58,0.12)',
+    warning: '#B66A00',
+    warningSoft: 'rgba(182,106,0,0.14)',
+    white: '#FFFFFF',
+  },
+  gradients: {
+    screen: ['#07111F', '#0B1728', '#14111E'],
+    hero: ['#050B14', '#071A33', '#7A1020'],
+    red: ['#5E0C19', '#7A1020', '#981B2E'],
+    navy: ['#050B14', '#071A33'],
+  },
+  spacing,
+  radius,
+  shadow: {
+    card: {
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 16 },
+      shadowOpacity: 0.18,
+      shadowRadius: 28,
+      elevation: 7,
+    },
+    floating: {
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 22 },
+      shadowOpacity: 0.24,
+      shadowRadius: 34,
+      elevation: 12,
+    },
+  },
+};
+
+export const theme = lightTheme;
+
+export type AppTheme = typeof lightTheme;

@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 export type SegmentOption = {
   label: string;
@@ -15,8 +16,18 @@ type SegmentedControlProps = {
 };
 
 export function SegmentedControl({ options, value, onChange }: SegmentedControlProps) {
+  const appTheme = useAppTheme();
+
   return (
-    <View style={styles.wrap}>
+    <View
+      style={[
+        styles.wrap,
+        {
+          borderColor: appTheme.colors.border,
+          backgroundColor: appTheme.dark ? 'rgba(255,255,255,0.16)' : appTheme.colors.surfaceSoft,
+        },
+      ]}
+    >
       {options.map((option) => {
         const active = option.value === value;
 
@@ -26,11 +37,18 @@ export function SegmentedControl({ options, value, onChange }: SegmentedControlP
             onPress={() => onChange(option.value)}
             style={({ pressed }) => [
               styles.item,
-              active && styles.itemActive,
+              active && { backgroundColor: appTheme.colors.primary },
               pressed && styles.itemPressed,
             ]}
           >
-            <Text style={[styles.label, active && styles.labelActive]} numberOfLines={1}>
+            <Text
+              style={[
+                styles.label,
+                { color: appTheme.dark && !active ? appTheme.colors.screenTextMuted : appTheme.colors.textMuted },
+                active && styles.labelActive,
+              ]}
+              numberOfLines={1}
+            >
               {option.label}
             </Text>
           </Pressable>
@@ -47,8 +65,6 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
     borderRadius: theme.radius.lg,
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSoft,
     padding: theme.spacing.sm,
   },
   item: {
@@ -60,14 +76,10 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     paddingHorizontal: theme.spacing.md,
   },
-  itemActive: {
-    backgroundColor: theme.colors.primary,
-  },
   itemPressed: {
     opacity: 0.72,
   },
   label: {
-    color: theme.colors.textMuted,
     fontSize: 13,
     fontWeight: '900',
   },

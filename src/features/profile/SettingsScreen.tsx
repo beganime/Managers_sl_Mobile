@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card } from '../../components/cards/Card';
 import { Header } from '../../components/layout/Header';
+import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { ProfileAvatar } from '../../components/profile/ProfileAvatar';
 import { Button } from '../../components/ui/Button';
 import { useTheme } from '../../context/ThemeContext';
@@ -13,11 +14,10 @@ import { ensurePushNotificationsRegistered } from '../../notifications/pushNotif
 import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
 import { getUserDisplayName, getUserPosition } from '../../utils/format';
-import { ScreenContainer } from '../../components/layout/ScreenContainer';
 
 export function SettingsScreen() {
   const router = useRouter();
-  const { themeMode, setTheme } = useTheme();
+  const { appTheme, themeMode, themePreference, setTheme } = useTheme();
   const { user } = useAuth();
   const [pushLoading, setPushLoading] = useState(false);
   const [pushStatus, setPushStatus] = useState('Готово к подключению на реальном устройстве.');
@@ -43,7 +43,7 @@ export function SettingsScreen() {
       />
 
       <LinearGradient
-        colors={theme.gradients.hero as [string, string, ...string[]]}
+        colors={appTheme.gradients.hero as [string, string, ...string[]]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.hero}
@@ -60,7 +60,7 @@ export function SettingsScreen() {
         <View style={styles.cardHeader}>
           <View>
             <Text style={styles.cardTitle}>Состояние приложения</Text>
-            <Text style={styles.cardSubtitle}>Кабинет готов к работе после входа в аккаунт.</Text>
+            <Text style={styles.cardSubtitle}>Кабинет готов к работе.</Text>
           </View>
           <View style={styles.okBadge}>
             <Text style={styles.okText}>Online</Text>
@@ -76,8 +76,9 @@ export function SettingsScreen() {
           Сейчас включена {themeMode === 'dark' ? 'тёмная' : 'светлая'} тема.
         </Text>
         <View style={styles.toggleRow}>
-          <ThemeOption active={themeMode === 'light'} title="Light" onPress={() => setTheme('light')} />
-          <ThemeOption active={themeMode === 'dark'} title="Dark" onPress={() => setTheme('dark')} />
+          <ThemeOption active={themePreference === 'system'} title="System" onPress={() => setTheme('system')} />
+          <ThemeOption active={themePreference === 'light'} title="Light" onPress={() => setTheme('light')} />
+          <ThemeOption active={themePreference === 'dark'} title="Dark" onPress={() => setTheme('dark')} />
         </View>
       </Card>
 

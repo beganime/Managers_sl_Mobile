@@ -14,6 +14,7 @@ import {
 import { extractItems, toApiError } from '../../api/client';
 import { listNotifications, markNotificationRead } from '../../api/notifications';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
 import { formatEntityDate, getEntityId, getEntityString, getEntityTitle, stripHtml } from '../../utils/entity';
 
@@ -23,6 +24,7 @@ function isUnread(item: ApiListItem) {
 
 export function NotificationBell() {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<ApiListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -82,16 +84,44 @@ export function NotificationBell() {
         accessibilityLabel="Уведомления"
         hitSlop={10}
         onPress={openPanel}
-        style={({ pressed }) => [styles.bell, pressed && styles.pressed]}
+        style={({ pressed }) => [
+          styles.bell,
+          {
+            borderColor: appTheme.colors.glassBorder,
+            backgroundColor: appTheme.dark ? 'rgba(255,255,255,0.14)' : appTheme.colors.surfaceStrong,
+            ...appTheme.shadow.card,
+          },
+          pressed && styles.pressed,
+        ]}
       >
-        <Ionicons name="notifications-outline" size={20} color={theme.colors.primary} />
-        {items.some(isUnread) ? <View style={styles.dot} /> : null}
+        <Ionicons
+          name="notifications-outline"
+          size={20}
+          color={appTheme.dark ? appTheme.colors.screenText : appTheme.colors.primary}
+        />
+        {items.some(isUnread) ? <View style={[styles.dot, { backgroundColor: appTheme.colors.accent }]} /> : null}
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.overlay} onPress={() => setOpen(false)}>
-          <BlurView intensity={18} tint="light" style={StyleSheet.absoluteFillObject} />
-          <Pressable style={styles.panel} onPress={(event) => event.stopPropagation()}>
+        <Pressable
+          style={[
+            styles.overlay,
+            { backgroundColor: appTheme.dark ? 'rgba(0,0,0,0.44)' : 'rgba(7,26,51,0.18)' },
+          ]}
+          onPress={() => setOpen(false)}
+        >
+          <BlurView intensity={18} tint={appTheme.dark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} />
+          <Pressable
+            style={[
+              styles.panel,
+              {
+                borderColor: appTheme.colors.glassBorder,
+                backgroundColor: appTheme.colors.surfaceStrong,
+                ...appTheme.shadow.floating,
+              },
+            ]}
+            onPress={(event) => event.stopPropagation()}
+          >
             <View style={styles.panelTop}>
               <View>
                 <Text style={styles.panelTitle}>Уведомления</Text>

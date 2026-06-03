@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 type SectionTitleProps = {
   title: string;
@@ -9,13 +10,21 @@ type SectionTitleProps = {
 };
 
 export function SectionTitle({ title, subtitle }: SectionTitleProps) {
+  const appTheme = useAppTheme();
+
   return (
     <View style={styles.wrap}>
       <View style={styles.row}>
-        <View style={styles.bar} />
-        <Text style={styles.title}>{title}</Text>
+        <View style={[styles.bar, { backgroundColor: appTheme.dark ? appTheme.colors.red700 : appTheme.colors.accent }]} />
+        <Text style={[styles.title, { color: appTheme.dark ? appTheme.colors.screenText : appTheme.colors.text }]}>
+          {title}
+        </Text>
       </View>
-      {Boolean(subtitle) && <Text style={styles.subtitle}>{subtitle}</Text>}
+      {Boolean(subtitle) && (
+        <Text style={[styles.subtitle, { color: appTheme.dark ? appTheme.colors.screenTextMuted : appTheme.colors.textMuted }]}>
+          {subtitle}
+        </Text>
+      )}
     </View>
   );
 }
@@ -33,15 +42,12 @@ const styles = StyleSheet.create({
     width: 5,
     height: 20,
     borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.accent,
   },
   title: {
-    color: theme.colors.text,
     fontSize: 18,
     fontWeight: '900',
   },
   subtitle: {
-    color: theme.colors.textMuted,
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,

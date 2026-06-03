@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 type InputProps = TextInputProps & {
   label: string;
@@ -9,15 +10,26 @@ type InputProps = TextInputProps & {
 };
 
 export function Input({ label, error, style, ...props }: InputProps) {
+  const appTheme = useAppTheme();
+
   return (
     <View style={styles.wrap}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, { color: appTheme.colors.textMuted }]}>{label}</Text>
       <TextInput
-        placeholderTextColor={theme.colors.textSoft}
-        style={[styles.input, Boolean(error) && styles.inputError, style]}
+        placeholderTextColor={appTheme.colors.textSoft}
+        style={[
+          styles.input,
+          {
+            borderColor: appTheme.colors.border,
+            backgroundColor: appTheme.colors.surfaceStrong,
+            color: appTheme.colors.text,
+          },
+          Boolean(error) && { borderColor: appTheme.colors.danger },
+          style,
+        ]}
         {...props}
       />
-      {Boolean(error) && <Text style={styles.error}>{error}</Text>}
+      {Boolean(error) && <Text style={[styles.error, { color: appTheme.colors.danger }]}>{error}</Text>}
     </View>
   );
 }
@@ -27,7 +39,6 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   label: {
-    color: theme.colors.textMuted,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -35,18 +46,11 @@ const styles = StyleSheet.create({
     minHeight: 50,
     borderRadius: theme.radius.md,
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceStrong,
-    color: theme.colors.text,
     paddingHorizontal: theme.spacing.lg,
     fontSize: 16,
     fontWeight: '700',
   },
-  inputError: {
-    borderColor: theme.colors.danger,
-  },
   error: {
-    color: theme.colors.danger,
     fontSize: 12,
     fontWeight: '800',
   },
