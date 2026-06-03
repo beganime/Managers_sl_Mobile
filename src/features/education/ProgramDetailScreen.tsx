@@ -74,7 +74,8 @@ export function ProgramDetailScreen() {
         <Text style={styles.heroKicker}>{getEntityString(data, ['country_name'], 'Education')}</Text>
         <Text style={styles.heroTitle}>{getEntityTitle(data, 'Программа')}</Text>
         <Text style={styles.heroText}>
-          {stripHtml(getEntityString(data, ['description'])) || getEntityString(data, ['faculty'], 'Описание пока не заполнено.')}
+          {stripHtml(getEntityString(data, ['description'])) ||
+            getEntityString(data, ['faculty'], 'Описание пока не заполнено.')}
         </Text>
         <View style={styles.pills}>
           <StatusPill label={getEntityString(data, ['degree_display', 'degree'], 'Degree не указан')} tone="primary" />
@@ -87,30 +88,28 @@ export function ProgramDetailScreen() {
       {fees.length ? (
         <View style={styles.stack}>
           {fees.map((fee) => (
-            <Card key={String(getEntityId(fee))} style={styles.block}>
-              <Text style={styles.rowTitle}>{getEntityTitle(fee, 'Стоимость')}</Text>
-              <Text style={styles.rowSubtitle}>
-                {[getEntityString(fee, ['amount']), getEntityString(fee, ['currency_code', 'currency_symbol'])]
-                  .filter(Boolean)
-                  .join(' ')}
-              </Text>
-              <Text style={styles.rowSubtitle}>{getEntityString(fee, ['fee_type', 'title'])}</Text>
-            </Card>
+            <FeeCard key={String(getEntityId(fee))} fee={fee} />
           ))}
         </View>
       ) : (
         <EmptyState title="Стоимость пока не указана" />
       )}
 
-      <SectionTitle title="Intakes" />
+      <SectionTitle title="Наборы / Intakes" />
       {intakes.length ? (
         <View style={styles.stack}>
           {intakes.map((intake) => (
             <Card key={String(getEntityId(intake))} style={styles.block}>
               <Text style={styles.rowTitle}>{getEntityTitle(intake, 'Intake')}</Text>
               <Text style={styles.rowSubtitle}>
-                {[formatEntityDate(intake.start_date), formatEntityDate(intake.deadline)].filter(Boolean).join(' - ')}
+                {[
+                  formatEntityDate(intake.start_date),
+                  formatEntityDate(intake.application_deadline),
+                ]
+                  .filter(Boolean)
+                  .join(' - ')}
               </Text>
+              <Text style={styles.rowSubtitle}>{stripHtml(getEntityString(intake, ['notes']))}</Text>
             </Card>
           ))}
         </View>
@@ -126,6 +125,10 @@ export function ProgramDetailScreen() {
               <Card key={String(getEntityId(doc))} style={styles.block}>
                 <Text style={styles.rowTitle}>{getEntityTitle(doc, 'Документ')}</Text>
                 <Text style={styles.rowSubtitle}>{stripHtml(getEntityString(doc, ['description']))}</Text>
+                <StatusPill
+                  label={getEntityString(doc, ['is_mandatory'], 'true') === 'false' ? 'Опционально' : 'Обязательно'}
+                  tone="accent"
+                />
               </Card>
             ))}
           </View>
@@ -133,6 +136,41 @@ export function ProgramDetailScreen() {
       ) : null}
     </ScreenContainer>
   );
+}
+
+function FeeCard({ fee }: { fee: ApiListItem }) {
+  const currency = getEntityString(fee, ['currency_code', 'currency_symbol'], 'USD');
+
+  return (
+    <Card style={styles.block}>
+      <Text style={styles.rowTitle}>Стоимость программы</Text>
+      <FeeRow label="Обучение" value={formatFee(fee, 'tuition_fee', currency)} />
+      <FeeRow label="Услуги компании" value={formatFee(fee, 'service_fee_usd', 'USD')} />
+      <FeeRow label="Application fee" value={formatFee(fee, 'application_fee', currency)} />
+      <FeeRow label="Общежитие" value={formatFee(fee, 'dormitory_fee', currency)} />
+      <FeeRow label="Страховка" value={formatFee(fee, 'insurance_fee', currency)} />
+      {getEntityString(fee, ['notes']) ? (
+        <Text style={styles.rowSubtitle}>{stripHtml(getEntityString(fee, ['notes']))}</Text>
+      ) : null}
+    </Card>
+  );
+}
+
+function FeeRow({ label, value }: { label: string; value: string }) {
+  if (!value) return null;
+
+  return (
+    <View style={styles.feeRow}>
+      <Text style={styles.feeLabel}>{label}</Text>
+      <Text style={styles.feeValue}>{value}</Text>
+    </View>
+  );
+}
+
+function formatFee(fee: ApiListItem, key: string, currency: string) {
+  const value = getEntityString(fee, [key]);
+  if (!value || value === '0' || value === '0.00') return '';
+  return `${value} ${currency}`;
 }
 
 const styles = StyleSheet.create({
@@ -178,5 +216,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 19,
+  },
+  feeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: theme.spacing.md,
+  },
+  feeLabel: {
+    flex: 1,
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  feeValue: {
+    color: theme.colors.text,
+    fontSize: 13,
+    fontWeight: '900',
   },
 });

@@ -149,3 +149,40 @@ Rating note:
 - Existing backend leaderboard is available at `GET /api/gamification/leaderboard/`.
 
 Current app behavior: mobile rating first tries `GET /api/v1/rating/` and safely falls back to `GET /api/gamification/leaderboard/` only after a 404. This fallback is documented and does not hide other API errors.
+
+## Sprint 5 Education, Calendar, Push
+
+Confirmed in backend `rebuild-erp-core` routing and used by the mobile app:
+
+- `GET /api/v1/education/countries/`
+- `GET /api/v1/education/cities/`
+- `GET /api/v1/education/currencies/`
+- `GET /api/v1/education/universities/`
+- `GET /api/v1/education/universities/{id}/`
+- `GET /api/v1/education/programs/`
+- `GET /api/v1/education/programs/{id}/`
+- `POST /api/v1/notifications/device-tokens/register/`
+- `POST /api/v1/notifications/device-tokens/unregister/`
+
+Education app behavior:
+
+- The mobile Education section now has separate tabs for countries, cities, universities and programs.
+- Countries and cities are loaded from the same backend admin data as universities and programs.
+- University lists can be filtered by country and city.
+- Program lists can be filtered by country and degree, matching backend `ProgramViewSet` filters.
+
+Calendar app behavior:
+
+- `GET /api/v1/calendar/events/` is still not mounted in backend API.
+- Backend has portal calendar models and web views, but no confirmed mobile API route yet.
+- The mobile Calendar screen now composes a safe agenda from confirmed endpoints:
+  - `GET /api/v1/projects/tasks/`
+  - `GET /api/v1/attendance/workdays/today/`
+- No unconfirmed calendar URL is called.
+
+Still required for full portal calendar parity:
+
+- `GET /api/v1/calendar/events/`
+- `POST /api/v1/calendar/events/`
+- `PATCH /api/v1/calendar/events/{id}/`
+- `DELETE /api/v1/calendar/events/{id}/`

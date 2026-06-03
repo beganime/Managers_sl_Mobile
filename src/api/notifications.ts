@@ -1,6 +1,15 @@
 import { ApiListItem, ApiParams, CollectionResponse, EntityId } from '../types';
 import { getJson, postJson, v1 } from './client';
 
+export type DeviceTokenPayload = {
+  token: string;
+  platform: 'ios' | 'android' | 'web' | 'unknown';
+  device_name?: string;
+  app_version?: string;
+  locale?: string;
+  timezone?: string;
+};
+
 export function listNotifications(params?: ApiParams) {
   return getJson<CollectionResponse<ApiListItem>>(v1('/notifications/'), { params });
 }
@@ -19,4 +28,12 @@ export function markAllNotificationsRead() {
 
 export function listNotificationBatches(params?: ApiParams) {
   return getJson<CollectionResponse<ApiListItem>>(v1('/notifications/batches/'), { params });
+}
+
+export function registerDeviceToken(payload: DeviceTokenPayload) {
+  return postJson<ApiListItem>(v1('/notifications/device-tokens/register/'), payload);
+}
+
+export function unregisterDeviceToken(token: string) {
+  return postJson<{ detail?: string }>(v1('/notifications/device-tokens/unregister/'), { token });
 }

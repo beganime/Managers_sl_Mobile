@@ -9,6 +9,10 @@ export function listCities(params?: ApiParams) {
   return getJson<CollectionResponse<ApiListItem>>(v1('/education/cities/'), { params });
 }
 
+export function listCurrencies(params?: ApiParams) {
+  return getJson<CollectionResponse<ApiListItem>>(v1('/education/currencies/'), { params });
+}
+
 export function listUniversities(params?: ApiParams) {
   return getJson<CollectionResponse<ApiListItem>>(v1('/education/universities/'), { params });
 }

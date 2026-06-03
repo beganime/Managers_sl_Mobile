@@ -15,6 +15,7 @@ import {
   toApiError,
 } from '../api/client';
 import { AppUser } from '../types';
+import { ensurePushNotificationsRegistered } from '../notifications/pushNotifications';
 import { getJSON, getToken, saveJSON } from '../utils/storage';
 
 export type AuthStatus = 'loading' | 'authenticated' | 'guest';
@@ -55,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(profile);
       setStatus('authenticated');
       setError(null);
+      void ensurePushNotificationsRegistered(profile.id, { requestPermission: false });
       return profile;
     } catch (requestError) {
       const cachedProfile = await getJSON<AppUser | null>(CACHED_PROFILE_KEY, null);
@@ -110,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await saveJSON(CACHED_PROFILE_KEY, profile);
       setUser(profile);
       setStatus('authenticated');
+      void ensurePushNotificationsRegistered(profile.id, { requestPermission: false });
 
       return profile;
     } catch (requestError) {
