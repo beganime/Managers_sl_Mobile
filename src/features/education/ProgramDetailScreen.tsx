@@ -22,6 +22,7 @@ import {
   getEntityTitle,
   stripHtml,
 } from '../../utils/entity';
+import { formatMoneyValue, formatRateToUsd } from '../../utils/money';
 
 export function ProgramDetailScreen() {
   const params = useLocalSearchParams<{ id: string }>();
@@ -139,16 +140,18 @@ export function ProgramDetailScreen() {
 }
 
 function FeeCard({ fee }: { fee: ApiListItem }) {
-  const currency = getEntityString(fee, ['currency_code', 'currency_symbol'], 'USD');
+  const currency = getEntityString(fee, ['currency_code'], 'USD').toUpperCase();
+  const rate = formatRateToUsd(getEntityString(fee, ['currency_rate_to_usd']), currency);
 
   return (
     <Card style={styles.block}>
       <Text style={styles.rowTitle}>Стоимость программы</Text>
-      <FeeRow label="Обучение" value={formatFee(fee, 'tuition_fee', currency)} />
-      <FeeRow label="Услуги компании" value={formatFee(fee, 'service_fee_usd', 'USD')} />
-      <FeeRow label="Application fee" value={formatFee(fee, 'application_fee', currency)} />
-      <FeeRow label="Общежитие" value={formatFee(fee, 'dormitory_fee', currency)} />
-      <FeeRow label="Страховка" value={formatFee(fee, 'insurance_fee', currency)} />
+      <FeeRow label="Обучение" value={formatOfficialAndUsd(fee, 'tuition_fee', 'tuition_fee_usd', currency)} />
+      <FeeRow label="Услуги компании" value={formatMoneyValue(getEntityString(fee, ['service_fee_usd']), 'USD')} />
+      <FeeRow label="Application fee" value={formatOfficialAndUsd(fee, 'application_fee', 'application_fee_usd', currency)} />
+      <FeeRow label="Общежитие" value={formatOfficialAndUsd(fee, 'dormitory_fee', 'dormitory_fee_usd', currency)} />
+      <FeeRow label="Страховка" value={formatOfficialAndUsd(fee, 'insurance_fee', 'insurance_fee_usd', currency)} />
+      {rate ? <Text style={styles.rowSubtitle}>{rate}</Text> : null}
       {getEntityString(fee, ['notes']) ? (
         <Text style={styles.rowSubtitle}>{stripHtml(getEntityString(fee, ['notes']))}</Text>
       ) : null}
@@ -167,10 +170,19 @@ function FeeRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatFee(fee: ApiListItem, key: string, currency: string) {
-  const value = getEntityString(fee, [key]);
-  if (!value || value === '0' || value === '0.00') return '';
-  return `${value} ${currency}`;
+function formatOfficialAndUsd(
+  fee: ApiListItem,
+  officialKey: string,
+  usdKey: string,
+  currency: string
+) {
+  const official = formatMoneyValue(getEntityString(fee, [officialKey]), currency);
+  const usd = formatMoneyValue(getEntityString(fee, [usdKey]), 'USD');
+
+  if (!official) return '';
+  if (!usd || currency === 'USD') return official;
+
+  return `${official} / ${usd}`;
 }
 
 const styles = StyleSheet.create({

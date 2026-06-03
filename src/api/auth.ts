@@ -10,6 +10,7 @@ import {
 } from './client';
 import { AppUser, AuthResponse } from '../types';
 import { clearSession, getToken, saveJSON, saveToken } from '../utils/storage';
+import { clearApiCache } from '../utils/apiCache';
 
 export type LoginCredentials = {
   email: string;
@@ -52,6 +53,8 @@ export async function login(credentials: LoginCredentials) {
     await saveToken(REFRESH_TOKEN_KEY, data.refresh);
   }
 
+  await clearApiCache();
+
   const user = data.user || (await getMe());
 
   await saveJSON(CACHED_PROFILE_KEY, user);
@@ -82,6 +85,7 @@ export async function updateMe(payload: Record<string, unknown>) {
   );
 
   await saveJSON(CACHED_PROFILE_KEY, user);
+  await clearApiCache();
   return user;
 }
 
@@ -93,5 +97,6 @@ export async function logout() {
   } catch {
   } finally {
     await clearSession();
+    await clearApiCache();
   }
 }

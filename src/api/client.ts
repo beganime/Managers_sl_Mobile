@@ -2,6 +2,14 @@ import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, isAxiosError } fr
 
 import { clearSession, getToken, saveToken } from '../utils/storage';
 import { CollectionResponse, PaginatedResponse } from '../types';
+import {
+  buildApiCacheKey,
+  clearApiCache,
+  DEFAULT_API_CACHE_MAX_STALE_MS,
+  DEFAULT_API_CACHE_TTL_MS,
+  readApiCache,
+  writeApiCache,
+} from '../utils/apiCache';
 
 export const API_BASE_URL = 'https://manager-sl.ru';
 export const API_V1_PREFIX = '/api/v1';
@@ -12,6 +20,10 @@ export const CACHED_PROFILE_KEY = 'cache_my_profile';
 export type ApiRequestConfig = AxiosRequestConfig & {
   _retry?: boolean;
   skipAuthRefresh?: boolean;
+  cache?: boolean;
+  cacheTtlMs?: number;
+  cacheMaxStaleMs?: number;
+  cacheBackgroundRefresh?: boolean;
 };
 
 export class ApiRequestError extends Error {
@@ -27,6 +39,7 @@ export class ApiRequestError extends Error {
 }
 
 let unauthorizedHandler: (() => void) | null = null;
+let refreshTokenRequest: Promise<{ access?: string; refresh?: string }> | null = null;
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler;
@@ -114,11 +127,31 @@ async function refreshAccessToken(refreshToken: string) {
 
       return response.data as { access?: string; refresh?: string };
     } catch (error) {
-      lastError = error;
+      const apiError = toApiError(error);
+      lastError = apiError;
+
+      if (apiError.status && [400, 401, 403].includes(apiError.status)) {
+        throw apiError;
+      }
     }
   }
 
   throw toApiError(lastError);
+}
+
+function refreshAccessTokenOnce(refreshToken: string) {
+  if (!refreshTokenRequest) {
+    refreshTokenRequest = refreshAccessToken(refreshToken).finally(() => {
+      refreshTokenRequest = null;
+    });
+  }
+
+  return refreshTokenRequest;
+}
+
+function shouldLogoutAfterRefreshError(error: unknown) {
+  const apiError = toApiError(error);
+  return Boolean(apiError.status && [400, 401, 403].includes(apiError.status));
 }
 
 function isRefreshRequest(url?: string) {
@@ -127,6 +160,7 @@ function isRefreshRequest(url?: string) {
 
 async function forceLogout() {
   await clearSession();
+  await clearApiCache();
   unauthorizedHandler?.();
 }
 
@@ -160,7 +194,7 @@ apiClient.interceptors.response.use(
 
       if (refreshToken) {
         try {
-          const tokens = await refreshAccessToken(refreshToken);
+          const tokens = await refreshAccessTokenOnce(refreshToken);
 
           if (!tokens.access) {
             throw new ApiRequestError('Сервер не вернул новый access token.', 401);
@@ -178,7 +212,9 @@ apiClient.interceptors.response.use(
 
           return apiClient(originalRequest);
         } catch (refreshError) {
-          await forceLogout();
+          if (shouldLogoutAfterRefreshError(refreshError)) {
+            await forceLogout();
+          }
           return Promise.reject(toApiError(refreshError));
         }
       }
@@ -210,23 +246,78 @@ export function extractCount<T>(payload: CollectionResponse<T> | unknown): numbe
   return extractItems<T>(payload).length;
 }
 
-export async function getJson<T>(path: string, config?: AxiosRequestConfig) {
-  const response = await apiClient.get<T>(normalizeApiPath(path), config);
-  return response.data;
+function shouldUseCachedGet(path: string, config?: ApiRequestConfig) {
+  if (config?.cache === false) return false;
+  if (path.includes('/auth/')) return false;
+  return true;
 }
 
-export async function postJson<T>(path: string, data?: unknown, config?: AxiosRequestConfig) {
+function canUseStaleCache(error: ApiRequestError) {
+  if (!error.status) return true;
+  if (error.status === 408 || error.status === 429) return true;
+  return error.status >= 500;
+}
+
+async function clearCacheAfterMutation() {
+  await clearApiCache();
+}
+
+export async function getJson<T>(path: string, config?: ApiRequestConfig) {
+  const normalizedPath = normalizeApiPath(path);
+
+  if (!shouldUseCachedGet(normalizedPath, config)) {
+    const response = await apiClient.get<T>(normalizedPath, config);
+    return response.data;
+  }
+
+  const cacheKey = buildApiCacheKey(normalizedPath, config?.params);
+  const cached = await readApiCache<T>(cacheKey);
+  const now = Date.now();
+  const ttlMs = config?.cacheTtlMs ?? DEFAULT_API_CACHE_TTL_MS;
+  const maxStaleMs = config?.cacheMaxStaleMs ?? DEFAULT_API_CACHE_MAX_STALE_MS;
+  const cacheAge = cached ? now - cached.savedAt : Number.POSITIVE_INFINITY;
+
+  if (cached && cacheAge <= ttlMs) {
+    if (config?.cacheBackgroundRefresh !== false) {
+      void apiClient
+        .get<T>(normalizedPath, config)
+        .then((response) => writeApiCache(cacheKey, response.data))
+        .catch(() => undefined);
+    }
+
+    return cached.data;
+  }
+
+  try {
+    const response = await apiClient.get<T>(normalizedPath, config);
+    await writeApiCache(cacheKey, response.data);
+    return response.data;
+  } catch (error) {
+    const apiError = toApiError(error);
+
+    if (cached && cacheAge <= maxStaleMs && canUseStaleCache(apiError)) {
+      return cached.data;
+    }
+
+    throw apiError;
+  }
+}
+
+export async function postJson<T>(path: string, data?: unknown, config?: ApiRequestConfig) {
   const response = await apiClient.post<T>(normalizeApiPath(path), data, config);
+  await clearCacheAfterMutation();
   return response.data;
 }
 
-export async function patchJson<T>(path: string, data?: unknown, config?: AxiosRequestConfig) {
+export async function patchJson<T>(path: string, data?: unknown, config?: ApiRequestConfig) {
   const response = await apiClient.patch<T>(normalizeApiPath(path), data, config);
+  await clearCacheAfterMutation();
   return response.data;
 }
 
-export async function deleteJson<T>(path: string, config?: AxiosRequestConfig) {
+export async function deleteJson<T>(path: string, config?: ApiRequestConfig) {
   const response = await apiClient.delete<T>(normalizeApiPath(path), config);
+  await clearCacheAfterMutation();
   return response.data;
 }
 

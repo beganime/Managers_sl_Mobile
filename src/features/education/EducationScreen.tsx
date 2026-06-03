@@ -29,6 +29,7 @@ import { usePagedResource } from '../../hooks/usePagedResource';
 import { theme } from '../../theme/theme';
 import { ApiListItem, EntityId } from '../../types';
 import {
+  getEntityArray,
   getEntityId,
   getEntityNumber,
   getEntityString,
@@ -36,6 +37,7 @@ import {
   getStatusLabel,
   stripHtml,
 } from '../../utils/entity';
+import { formatMoneyValue, formatRateToUsd } from '../../utils/money';
 
 type EducationMode = 'countries' | 'cities' | 'universities' | 'programs';
 
@@ -792,6 +794,8 @@ const ProgramCard = memo(function ProgramCard({
   const degree = getEntityString(item, ['degree_display', 'degree']);
   const university = getEntityString(item, ['university_name']);
   const country = getEntityString(item, ['country_name']);
+  const fee = getEntityArray<ApiListItem>(item, 'fees')[0];
+  const price = getProgramPriceSummary(fee);
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
@@ -813,10 +817,57 @@ const ProgramCard = memo(function ProgramCard({
             tone="accent"
           />
         </View>
+        {price ? (
+          <View style={styles.priceBox}>
+            <View style={styles.priceLine}>
+              <Text style={styles.priceLabel}>Обучение</Text>
+              <Text style={styles.priceValue}>{price.tuition}</Text>
+            </View>
+            {price.service ? (
+              <View style={styles.priceLine}>
+                <Text style={styles.priceLabel}>Услуги</Text>
+                <Text style={styles.priceValue}>{price.service}</Text>
+              </View>
+            ) : null}
+            {price.rate ? <Text style={styles.priceRate}>{price.rate}</Text> : null}
+          </View>
+        ) : null}
       </Card>
     </Pressable>
   );
 });
+
+function getProgramPriceSummary(fee?: ApiListItem) {
+  if (!fee) return null;
+
+  const currency = getEntityString(fee, ['currency_code'], 'USD').toUpperCase();
+  const tuition = formatOfficialAndUsd(fee, 'tuition_fee', 'tuition_fee_usd', currency);
+  const service = formatMoneyValue(getEntityString(fee, ['service_fee_usd']), 'USD');
+  const rate = formatRateToUsd(getEntityString(fee, ['currency_rate_to_usd']), currency);
+
+  if (!tuition && !service) return null;
+
+  return {
+    tuition,
+    service,
+    rate,
+  };
+}
+
+function formatOfficialAndUsd(
+  fee: ApiListItem,
+  officialKey: string,
+  usdKey: string,
+  currency: string
+) {
+  const official = formatMoneyValue(getEntityString(fee, [officialKey]), currency);
+  const usd = formatMoneyValue(getEntityString(fee, [usdKey]), 'USD');
+
+  if (!official) return '';
+  if (!usd || currency === 'USD') return official;
+
+  return `${official} / ${usd}`;
+}
 
 const styles = StyleSheet.create({
   screen: {
@@ -930,6 +981,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: theme.spacing.sm,
+  },
+  priceBox: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.lg,
+    backgroundColor: theme.colors.surfaceSoft,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    gap: 6,
+  },
+  priceLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: theme.spacing.md,
+  },
+  priceLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  priceValue: {
+    flex: 1,
+    color: theme.colors.text,
+    fontSize: 12,
+    fontWeight: '900',
+    textAlign: 'right',
+  },
+  priceRate: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'right',
   },
   pressed: {
     opacity: 0.72,
