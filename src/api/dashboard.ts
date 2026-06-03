@@ -28,6 +28,15 @@ export async function getLegacyDashboard() {
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {
+  try {
+    return await getJson<DashboardSummary>(v1('/dashboard/'));
+  } catch (error) {
+    const apiError = toApiError(error);
+    if (apiError.status && apiError.status !== 404) {
+      throw apiError;
+    }
+  }
+
   const settled = await Promise.allSettled(dashboardParts.map((part) => part.load()));
   const warnings: string[] = [];
   const summary: DashboardSummary = {

@@ -44,6 +44,10 @@ export function listLeads(params?: ApiParams) {
   return getJson<CollectionResponse<ApiListItem>>(v1('/crm/leads/'), { params });
 }
 
+export function listIncomingLeads(params?: ApiParams) {
+  return getJson<CollectionResponse<ApiListItem>>(v1('/crm/incoming-leads/'), { params });
+}
+
 export function getLead(id: EntityId) {
   return getJson<ApiListItem>(v1(`/crm/leads/${id}/`));
 }
@@ -58,6 +62,10 @@ export function updateLead(id: EntityId, payload: Partial<CrmLeadPayload>) {
 
 export function convertLead(id: EntityId, payload?: Record<string, unknown>) {
   return postJson<ApiListItem>(v1(`/crm/leads/${id}/convert/`), payload || {});
+}
+
+export function takeLead(id: EntityId) {
+  return postJson<{ detail?: string; lead?: ApiListItem }>(v1(`/crm/leads/${id}/take/`), {});
 }
 
 export function listClients(params?: ApiParams) {

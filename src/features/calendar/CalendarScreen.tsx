@@ -63,7 +63,7 @@ export function CalendarScreen() {
               <Text style={styles.heroKicker}>Calendar</Text>
               <Text style={styles.heroTitle}>Сегодня, задачи и встречи</Text>
               <Text style={styles.heroText}>
-                Мобильный календарь использует подтверждённые endpoints: проекты и attendance. Portal events подключатся после API.
+                События приходят из /api/v1/calendar/events/. Если сервер ещё не обновлён, экран мягко соберёт agenda из задач и attendance.
               </Text>
               <View style={styles.pills}>
                 <StatusPill label={`${items.length} событий`} tone="success" />
@@ -119,6 +119,7 @@ const AgendaCard = memo(function AgendaCard({
   onPress: () => void;
 }) {
   const isTask = item.type === 'task';
+  const isEvent = item.type === 'event';
 
   return (
     <Pressable
@@ -129,9 +130,9 @@ const AgendaCard = memo(function AgendaCard({
       <Card style={styles.agendaCard}>
         <View style={styles.iconBubble}>
           <Ionicons
-            name={isTask ? 'checkbox-outline' : 'briefcase-outline'}
+            name={isEvent ? 'calendar-outline' : isTask ? 'checkbox-outline' : 'briefcase-outline'}
             size={20}
-            color={isTask ? theme.colors.accent : theme.colors.primary}
+            color={isEvent ? theme.colors.success : isTask ? theme.colors.accent : theme.colors.primary}
           />
         </View>
         <View style={styles.agendaBody}>
@@ -139,7 +140,7 @@ const AgendaCard = memo(function AgendaCard({
           <Text style={styles.agendaTitle}>{item.title}</Text>
           {item.subtitle ? <Text style={styles.agendaSubtitle}>{item.subtitle}</Text> : null}
           <View style={styles.pills}>
-            <StatusPill label={isTask ? 'Задача' : 'Рабочий день'} tone={isTask ? 'accent' : 'primary'} />
+            <StatusPill label={isEvent ? 'Событие' : isTask ? 'Задача' : 'Рабочий день'} tone={isEvent ? 'success' : isTask ? 'accent' : 'primary'} />
             <StatusPill label={getStatusLabel(item.status)} tone="muted" />
           </View>
         </View>

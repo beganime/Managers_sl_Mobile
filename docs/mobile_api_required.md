@@ -106,6 +106,29 @@ Still missing for Sprint 3 calendar:
 - `PATCH /api/v1/calendar/events/{id}/`
 - `DELETE /api/v1/calendar/events/{id}/`
 
+## Backend Completion Pass
+
+This section supersedes earlier "missing endpoint" notes after backend `rebuild-erp-core` changes.
+
+Added for mobile parity:
+
+- `GET/PATCH /api/v1/me/`
+- `GET /api/v1/dashboard/`
+- `GET /api/v1/mobile/bootstrap/`
+- `GET /api/v1/mobile/search/?q=...`
+- `GET /api/v1/rating/`
+- `GET/POST /api/v1/calendar/events/`
+- `GET/PATCH/DELETE /api/v1/calendar/events/{id}/`
+
+Already confirmed and now used by mobile:
+
+- `POST /api/v1/crm/leads/{id}/take/`
+- `GET /api/v1/crm/incoming-leads/`
+
+Current remaining backend gap for Sprint 1-5 mobile functionality:
+
+- None in source code. Production still needs the backend branch deployed to `https://manager-sl.ru`.
+
 Current app behavior: Tasks, Projects, Education, Services and Knowledge use confirmed endpoints. Calendar remains a documented shell and shows "Раздел скоро будет доступен" instead of calling an unconfirmed URL.
 
 ## Sprint 4 Finance, Documents, Rating, Notifications

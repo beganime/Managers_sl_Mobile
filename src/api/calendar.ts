@@ -1,5 +1,5 @@
 import { getTodayWorkday } from './attendance';
-import { extractItems, toApiError } from './client';
+import { extractItems, getJson, toApiError, v1 } from './client';
 import { listProjectTasks } from './projects';
 
 export type CalendarAgendaItem = {
@@ -7,7 +7,7 @@ export type CalendarAgendaItem = {
   title: string;
   subtitle?: string;
   date?: string;
-  type: 'task' | 'workday';
+  type: 'event' | 'task' | 'workday';
   status?: string;
   route?: string;
 };
@@ -17,14 +17,52 @@ export type CalendarAgenda = {
   warnings: string[];
 };
 
-export async function listCalendarEvents(): Promise<CalendarAgenda> {
+type CalendarEventRecord = {
+  id?: string | number;
+  title?: string;
+  description?: string;
+  event_date?: string;
+  start_time?: string;
+  end_time?: string;
+  visibility?: string;
+};
+
+async function listBackendCalendarEvents(): Promise<CalendarAgenda | null> {
+  try {
+    const payload = await getJson(v1('/calendar/events/'), {
+      params: {
+        limit: 100,
+        date_from: new Date().toISOString().slice(0, 10),
+      },
+    });
+    const events = extractItems<CalendarEventRecord>(payload);
+
+    return {
+      items: events.map((event) => ({
+        id: `event-${event.id}`,
+        title: event.title || 'Событие',
+        subtitle: [event.start_time, event.end_time, event.description].filter(Boolean).join(' - '),
+        date: event.event_date,
+        type: 'event',
+        status: event.visibility || 'calendar',
+      })),
+      warnings: [],
+    };
+  } catch (error) {
+    const apiError = toApiError(error);
+    if (apiError.status === 404) return null;
+    throw apiError;
+  }
+}
+
+async function buildFallbackAgenda(): Promise<CalendarAgenda> {
   const [tasksResult, workdayResult] = await Promise.allSettled([
     listProjectTasks({ limit: 80, offset: 0 }),
     getTodayWorkday(),
   ]);
 
   const warnings: string[] = [
-    'В backend есть portal calendar, но /api/v1/calendar/events/ пока не смонтирован. Mobile agenda собирается из задач и attendance.',
+    'Calendar API ещё не доступен на сервере. Agenda временно собирается из задач и attendance.',
   ];
   const items: CalendarAgendaItem[] = [];
 
@@ -66,14 +104,23 @@ export async function listCalendarEvents(): Promise<CalendarAgenda> {
     warnings.push(toApiError(workdayResult.reason).message);
   }
 
-  items.sort((a, b) => {
+  return {
+    items,
+    warnings,
+  };
+}
+
+function sortAgenda(agenda: CalendarAgenda) {
+  agenda.items.sort((a, b) => {
     const aTime = a.date ? new Date(a.date).getTime() : Number.MAX_SAFE_INTEGER;
     const bTime = b.date ? new Date(b.date).getTime() : Number.MAX_SAFE_INTEGER;
     return aTime - bTime;
   });
 
-  return {
-    items,
-    warnings,
-  };
+  return agenda;
+}
+
+export async function listCalendarEvents(): Promise<CalendarAgenda> {
+  const backendAgenda = await listBackendCalendarEvents();
+  return sortAgenda(backendAgenda || (await buildFallbackAgenda()));
 }
