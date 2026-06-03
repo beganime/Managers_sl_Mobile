@@ -140,7 +140,7 @@ export function DashboardScreen() {
 
       <View style={styles.actions}>
         <QuickAction title="Добавить клиента" onPress={() => router.push('/(app)/crm/clients/create' as any)} />
-        <QuickAction title="Добавить доход" onPress={() => router.push('/(app)/(tabs)/finance' as any)} />
+        <QuickAction title="Добавить доход" onPress={() => router.push('/(app)/finance-v2/incomes/create' as any)} />
         <QuickAction title="Добавить задачу" onPress={() => router.push('/(app)/tasks-v2/create' as any)} />
         <QuickAction title="Проекты" onPress={() => router.push('/(app)/projects-v2' as any)} />
       </View>

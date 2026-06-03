@@ -107,3 +107,45 @@ Still missing for Sprint 3 calendar:
 - `DELETE /api/v1/calendar/events/{id}/`
 
 Current app behavior: Tasks, Projects, Education, Services and Knowledge use confirmed endpoints. Calendar remains a documented shell and shows "Раздел скоро будет доступен" instead of calling an unconfirmed URL.
+
+## Sprint 4 Finance, Documents, Rating, Notifications
+
+Confirmed in backend routing and used by the mobile app:
+
+- `GET /api/v1/finance/cashboxes/`
+- `GET /api/v1/finance/deals/`
+- `GET /api/v1/finance/deals/{id}/`
+- `GET/POST /api/v1/finance/incomes/`
+- `GET /api/v1/finance/incomes/{id}/`
+- `POST /api/v1/finance/incomes/{id}/confirm/`
+- `POST /api/v1/finance/incomes/{id}/reject/`
+- `GET/POST /api/v1/finance/expenses/`
+- `GET /api/v1/finance/expenses/{id}/`
+- `POST /api/v1/finance/expenses/{id}/confirm/`
+- `GET /api/v1/finance/transactions/`
+- `GET /api/v1/finance/transactions/{id}/`
+- `GET /api/v1/finance/expense-categories/`
+- `GET /api/v1/documents/templates/`
+- `GET /api/v1/documents/templates/{id}/`
+- `POST /api/v1/documents/templates/{id}/generate/`
+- `GET /api/v1/documents/generated/`
+- `GET /api/v1/documents/generated/{id}/`
+- `POST /api/v1/documents/generated/{id}/generate/`
+- `POST /api/v1/documents/generated/{id}/submit-for-approval/`
+- `POST /api/v1/documents/generated/{id}/approve/`
+- `POST /api/v1/documents/generated/{id}/reject/`
+- `GET /api/v1/documents/approvals/`
+- `GET /api/v1/documents/approvals/{id}/`
+- `POST /api/v1/documents/approvals/{id}/approve/`
+- `POST /api/v1/documents/approvals/{id}/reject/`
+- `GET /api/v1/notifications/`
+- `GET /api/v1/notifications/{id}/`
+- `POST /api/v1/notifications/{id}/mark-read/`
+- `POST /api/v1/notifications/mark-all-read/`
+
+Rating note:
+
+- `GET /api/v1/rating/` was listed in the mobile target API but is not mounted in `students_life/urls.py`.
+- Existing backend leaderboard is available at `GET /api/gamification/leaderboard/`.
+
+Current app behavior: mobile rating first tries `GET /api/v1/rating/` and safely falls back to `GET /api/gamification/leaderboard/` only after a 404. This fallback is documented and does not hide other API errors.

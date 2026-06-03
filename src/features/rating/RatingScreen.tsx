@@ -1,35 +1,227 @@
-import React, { useCallback } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import React, { memo, useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
-import { extractItems } from '../../api/client';
 import { getRating } from '../../api/rating';
-import { ApiListItem } from '../../types';
-import { ErrorState } from '../../components/ui/ErrorState';
+import { Card } from '../../components/cards/Card';
+import { Input } from '../../components/forms/Input';
 import { Header } from '../../components/layout/Header';
-import { LoadingState } from '../../components/ui/LoadingState';
-import { ResourceList } from '../../components/layout/ResourceList';
 import { ScreenContainer } from '../../components/layout/ScreenContainer';
-import { SectionTitle } from '../../components/ui/SectionTitle';
-import { useAsyncResource } from '../../hooks/useAsyncResource';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { ErrorState } from '../../components/ui/ErrorState';
+import { LoadingState } from '../../components/ui/LoadingState';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
+import { StatusPill } from '../../components/ui/StatusPill';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { usePagedResource } from '../../hooks/usePagedResource';
+import { theme } from '../../theme/theme';
+import { ApiListItem } from '../../types';
+import { getEntityId, getEntityNumber, getEntityString, getEntityTitle } from '../../utils/entity';
+
+const periodOptions = [
+  { label: 'Текущий', value: 'current' },
+  { label: 'Месяц', value: 'month' },
+  { label: 'Все', value: 'all' },
+];
 
 export function RatingScreen() {
-  const loadRating = useCallback(async () => {
-    const payload = await getRating({ limit: 20 });
-    return extractItems<ApiListItem>(payload);
-  }, []);
+  const [search, setSearch] = useState('');
+  const [period, setPeriod] = useState('current');
+  const debouncedSearch = useDebouncedValue(search.trim(), 350);
 
-  const { data, loading, error, reload } = useAsyncResource(loadRating);
+  const loader = useCallback(
+    ({ limit, offset }: { limit: number; offset: number }) =>
+      getRating({
+        limit,
+        offset,
+        search: debouncedSearch || undefined,
+        current_period: period === 'current' ? true : undefined,
+        period: period === 'month' ? 'month' : undefined,
+      }),
+    [debouncedSearch, period]
+  );
+
+  const { items, count, loading, refreshing, loadingMore, error, refresh, loadMore } =
+    usePagedResource<ApiListItem>(loader);
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: ApiListItem; index: number }) => (
+      <RatingRow item={item} fallbackRank={index + 1} />
+    ),
+    []
+  );
 
   return (
-    <ScreenContainer>
-      <Header title="Рейтинг" subtitle="Командный рейтинг ManagerSL." showBack />
-      {loading && !data ? <LoadingState /> : null}
-      {error && !data ? <ErrorState message={error} actionTitle="Повторить" onAction={reload} /> : null}
-      {data ? (
-        <>
-          <SectionTitle title="Участники" />
-          <ResourceList items={data} emptyTitle="Рейтинг пока пуст" />
-        </>
-      ) : null}
+    <ScreenContainer scroll={false} style={styles.screen}>
+      <FlatList
+        data={items}
+        keyExtractor={(item, index) => String(getEntityId(item) || index)}
+        renderItem={renderItem}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.35}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+            onRefresh={refresh}
+          />
+        }
+        ListHeaderComponent={
+          <View style={styles.headerStack}>
+            <Header
+              title="Рейтинг"
+              eyebrow="Sprint 4"
+              subtitle="Командный leaderboard. Если /api/v1/rating/ отсутствует, используется legacy fallback."
+              showBack
+            />
+
+            <Card glass style={styles.hero}>
+              <Text style={styles.heroKicker}>ManagerSL rating</Text>
+              <Text style={styles.heroTitle}>Кто сегодня двигает результат</Text>
+              <Text style={styles.heroText}>
+                В рейтинге {count} участников. Поиск работает по имени, email и офису.
+              </Text>
+            </Card>
+
+            <SegmentedControl options={periodOptions} value={period} onChange={setPeriod} />
+
+            <Input
+              label="Поиск"
+              placeholder="Сотрудник, email или офис"
+              value={search}
+              onChangeText={setSearch}
+              returnKeyType="search"
+            />
+
+            {error ? <ErrorState message={error} actionTitle="Повторить" onAction={refresh} /> : null}
+          </View>
+        }
+        ListEmptyComponent={
+          loading ? (
+            <LoadingState title="Загружаем рейтинг" />
+          ) : (
+            <EmptyState title="Рейтинг пока пуст" message="Данные появятся после расчёта KPI." />
+          )
+        }
+        ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+      />
     </ScreenContainer>
   );
 }
+
+const RatingRow = memo(function RatingRow({
+  item,
+  fallbackRank,
+}: {
+  item: ApiListItem;
+  fallbackRank: number;
+}) {
+  const rank = getEntityNumber(item, ['rank', 'position'], fallbackRank);
+  const score = getEntityNumber(item, ['score', 'points', 'total_score', 'kpi_score'], 0);
+  const revenue = getEntityNumber(item, ['revenue', 'revenue_usd', 'current_month_revenue'], 0);
+  const office = getEntityString(item, ['office_name', 'office_city', 'office']);
+
+  return (
+    <Card style={styles.row}>
+      <View style={[styles.rank, rank <= 3 && styles.rankTop]}>
+        <Text style={[styles.rankText, rank <= 3 && styles.rankTopText]}>{rank}</Text>
+      </View>
+      <View style={styles.rowText}>
+        <Text style={styles.rowTitle}>{getEntityTitle(item, 'Сотрудник')}</Text>
+        <Text style={styles.rowSubtitle}>{office || getEntityString(item, ['email'], 'Офис не указан')}</Text>
+        <View style={styles.pills}>
+          <StatusPill label={`${score.toLocaleString('ru-RU')} баллов`} tone={rank <= 3 ? 'accent' : 'primary'} />
+          <StatusPill label={`${revenue.toLocaleString('ru-RU')} USD`} tone="success" />
+        </View>
+      </View>
+      <Ionicons name={rank <= 3 ? 'trophy' : 'trending-up-outline'} size={22} color={rank <= 3 ? theme.colors.accent : theme.colors.textMuted} />
+    </Card>
+  );
+});
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
+  listContent: {
+    gap: theme.spacing.md,
+    paddingBottom: 116,
+  },
+  headerStack: {
+    gap: theme.spacing.lg,
+  },
+  hero: {
+    gap: theme.spacing.md,
+  },
+  heroKicker: {
+    color: theme.colors.accent,
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  heroTitle: {
+    color: theme.colors.text,
+    fontSize: 23,
+    fontWeight: '900',
+    lineHeight: 29,
+  },
+  heroText: {
+    color: theme.colors.textMuted,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+  },
+  rank: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.primarySoft,
+  },
+  rankTop: {
+    backgroundColor: theme.colors.accent,
+  },
+  rankText: {
+    color: theme.colors.primary,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  rankTopText: {
+    color: theme.colors.white,
+  },
+  rowText: {
+    flex: 1,
+    gap: theme.spacing.sm,
+  },
+  rowTitle: {
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  rowSubtitle: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  pills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  },
+});

@@ -1,35 +1,282 @@
-import React, { useCallback } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React, { memo, useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
-import { extractItems } from '../../api/client';
-import { listNotifications } from '../../api/notifications';
-import { ApiListItem } from '../../types';
-import { ErrorState } from '../../components/ui/ErrorState';
+import { listNotifications, markAllNotificationsRead } from '../../api/notifications';
+import { toApiError } from '../../api/client';
+import { Card } from '../../components/cards/Card';
+import { Input } from '../../components/forms/Input';
 import { Header } from '../../components/layout/Header';
-import { LoadingState } from '../../components/ui/LoadingState';
-import { ResourceList } from '../../components/layout/ResourceList';
 import { ScreenContainer } from '../../components/layout/ScreenContainer';
-import { SectionTitle } from '../../components/ui/SectionTitle';
-import { useAsyncResource } from '../../hooks/useAsyncResource';
+import { Button } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { ErrorState } from '../../components/ui/ErrorState';
+import { LoadingState } from '../../components/ui/LoadingState';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
+import { StatusPill } from '../../components/ui/StatusPill';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { usePagedResource } from '../../hooks/usePagedResource';
+import { theme } from '../../theme/theme';
+import { ApiListItem } from '../../types';
+import {
+  formatEntityDate,
+  getEntityId,
+  getEntityString,
+  getEntityTitle,
+  stripHtml,
+} from '../../utils/entity';
+
+const notificationFilters = [
+  { label: 'Все', value: 'all' },
+  { label: 'Новые', value: 'unread' },
+  { label: 'Прочитано', value: 'read' },
+];
+
+function notificationTone(item: ApiListItem) {
+  const priority = getEntityString(item, ['priority']);
+  const status = getEntityString(item, ['status']);
+
+  if (priority === 'urgent' || priority === 'high') return 'danger';
+  if (status === 'read' || getEntityString(item, ['is_read']) === 'true') return 'muted';
+  return 'accent';
+}
 
 export function NotificationsScreen() {
-  const loadNotifications = useCallback(async () => {
-    const payload = await listNotifications({ limit: 30 });
-    return extractItems<ApiListItem>(payload);
-  }, []);
+  const router = useRouter();
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [markingAll, setMarkingAll] = useState(false);
+  const debouncedSearch = useDebouncedValue(search.trim(), 350);
 
-  const { data, loading, error, reload } = useAsyncResource(loadNotifications);
+  const loader = useCallback(
+    ({ limit, offset }: { limit: number; offset: number }) =>
+      listNotifications({
+        limit,
+        offset,
+        search: debouncedSearch || undefined,
+        unread: filter === 'unread' ? true : filter === 'read' ? false : undefined,
+      }),
+    [debouncedSearch, filter]
+  );
+
+  const { items, count, loading, refreshing, loadingMore, error, refresh, loadMore } =
+    usePagedResource<ApiListItem>(loader);
+
+  const markAllRead = async () => {
+    setMarkingAll(true);
+
+    try {
+      const result = await markAllNotificationsRead();
+      await refresh();
+      Alert.alert('Уведомления', `Прочитано: ${result.updated || 0}`);
+    } catch (requestError) {
+      Alert.alert('Уведомления', toApiError(requestError).message);
+    } finally {
+      setMarkingAll(false);
+    }
+  };
+
+  const renderItem = useCallback(
+    ({ item }: { item: ApiListItem }) => (
+      <NotificationCard
+        item={item}
+        onPress={() => router.push(`/(app)/notifications/${getEntityId(item)}` as any)}
+      />
+    ),
+    [router]
+  );
 
   return (
-    <ScreenContainer>
-      <Header title="Уведомления" subtitle="Последние уведомления из ERP." showBack />
-      {loading && !data ? <LoadingState /> : null}
-      {error && !data ? <ErrorState message={error} actionTitle="Повторить" onAction={reload} /> : null}
-      {data ? (
-        <>
-          <SectionTitle title="Лента" />
-          <ResourceList items={data} emptyTitle="Уведомлений пока нет" />
-        </>
-      ) : null}
+    <ScreenContainer scroll={false} style={styles.screen}>
+      <FlatList
+        data={items}
+        keyExtractor={(item, index) => String(getEntityId(item) || index)}
+        renderItem={renderItem}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.35}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+            onRefresh={refresh}
+          />
+        }
+        ListHeaderComponent={
+          <View style={styles.headerStack}>
+            <Header
+              title="Уведомления"
+              eyebrow="Sprint 4"
+              subtitle="Лента событий, unread-фильтр и отметка прочтения."
+              showBack
+            />
+
+            <Card glass style={styles.hero}>
+              <Text style={styles.heroKicker}>ERP notifications</Text>
+              <Text style={styles.heroTitle}>Важное не теряется</Text>
+              <Text style={styles.heroText}>
+                В текущей ленте {count} уведомлений. Pull-to-refresh и mark-read подключены.
+              </Text>
+              <Button
+                title="Прочитать всё"
+                variant="secondary"
+                loading={markingAll}
+                onPress={markAllRead}
+              />
+            </Card>
+
+            <SegmentedControl options={notificationFilters} value={filter} onChange={setFilter} />
+
+            <Input
+              label="Поиск"
+              placeholder="Заголовок, текст или отправитель"
+              value={search}
+              onChangeText={setSearch}
+              returnKeyType="search"
+            />
+
+            {error ? <ErrorState message={error} actionTitle="Повторить" onAction={refresh} /> : null}
+          </View>
+        }
+        ListEmptyComponent={
+          loading ? (
+            <LoadingState title="Загружаем уведомления" />
+          ) : (
+            <EmptyState title="Уведомлений нет" message="Когда появятся события, они будут здесь." />
+          )
+        }
+        ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+      />
     </ScreenContainer>
   );
 }
+
+const NotificationCard = memo(function NotificationCard({
+  item,
+  onPress,
+}: {
+  item: ApiListItem;
+  onPress: () => void;
+}) {
+  const isRead = getEntityString(item, ['is_read']) === 'true' || getEntityString(item, ['status']) === 'read';
+
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
+      <Card style={[styles.itemCard, !isRead && styles.unreadCard]}>
+        <View style={styles.cardTop}>
+          <View style={[styles.iconWrap, !isRead && styles.iconUnread]}>
+            <Ionicons
+              name={isRead ? 'mail-open-outline' : 'mail-unread-outline'}
+              size={20}
+              color={isRead ? theme.colors.textMuted : theme.colors.accent}
+            />
+          </View>
+          <View style={styles.cardTitleWrap}>
+            <Text style={styles.cardTitle}>{getEntityTitle(item, 'Уведомление')}</Text>
+            <Text style={styles.cardSubtitle}>
+              {stripHtml(getEntityString(item, ['body', 'message', 'text'])) || 'Без текста'}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+        </View>
+        <View style={styles.pills}>
+          <StatusPill label={getEntityString(item, ['type_display', 'notification_type'], 'Событие')} tone={notificationTone(item)} />
+          <StatusPill label={getEntityString(item, ['priority_display', 'priority'], 'Обычный')} tone="primary" />
+          <StatusPill label={formatEntityDate(item.created_at) || 'Без даты'} tone="muted" />
+        </View>
+      </Card>
+    </Pressable>
+  );
+});
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
+  listContent: {
+    gap: theme.spacing.md,
+    paddingBottom: 116,
+  },
+  headerStack: {
+    gap: theme.spacing.lg,
+  },
+  hero: {
+    gap: theme.spacing.md,
+  },
+  heroKicker: {
+    color: theme.colors.accent,
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  heroTitle: {
+    color: theme.colors.text,
+    fontSize: 23,
+    fontWeight: '900',
+    lineHeight: 29,
+  },
+  heroText: {
+    color: theme.colors.textMuted,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  itemCard: {
+    gap: theme.spacing.md,
+  },
+  unreadCard: {
+    borderColor: theme.colors.accentSoft,
+  },
+  cardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.spacing.md,
+  },
+  iconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: theme.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.primarySoft,
+  },
+  iconUnread: {
+    backgroundColor: theme.colors.accentSoft,
+  },
+  cardTitleWrap: {
+    flex: 1,
+    gap: 4,
+  },
+  cardTitle: {
+    color: theme.colors.text,
+    fontSize: 16,
+    fontWeight: '900',
+    lineHeight: 21,
+  },
+  cardSubtitle: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  pills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  },
+  pressed: {
+    opacity: 0.72,
+  },
+});
