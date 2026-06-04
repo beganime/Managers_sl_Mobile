@@ -17,6 +17,9 @@ export function Input({ label, error, style, ...props }: InputProps) {
       <Text style={[styles.label, { color: appTheme.colors.textMuted }]}>{label}</Text>
       <TextInput
         placeholderTextColor={appTheme.colors.textSoft}
+        selectionColor={appTheme.colors.primary}
+        cursorColor={appTheme.colors.primary}
+        keyboardAppearance={appTheme.dark ? 'dark' : 'light'}
         style={[
           styles.input,
           {

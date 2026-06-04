@@ -14,10 +14,12 @@ import { SectionTitle } from '../../components/ui/SectionTitle';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { formatEntityDate, getStatusLabel } from '../../utils/entity';
 
 export function CalendarScreen() {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const loadEvents = useCallback(() => listCalendarEvents(), []);
   const { data, loading, error, reload } = useAsyncResource(loadEvents);
   const items = data?.items || [];
@@ -45,8 +47,8 @@ export function CalendarScreen() {
         refreshControl={
           <RefreshControl
             refreshing={loading}
-            tintColor={theme.colors.primary}
-            colors={[theme.colors.primary]}
+            tintColor={appTheme.colors.primary}
+            colors={[appTheme.colors.primary]}
             onRefresh={reload}
           />
         }
@@ -60,9 +62,9 @@ export function CalendarScreen() {
             />
 
             <Card glass style={styles.hero}>
-              <Text style={styles.heroKicker}>Calendar</Text>
-              <Text style={styles.heroTitle}>Сегодня, задачи и встречи</Text>
-              <Text style={styles.heroText}>
+              <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>Calendar</Text>
+              <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Сегодня, задачи и встречи</Text>
+              <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
                 События, задачи и рабочий день собраны в единую повестку.
               </Text>
               <View style={styles.pills}>
@@ -72,10 +74,10 @@ export function CalendarScreen() {
             </Card>
 
             {data?.warnings?.length ? (
-              <Card style={styles.warningCard}>
-                <Text style={styles.warningTitle}>Backend notes</Text>
+              <Card style={[styles.warningCard, { borderColor: appTheme.colors.warningSoft }]}>
+                <Text style={[styles.warningTitle, { color: appTheme.colors.warning }]}>Backend notes</Text>
                 {data.warnings.map((warning) => (
-                  <Text key={warning} style={styles.warningText}>
+                  <Text key={warning} style={[styles.warningText, { color: appTheme.colors.textMuted }]}>
                     {warning}
                   </Text>
                 ))}
@@ -118,6 +120,7 @@ const AgendaCard = memo(function AgendaCard({
   item: CalendarAgendaItem;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
   const isTask = item.type === 'task';
   const isEvent = item.type === 'event';
 
@@ -128,23 +131,23 @@ const AgendaCard = memo(function AgendaCard({
       style={({ pressed }) => [pressed && styles.pressed]}
     >
       <Card style={styles.agendaCard}>
-        <View style={styles.iconBubble}>
+        <View style={[styles.iconBubble, { backgroundColor: appTheme.colors.primarySoft }]}>
           <Ionicons
             name={isEvent ? 'calendar-outline' : isTask ? 'checkbox-outline' : 'briefcase-outline'}
             size={20}
-            color={isEvent ? theme.colors.success : isTask ? theme.colors.accent : theme.colors.primary}
+            color={isEvent ? appTheme.colors.success : isTask ? appTheme.colors.accent : appTheme.colors.primary}
           />
         </View>
         <View style={styles.agendaBody}>
-          <Text style={styles.agendaDate}>{formatEntityDate(item.date)}</Text>
-          <Text style={styles.agendaTitle}>{item.title}</Text>
-          {item.subtitle ? <Text style={styles.agendaSubtitle}>{item.subtitle}</Text> : null}
+          <Text style={[styles.agendaDate, { color: appTheme.colors.accent }]}>{formatEntityDate(item.date)}</Text>
+          <Text style={[styles.agendaTitle, { color: appTheme.colors.text }]}>{item.title}</Text>
+          {item.subtitle ? <Text style={[styles.agendaSubtitle, { color: appTheme.colors.textMuted }]}>{item.subtitle}</Text> : null}
           <View style={styles.pills}>
             <StatusPill label={isEvent ? 'Событие' : isTask ? 'Задача' : 'Рабочий день'} tone={isEvent ? 'success' : isTask ? 'accent' : 'primary'} />
             <StatusPill label={getStatusLabel(item.status)} tone="muted" />
           </View>
         </View>
-        {item.route ? <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} /> : null}
+        {item.route ? <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} /> : null}
       </Card>
     </Pressable>
   );

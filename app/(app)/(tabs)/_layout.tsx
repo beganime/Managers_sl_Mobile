@@ -28,7 +28,9 @@ function TabBarIcon({
       style={[
         styles.iconWrap,
         center && styles.centerIcon,
-        focused && { backgroundColor: appTheme.dark ? 'rgba(255,255,255,0.18)' : appTheme.colors.accentSoft },
+        focused && {
+          backgroundColor: appTheme.dark ? appTheme.colors.accent : appTheme.colors.accentSoft,
+        },
       ]}
     >
       <Ionicons name={name} color={center && focused ? appTheme.colors.white : color} size={center ? 22 : focused ? 21 : 20} />
@@ -67,23 +69,27 @@ export default function TabsLayout() {
           height: Platform.OS === 'ios' ? 74 : 66,
           borderRadius: 22,
           borderTopWidth: 0,
-          borderWidth: useBlur ? 0 : 1,
+          borderWidth: 1,
           borderColor: appTheme.colors.glassBorder,
-          backgroundColor: useBlur ? 'transparent' : appTheme.colors.surfaceStrong,
+          backgroundColor: appTheme.dark
+            ? 'rgba(7,17,31,0.96)'
+            : useBlur
+              ? 'transparent'
+              : appTheme.colors.surfaceStrong,
           paddingTop: 7,
           paddingBottom: Platform.OS === 'ios' ? 13 : 8,
-          ...theme.shadow.floating,
+          ...appTheme.shadow.floating,
         },
         tabBarBackground: () =>
           useBlur ? (
             <View style={StyleSheet.absoluteFillObject}>
-              <BlurView intensity={appTheme.dark ? 38 : 54} tint={appTheme.dark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} />
+              <BlurView intensity={appTheme.dark ? 72 : 54} tint={appTheme.dark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} />
               <View
                 style={[
                   styles.tabOverlay,
                   {
                     borderColor: appTheme.colors.glassBorder,
-                    backgroundColor: appTheme.dark ? 'rgba(7,17,31,0.72)' : 'rgba(255,255,255,0.66)',
+                    backgroundColor: appTheme.dark ? 'rgba(7,17,31,0.92)' : 'rgba(255,255,255,0.66)',
                   },
                 ]}
               />

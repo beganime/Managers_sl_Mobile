@@ -23,12 +23,13 @@ import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { LoadingState } from '../../components/ui/LoadingState';
-import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { SectionTitle } from '../../components/ui/SectionTitle';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { usePagedResource } from '../../hooks/usePagedResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
 import {
   formatEntityDate,
@@ -62,6 +63,7 @@ function DocumentList({
   onSectionChange: (value: string) => void;
 }) {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
@@ -106,8 +108,8 @@ function DocumentList({
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
+          tintColor={appTheme.colors.primary}
+          colors={[appTheme.colors.primary]}
           onRefresh={refresh}
         />
       }
@@ -115,15 +117,15 @@ function DocumentList({
         <View style={styles.headerStack}>
           <Header
             title="Документы"
-            eyebrow="Sprint 4"
+            eyebrow="Генерация документов"
             subtitle="Шаблоны, генерация, согласования и ссылки на файлы."
             showBack
           />
 
           <Card glass style={styles.hero}>
-            <Text style={styles.heroKicker}>ERP documents</Text>
-            <Text style={styles.heroTitle}>Документы без ручной рутины</Text>
-            <Text style={styles.heroText}>
+            <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>ERP documents</Text>
+            <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Документы без ручной рутины</Text>
+            <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
               В текущем разделе {count} записей. Шаблоны, генерация и согласование готовы к работе.
             </Text>
           </Card>
@@ -155,7 +157,7 @@ function DocumentList({
           <EmptyState title="Записи не найдены" message="Измените поиск или фильтр." />
         )
       }
-      ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
     />
@@ -171,6 +173,7 @@ const DocumentCard = memo(function DocumentCard({
   section: string;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
   const status = getEntityString(item, ['status'], section === 'templates' ? 'active' : 'draft');
   const subtitle =
     section === 'templates'
@@ -184,10 +187,10 @@ const DocumentCard = memo(function DocumentCard({
       <Card style={styles.itemCard}>
         <View style={styles.cardTop}>
           <View style={styles.cardTitleWrap}>
-            <Text style={styles.cardTitle}>{getEntityTitle(item, 'Документ')}</Text>
-            <Text style={styles.cardSubtitle}>{subtitle || 'Без описания'}</Text>
+            <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Документ')}</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{subtitle || 'Без описания'}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>
         <View style={styles.pills}>
           <StatusPill

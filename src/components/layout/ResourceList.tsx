@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { ApiListItem } from '../../types';
 import { getItemSubtitle, getItemTitle } from '../../utils/format';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { Card } from '../cards/Card';
 import { EmptyState } from '../ui/EmptyState';
 
@@ -14,6 +15,8 @@ type ResourceListProps = {
 };
 
 export function ResourceList({ items, emptyTitle, emptyMessage }: ResourceListProps) {
+  const appTheme = useAppTheme();
+
   if (!items.length) {
     return <EmptyState title={emptyTitle} message={emptyMessage} />;
   }
@@ -22,8 +25,10 @@ export function ResourceList({ items, emptyTitle, emptyMessage }: ResourceListPr
     <View style={styles.list}>
       {items.map((item, index) => (
         <Card key={String(item.id || index)} style={styles.item}>
-          <Text style={styles.title}>{getItemTitle(item)}</Text>
-          {getItemSubtitle(item) ? <Text style={styles.subtitle}>{getItemSubtitle(item)}</Text> : null}
+          <Text style={[styles.title, { color: appTheme.colors.text }]}>{getItemTitle(item)}</Text>
+          {getItemSubtitle(item) ? (
+            <Text style={[styles.subtitle, { color: appTheme.colors.textMuted }]}>{getItemSubtitle(item)}</Text>
+          ) : null}
         </Card>
       ))}
     </View>

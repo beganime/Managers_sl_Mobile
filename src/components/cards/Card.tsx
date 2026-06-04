@@ -21,7 +21,7 @@ export function Card({ glass = false, style, children, ...props }: CardProps) {
     return (
       <BlurView
         intensity={appTheme.dark ? 28 : 42}
-        tint="light"
+        tint={appTheme.dark ? 'dark' : 'light'}
         style={[styles.card, dynamicStyle, style]}
         {...props}
       >

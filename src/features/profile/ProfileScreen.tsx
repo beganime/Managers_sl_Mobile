@@ -10,11 +10,13 @@ import { ProfileAvatar } from '../../components/profile/ProfileAvatar';
 import { Button } from '../../components/ui/Button';
 import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { getUserDisplayName, getUserPosition } from '../../utils/format';
 import { ScreenContainer } from '../../components/layout/ScreenContainer';
 
 export function ProfileScreen() {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const { logout, user } = useAuth();
   const salary = user?.managersalary;
   const office = user?.office;
@@ -43,7 +45,7 @@ export function ProfileScreen() {
       />
 
       <LinearGradient
-        colors={theme.gradients.hero as [string, string, ...string[]]}
+        colors={appTheme.gradients.hero as [string, string, ...string[]]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.hero}
@@ -70,7 +72,7 @@ export function ProfileScreen() {
       </View>
 
       <Card style={styles.card}>
-        <Text style={styles.cardTitle}>Рабочие данные</Text>
+        <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>Рабочие данные</Text>
         <ProfileRow label="Имя" value={getUserDisplayName(user)} />
         <ProfileRow label="Должность" value={position} />
         <ProfileRow label="Телефон офиса" value={office?.phone} />
@@ -79,7 +81,7 @@ export function ProfileScreen() {
       </Card>
 
       <Card style={styles.actions}>
-        <Text style={styles.cardTitle}>Управление</Text>
+        <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>Управление</Text>
         <ActionRow icon="reader-outline" title="Мои отчёты" onPress={() => router.push('/(app)/reports-history' as any)} />
         <ActionRow icon="settings-outline" title="Настройки приложения" onPress={() => router.push('/(app)/settings' as any)} />
         <ActionRow icon="notifications-outline" title="Уведомления" onPress={() => router.push('/(app)/notifications' as any)} />
@@ -101,21 +103,25 @@ function HeroPill({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: 
 }
 
 function ProfileStat({ label, value }: { label: string; value: string | number }) {
+  const appTheme = useAppTheme();
+
   return (
     <Card style={styles.stat}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statValue} numberOfLines={1}>{String(value)}</Text>
+      <Text style={[styles.statLabel, { color: appTheme.colors.textMuted }]}>{label}</Text>
+      <Text style={[styles.statValue, { color: appTheme.colors.text }]} numberOfLines={1}>{String(value)}</Text>
     </Card>
   );
 }
 
 function ProfileRow({ label, value }: { label: string; value?: unknown }) {
+  const appTheme = useAppTheme();
+
   if (!value) return null;
 
   return (
-    <View style={styles.profileRow}>
-      <Text style={styles.profileLabel}>{label}</Text>
-      <Text style={styles.profileValue}>{String(value)}</Text>
+    <View style={[styles.profileRow, { borderBottomColor: appTheme.colors.border }]}>
+      <Text style={[styles.profileLabel, { color: appTheme.colors.textMuted }]}>{label}</Text>
+      <Text style={[styles.profileValue, { color: appTheme.colors.text }]}>{String(value)}</Text>
     </View>
   );
 }
@@ -129,13 +135,15 @@ function ActionRow({
   title: string;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
+
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}>
-      <View style={styles.actionIcon}>
-        <Ionicons name={icon} size={20} color={theme.colors.primary} />
+      <View style={[styles.actionIcon, { backgroundColor: appTheme.colors.primarySoft }]}>
+        <Ionicons name={icon} size={20} color={appTheme.colors.primary} />
       </View>
-      <Text style={styles.actionText}>{title}</Text>
-      <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+      <Text style={[styles.actionText, { color: appTheme.colors.text }]}>{title}</Text>
+      <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
     </Pressable>
   );
 }

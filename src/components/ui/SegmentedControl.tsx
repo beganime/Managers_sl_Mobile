@@ -24,7 +24,7 @@ export function SegmentedControl({ options, value, onChange }: SegmentedControlP
         styles.wrap,
         {
           borderColor: appTheme.colors.border,
-          backgroundColor: appTheme.dark ? 'rgba(255,255,255,0.16)' : appTheme.colors.surfaceSoft,
+          backgroundColor: appTheme.colors.surfaceSoft,
         },
       ]}
     >
@@ -44,7 +44,7 @@ export function SegmentedControl({ options, value, onChange }: SegmentedControlP
             <Text
               style={[
                 styles.label,
-                { color: appTheme.dark && !active ? appTheme.colors.screenTextMuted : appTheme.colors.textMuted },
+                { color: appTheme.colors.textMuted },
                 active && styles.labelActive,
               ]}
               numberOfLines={1}

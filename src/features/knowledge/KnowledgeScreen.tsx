@@ -25,6 +25,7 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { usePagedResource } from '../../hooks/usePagedResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
 import {
   getEntityId,
@@ -57,6 +58,7 @@ function KnowledgeList({
   onModeChange: (value: string) => void;
 }) {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
 
@@ -101,8 +103,8 @@ function KnowledgeList({
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
+          tintColor={appTheme.colors.primary}
+          colors={[appTheme.colors.primary]}
           onRefresh={refresh}
         />
       }
@@ -116,9 +118,9 @@ function KnowledgeList({
           />
 
           <Card glass style={styles.hero}>
-            <Text style={styles.heroKicker}>ManagerSL knowledge base</Text>
-            <Text style={styles.heroTitle}>Ответы, регламенты и инструкции рядом</Text>
-            <Text style={styles.heroText}>
+            <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>ManagerSL knowledge base</Text>
+            <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Ответы, регламенты и инструкции рядом</Text>
+            <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
               В разделе {count} записей. Материалы синхронизируются с базой знаний.
             </Text>
           </Card>
@@ -144,7 +146,7 @@ function KnowledgeList({
           <EmptyState title="Записи не найдены" message="Попробуйте изменить поиск." />
         )
       }
-      ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
     />
@@ -158,17 +160,19 @@ const ArticleCard = memo(function ArticleCard({
   item: ApiListItem;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
+
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
       <Card style={styles.itemCard}>
         <View style={styles.cardTop}>
           <View style={styles.titleWrap}>
-            <Text style={styles.cardTitle}>{getEntityTitle(item, 'Статья')}</Text>
-            <Text style={styles.cardSubtitle}>
+            <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Статья')}</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>
               {stripHtml(getEntityString(item, ['summary', 'content'], 'Описание не заполнено'))}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>
         <View style={styles.pills}>
           <StatusPill label={getEntityString(item, ['category_name'], 'Без категории')} tone="primary" />
@@ -181,10 +185,12 @@ const ArticleCard = memo(function ArticleCard({
 });
 
 const CategoryCard = memo(function CategoryCard({ item }: { item: ApiListItem }) {
+  const appTheme = useAppTheme();
+
   return (
     <Card style={styles.itemCard}>
-      <Text style={styles.cardTitle}>{getEntityTitle(item, 'Категория')}</Text>
-      <Text style={styles.cardSubtitle}>
+      <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Категория')}</Text>
+      <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>
         {stripHtml(getEntityString(item, ['description'])) || getEntityString(item, ['parent_name'], 'Корневая категория')}
       </Text>
       <View style={styles.pills}>

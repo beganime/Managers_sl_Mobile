@@ -27,6 +27,7 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { usePagedResource } from '../../hooks/usePagedResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem, EntityId } from '../../types';
 import {
   getEntityArray,
@@ -182,6 +183,7 @@ function CountryList({
   onModeChange: (value: string) => void;
   onSelectCountry: (countryId?: EntityId) => void;
 }) {
+  const appTheme = useAppTheme();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
 
@@ -216,8 +218,8 @@ function CountryList({
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
+          tintColor={appTheme.colors.primary}
+          colors={[appTheme.colors.primary]}
           onRefresh={() => {
             void filterOptions.reload();
             refresh();
@@ -252,7 +254,7 @@ function CountryList({
           <EmptyState title="Страны не найдены" message="Добавьте страны в backend admin или измените поиск." />
         )
       }
-      ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
     />
@@ -274,6 +276,7 @@ function CityList({
   onSelectCity: (cityId?: EntityId) => void;
   onSelectCountry: (countryId?: EntityId) => void;
 }) {
+  const appTheme = useAppTheme();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
 
@@ -309,8 +312,8 @@ function CityList({
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
+          tintColor={appTheme.colors.primary}
+          colors={[appTheme.colors.primary]}
           onRefresh={() => {
             void filterOptions.reload();
             refresh();
@@ -354,7 +357,7 @@ function CityList({
           <EmptyState title="Города не найдены" message="Добавьте города в backend admin или выберите другую страну." />
         )
       }
-      ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
     />
@@ -376,6 +379,7 @@ function UniversityList({
   onSelectCity: (cityId?: EntityId) => void;
   onSelectCountry: (countryId?: EntityId) => void;
 }) {
+  const appTheme = useAppTheme();
   const router = useRouter();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
@@ -416,8 +420,8 @@ function UniversityList({
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
+          tintColor={appTheme.colors.primary}
+          colors={[appTheme.colors.primary]}
           onRefresh={() => {
             void filterOptions.reload();
             refresh();
@@ -468,7 +472,7 @@ function UniversityList({
           <EmptyState title="Вузы не найдены" message="Попробуйте изменить страну, город или поисковый запрос." />
         )
       }
-      ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
     />
@@ -488,6 +492,7 @@ function ProgramList({
   onModeChange: (value: string) => void;
   onSelectCountry: (countryId?: EntityId) => void;
 }) {
+  const appTheme = useAppTheme();
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [degree, setDegree] = useState('all');
@@ -529,8 +534,8 @@ function ProgramList({
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
+          tintColor={appTheme.colors.primary}
+          colors={[appTheme.colors.primary]}
           onRefresh={() => {
             void filterOptions.reload();
             refresh();
@@ -586,7 +591,7 @@ function ProgramList({
           <EmptyState title="Программы не найдены" message="Попробуйте изменить страну, degree или поиск." />
         )
       }
-      ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
     />
@@ -606,14 +611,16 @@ function CatalogHeader({
   title: string;
   onModeChange: (value: string) => void;
 }) {
+  const appTheme = useAppTheme();
+
   return (
     <>
       <Header title={title} eyebrow="Education" subtitle={subtitle} showBack />
 
       <Card glass style={styles.hero}>
-        <Text style={styles.heroKicker}>Students Life Program for Managers</Text>
-        <Text style={styles.heroTitle}>Каталог для подбора обучения</Text>
-        <Text style={styles.heroText}>
+        <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>Students Life Program for Managers</Text>
+        <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Каталог для подбора обучения</Text>
+        <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
           Найдено записей: {count}. Данные готовы для подбора страны, города, вуза и программы.
         </Text>
       </Card>
@@ -636,9 +643,11 @@ function FilterRail({
   selectedId?: EntityId;
   onSelect: (id?: EntityId) => void;
 }) {
+  const appTheme = useAppTheme();
+
   return (
     <View style={styles.filterBlock}>
-      <Text style={styles.filterLabel}>{label}</Text>
+      <Text style={[styles.filterLabel, { color: appTheme.colors.text }]}>{label}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRail}>
         <FilterChip active={!selectedId} title={allTitle} onPress={() => onSelect(undefined)} />
         {items.map((item) => {
@@ -670,16 +679,25 @@ function FilterChip({
   title: string;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
+
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.filterChip, active && styles.filterChipActive, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.filterChip,
+        {
+          borderColor: active ? appTheme.colors.primary : appTheme.colors.border,
+          backgroundColor: active ? appTheme.colors.primary : appTheme.colors.surfaceStrong,
+        },
+        pressed && styles.pressed,
+      ]}
     >
-      <Text style={[styles.filterChipText, active && styles.filterChipTextActive]} numberOfLines={1}>
+      <Text style={[styles.filterChipText, { color: active ? appTheme.colors.white : appTheme.colors.text }]} numberOfLines={1}>
         {title}
       </Text>
       {subtitle ? (
-        <Text style={[styles.filterChipSub, active && styles.filterChipSubActive]} numberOfLines={1}>
+        <Text style={[styles.filterChipSub, { color: active ? 'rgba(255,255,255,0.72)' : appTheme.colors.textMuted }]} numberOfLines={1}>
           {subtitle}
         </Text>
       ) : null}
@@ -694,6 +712,7 @@ const CountryCard = memo(function CountryCard({
   item: ApiListItem;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
   const code = getEntityString(item, ['code']);
   const description = stripHtml(getEntityString(item, ['description']));
 
@@ -701,14 +720,14 @@ const CountryCard = memo(function CountryCard({
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
       <Card style={styles.itemCard}>
         <View style={styles.cardTop}>
-          <View style={styles.iconBubble}>
-            <Ionicons name="flag-outline" size={20} color={theme.colors.accent} />
+          <View style={[styles.iconBubble, { backgroundColor: appTheme.colors.primarySoft }]}>
+            <Ionicons name="flag-outline" size={20} color={appTheme.colors.accent} />
           </View>
           <View style={styles.titleWrap}>
-            <Text style={styles.cardTitle}>{getEntityTitle(item, 'Страна')}</Text>
-            <Text style={styles.cardSubtitle}>{description || 'Описание страны пока не заполнено.'}</Text>
+            <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Страна')}</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{description || 'Описание страны пока не заполнено.'}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>
         <View style={styles.pills}>
           <StatusPill label={code || 'Код не указан'} tone="primary" />
@@ -726,6 +745,7 @@ const CityCard = memo(function CityCard({
   item: ApiListItem;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
   const country = getEntityString(item, ['country_name']);
   const description = stripHtml(getEntityString(item, ['description']));
 
@@ -733,14 +753,14 @@ const CityCard = memo(function CityCard({
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
       <Card style={styles.itemCard}>
         <View style={styles.cardTop}>
-          <View style={styles.iconBubble}>
-            <Ionicons name="business-outline" size={20} color={theme.colors.primary} />
+          <View style={[styles.iconBubble, { backgroundColor: appTheme.colors.primarySoft }]}>
+            <Ionicons name="business-outline" size={20} color={appTheme.colors.primary} />
           </View>
           <View style={styles.titleWrap}>
-            <Text style={styles.cardTitle}>{getEntityTitle(item, 'Город')}</Text>
-            <Text style={styles.cardSubtitle}>{[country, description].filter(Boolean).join(' - ')}</Text>
+            <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Город')}</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{[country, description].filter(Boolean).join(' - ')}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>
         <View style={styles.pills}>
           <StatusPill label={country || 'Страна не указана'} tone="primary" />
@@ -758,6 +778,7 @@ const UniversityCard = memo(function UniversityCard({
   item: ApiListItem;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
   const city = getEntityString(item, ['city_name']);
   const country = getEntityString(item, ['country_name']);
   const active = getEntityString(item, ['is_active'], 'true') !== 'false';
@@ -766,14 +787,14 @@ const UniversityCard = memo(function UniversityCard({
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
       <Card style={styles.itemCard}>
         <View style={styles.cardTop}>
-          <View style={styles.iconBubble}>
-            <Ionicons name="school-outline" size={20} color={theme.colors.accent} />
+          <View style={[styles.iconBubble, { backgroundColor: appTheme.colors.accentSoft }]}>
+            <Ionicons name="school-outline" size={20} color={appTheme.colors.accent} />
           </View>
           <View style={styles.titleWrap}>
-            <Text style={styles.cardTitle}>{getEntityTitle(item, 'Университет')}</Text>
-            <Text style={styles.cardSubtitle}>{[city, country].filter(Boolean).join(', ') || 'Локация не указана'}</Text>
+            <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Университет')}</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{[city, country].filter(Boolean).join(', ') || 'Локация не указана'}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>
         <View style={styles.pills}>
           <StatusPill label={active ? 'Активен' : 'Неактивен'} tone={active ? 'success' : 'muted'} />
@@ -791,6 +812,7 @@ const ProgramCard = memo(function ProgramCard({
   item: ApiListItem;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
   const degree = getEntityString(item, ['degree_display', 'degree']);
   const university = getEntityString(item, ['university_name']);
   const country = getEntityString(item, ['country_name']);
@@ -801,14 +823,14 @@ const ProgramCard = memo(function ProgramCard({
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
       <Card style={styles.itemCard}>
         <View style={styles.cardTop}>
-          <View style={styles.iconBubble}>
-            <Ionicons name="library-outline" size={20} color={theme.colors.primary} />
+          <View style={[styles.iconBubble, { backgroundColor: appTheme.colors.primarySoft }]}>
+            <Ionicons name="library-outline" size={20} color={appTheme.colors.primary} />
           </View>
           <View style={styles.titleWrap}>
-            <Text style={styles.cardTitle}>{getEntityTitle(item, 'Программа')}</Text>
-            <Text style={styles.cardSubtitle}>{[university, country].filter(Boolean).join(' - ')}</Text>
+            <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Программа')}</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{[university, country].filter(Boolean).join(' - ')}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>
         <View style={styles.pills}>
           <StatusPill label={degree || 'Degree не указан'} tone="primary" />
@@ -818,18 +840,26 @@ const ProgramCard = memo(function ProgramCard({
           />
         </View>
         {price ? (
-          <View style={styles.priceBox}>
+          <View
+            style={[
+              styles.priceBox,
+              {
+                borderColor: appTheme.colors.border,
+                backgroundColor: appTheme.colors.surfaceSoft,
+              },
+            ]}
+          >
             <View style={styles.priceLine}>
-              <Text style={styles.priceLabel}>Обучение</Text>
-              <Text style={styles.priceValue}>{price.tuition}</Text>
+              <Text style={[styles.priceLabel, { color: appTheme.colors.textMuted }]}>Обучение</Text>
+              <Text style={[styles.priceValue, { color: appTheme.colors.text }]}>{price.tuition}</Text>
             </View>
             {price.service ? (
               <View style={styles.priceLine}>
-                <Text style={styles.priceLabel}>Услуги</Text>
-                <Text style={styles.priceValue}>{price.service}</Text>
+                <Text style={[styles.priceLabel, { color: appTheme.colors.textMuted }]}>Услуги</Text>
+                <Text style={[styles.priceValue, { color: appTheme.colors.text }]}>{price.service}</Text>
               </View>
             ) : null}
-            {price.rate ? <Text style={styles.priceRate}>{price.rate}</Text> : null}
+            {price.rate ? <Text style={[styles.priceRate, { color: appTheme.colors.textMuted }]}>{price.rate}</Text> : null}
           </View>
         ) : null}
       </Card>

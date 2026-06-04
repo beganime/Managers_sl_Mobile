@@ -124,25 +124,25 @@ export function NotificationBell() {
           >
             <View style={styles.panelTop}>
               <View>
-                <Text style={styles.panelTitle}>Уведомления</Text>
-                <Text style={styles.panelSubtitle}>Последние события кабинета</Text>
+                <Text style={[styles.panelTitle, { color: appTheme.colors.text }]}>Уведомления</Text>
+                <Text style={[styles.panelSubtitle, { color: appTheme.colors.textMuted }]}>Последние события кабинета</Text>
               </View>
-              <Pressable onPress={() => setOpen(false)} style={styles.closeButton}>
-                <Ionicons name="close" size={18} color={theme.colors.textMuted} />
+              <Pressable onPress={() => setOpen(false)} style={[styles.closeButton, { backgroundColor: appTheme.colors.primarySoft }]}>
+                <Ionicons name="close" size={18} color={appTheme.colors.textMuted} />
               </Pressable>
             </View>
 
             {loading ? (
               <View style={styles.center}>
-                <ActivityIndicator color={theme.colors.primary} />
-                <Text style={styles.muted}>Загружаем уведомления</Text>
+                <ActivityIndicator color={appTheme.colors.primary} />
+                <Text style={[styles.muted, { color: appTheme.colors.textMuted }]}>Загружаем уведомления</Text>
               </View>
             ) : null}
 
-            {!loading && error ? <Text style={styles.error}>{error}</Text> : null}
+            {!loading && error ? <Text style={[styles.error, { color: appTheme.colors.danger }]}>{error}</Text> : null}
 
             {!loading && !error && items.length === 0 ? (
-              <Text style={styles.muted}>Новых уведомлений пока нет.</Text>
+              <Text style={[styles.muted, { color: appTheme.colors.textMuted }]}>Новых уведомлений пока нет.</Text>
             ) : null}
 
             {!loading && !error
@@ -151,31 +151,40 @@ export function NotificationBell() {
                   const unread = isUnread(item);
 
                   return (
-                    <View key={String(id)} style={[styles.item, unread && styles.itemUnread]}>
-                      <View style={styles.itemIcon}>
+                    <View
+                      key={String(id)}
+                      style={[
+                        styles.item,
+                        {
+                          borderColor: unread ? appTheme.colors.accentSoft : appTheme.colors.border,
+                          backgroundColor: unread ? appTheme.colors.accentSoft : appTheme.colors.surfaceSoft,
+                        },
+                      ]}
+                    >
+                      <View style={[styles.itemIcon, { backgroundColor: appTheme.colors.primarySoft }]}>
                         <Ionicons
                           name={unread ? 'mail-unread-outline' : 'mail-open-outline'}
                           size={18}
-                          color={unread ? theme.colors.accent : theme.colors.textMuted}
+                          color={unread ? appTheme.colors.accent : appTheme.colors.textMuted}
                         />
                       </View>
                       <View style={styles.itemText}>
-                        <Text style={styles.itemTitle} numberOfLines={1}>{getEntityTitle(item, 'Уведомление')}</Text>
-                        <Text style={styles.itemBody} numberOfLines={2}>
+                        <Text style={[styles.itemTitle, { color: appTheme.colors.text }]} numberOfLines={1}>{getEntityTitle(item, 'Уведомление')}</Text>
+                        <Text style={[styles.itemBody, { color: appTheme.colors.textMuted }]} numberOfLines={2}>
                           {stripHtml(getEntityString(item, ['body', 'message', 'text'])) || 'Без текста'}
                         </Text>
-                        <Text style={styles.itemDate}>{formatEntityDate(item.created_at) || 'Сегодня'}</Text>
+                        <Text style={[styles.itemDate, { color: appTheme.colors.textSoft }]}>{formatEntityDate(item.created_at) || 'Сегодня'}</Text>
                       </View>
                       {unread ? (
                         <Pressable
                           disabled={markingId === id}
                           onPress={() => markRead(item)}
-                          style={styles.readButton}
+                          style={[styles.readButton, { backgroundColor: appTheme.colors.accent }]}
                         >
                           {markingId === id ? (
-                            <ActivityIndicator size="small" color={theme.colors.white} />
+                            <ActivityIndicator size="small" color={appTheme.colors.white} />
                           ) : (
-                            <Ionicons name="checkmark" size={17} color={theme.colors.white} />
+                            <Ionicons name="checkmark" size={17} color={appTheme.colors.white} />
                           )}
                         </Pressable>
                       ) : null}
@@ -185,11 +194,11 @@ export function NotificationBell() {
               : null}
 
             <View style={styles.actions}>
-              <Pressable onPress={markVisibleRead} style={styles.secondaryAction}>
-                <Text style={styles.secondaryText}>Прочитать последние</Text>
+              <Pressable onPress={markVisibleRead} style={[styles.secondaryAction, { backgroundColor: appTheme.colors.primarySoft }]}>
+                <Text style={[styles.secondaryText, { color: appTheme.colors.primary }]}>Прочитать последние</Text>
               </Pressable>
-              <Pressable onPress={openAll} style={styles.primaryAction}>
-                <Text style={styles.primaryText}>Открыть все</Text>
+              <Pressable onPress={openAll} style={[styles.primaryAction, { backgroundColor: appTheme.colors.primary }]}>
+                <Text style={[styles.primaryText, { color: appTheme.colors.white }]}>Открыть все</Text>
               </Pressable>
             </View>
           </Pressable>

@@ -22,6 +22,7 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { usePagedResource } from '../../hooks/usePagedResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
 import { getEntityId, getEntityNumber, getEntityString, getEntityTitle } from '../../utils/entity';
 
@@ -32,6 +33,7 @@ const roleOptions = [
 ];
 
 export function RatingScreen() {
+  const appTheme = useAppTheme();
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('all');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
@@ -68,8 +70,8 @@ export function RatingScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            tintColor={theme.colors.primary}
-            colors={[theme.colors.primary]}
+            tintColor={appTheme.colors.primary}
+            colors={[appTheme.colors.primary]}
             onRefresh={refresh}
           />
         }
@@ -82,13 +84,13 @@ export function RatingScreen() {
             />
 
             <Card glass style={styles.hero}>
-              <View style={styles.heroIcon}>
-                <Ionicons name="trophy-outline" size={26} color={theme.colors.accent} />
+              <View style={[styles.heroIcon, { backgroundColor: appTheme.colors.accentSoft }]}>
+                <Ionicons name="trophy-outline" size={26} color={appTheme.colors.accent} />
               </View>
               <View style={styles.heroTextWrap}>
-                <Text style={styles.heroKicker}>Students Life Program for Managers</Text>
-                <Text style={styles.heroTitle}>Командный рейтинг</Text>
-                <Text style={styles.heroText}>
+                <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>Students Life Program for Managers</Text>
+                <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Командный рейтинг</Text>
+                <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
                   В списке {count} сотрудников. Можно искать по имени, email, офису или должности.
                 </Text>
               </View>
@@ -114,7 +116,7 @@ export function RatingScreen() {
             <EmptyState title="Рейтинг пока пуст" message="Данные появятся после расчёта KPI сотрудников." />
           )
         }
-        ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+        ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       />
@@ -129,6 +131,7 @@ const RatingRow = memo(function RatingRow({
   item: ApiListItem;
   fallbackRank: number;
 }) {
+  const appTheme = useAppTheme();
   const rank = getEntityNumber(item, ['rank', 'position_index'], fallbackRank);
   const score = getEntityNumber(item, ['score', 'points', 'total_score', 'kpi_score'], 0);
   const revenue = getEntityNumber(item, ['revenue', 'revenue_usd', 'current_month_revenue'], 0);
@@ -137,19 +140,24 @@ const RatingRow = memo(function RatingRow({
 
   return (
     <Card style={styles.row}>
-      <View style={[styles.rank, rank <= 3 && styles.rankTop]}>
-        <Text style={[styles.rankText, rank <= 3 && styles.rankTopText]}>{rank}</Text>
+      <View
+        style={[
+          styles.rank,
+          { backgroundColor: rank <= 3 ? appTheme.colors.accent : appTheme.colors.primarySoft },
+        ]}
+      >
+        <Text style={[styles.rankText, { color: rank <= 3 ? appTheme.colors.white : appTheme.colors.primary }]}>{rank}</Text>
       </View>
       <View style={styles.rowText}>
-        <Text style={styles.rowTitle}>{getEntityTitle(item, 'Сотрудник')}</Text>
-        <Text style={styles.rowSubtitle}>{position}</Text>
-        <Text style={styles.rowMeta}>{office || getEntityString(item, ['email'], 'Офис не указан')}</Text>
+        <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Сотрудник')}</Text>
+        <Text style={[styles.rowSubtitle, { color: appTheme.colors.accent }]}>{position}</Text>
+        <Text style={[styles.rowMeta, { color: appTheme.colors.textMuted }]}>{office || getEntityString(item, ['email'], 'Офис не указан')}</Text>
         <View style={styles.pills}>
           <StatusPill label={`${score.toLocaleString('ru-RU')} баллов`} tone={rank <= 3 ? 'accent' : 'primary'} />
           <StatusPill label={`${revenue.toLocaleString('ru-RU')} USD`} tone="success" />
         </View>
       </View>
-      <Ionicons name={rank <= 3 ? 'trophy' : 'trending-up-outline'} size={22} color={rank <= 3 ? theme.colors.accent : theme.colors.textMuted} />
+      <Ionicons name={rank <= 3 ? 'trophy' : 'trending-up-outline'} size={22} color={rank <= 3 ? appTheme.colors.accent : appTheme.colors.textMuted} />
     </Card>
   );
 });

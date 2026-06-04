@@ -18,6 +18,7 @@ import { LoadingState } from '../../components/ui/LoadingState';
 import { SectionTitle } from '../../components/ui/SectionTitle';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem, EntityId } from '../../types';
 import { getEntityId, getEntityString, getEntityTitle, getEntityValue } from '../../utils/entity';
 
@@ -80,6 +81,7 @@ function sourceIsCovered(field: TemplateField, selected: { client?: string; appl
 
 export function DocumentGenerateScreen() {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const params = useLocalSearchParams<{ id: string }>();
   const id = params.id;
   const [title, setTitle] = useState('');
@@ -211,9 +213,9 @@ export function DocumentGenerateScreen() {
       />
 
       <Card glass style={styles.hero}>
-        <Text style={styles.heroKicker}>Document generator</Text>
-        <Text style={styles.heroTitle}>{getEntityTitle(data.template, 'Шаблон')}</Text>
-        <Text style={styles.heroText}>
+        <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>Document generator</Text>
+        <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>{getEntityTitle(data.template, 'Шаблон')}</Text>
+        <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
           Выберите связанный объект и заполните поля шаблона. Документ сформируется без ручной вставки технических данных.
         </Text>
       </Card>
@@ -297,16 +299,18 @@ const SelectableSection = memo(function SelectableSection({
   empty: string;
   onSelect: (id: string) => void;
 }) {
+  const appTheme = useAppTheme();
+
   return (
     <Card style={styles.selectCard}>
       <View style={styles.selectHeader}>
-        <View style={styles.selectIcon}>
-          <Ionicons name={icon} size={18} color={theme.colors.primary} />
+        <View style={[styles.selectIcon, { backgroundColor: appTheme.colors.primarySoft }]}>
+          <Ionicons name={icon} size={18} color={appTheme.colors.primary} />
         </View>
-        <Text style={styles.selectTitle}>{title}</Text>
+        <Text style={[styles.selectTitle, { color: appTheme.colors.text }]}>{title}</Text>
         {selectedId ? (
-          <Pressable onPress={() => onSelect('')} style={styles.clearButton}>
-            <Text style={styles.clearText}>Сбросить</Text>
+          <Pressable onPress={() => onSelect('')} style={[styles.clearButton, { backgroundColor: appTheme.colors.accentSoft }]}>
+            <Text style={[styles.clearText, { color: appTheme.colors.accent }]}>Сбросить</Text>
           </Pressable>
         ) : null}
       </View>
@@ -321,13 +325,20 @@ const SelectableSection = memo(function SelectableSection({
               <Pressable
                 key={id}
                 onPress={() => onSelect(active ? '' : id)}
-                style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && styles.pressed]}
+                style={({ pressed }) => [
+                  styles.chip,
+                  {
+                    borderColor: active ? appTheme.colors.primary : appTheme.colors.border,
+                    backgroundColor: active ? appTheme.colors.primary : appTheme.colors.surfaceSoft,
+                  },
+                  pressed && styles.pressed,
+                ]}
               >
-                <Text style={[styles.chipTitle, active && styles.chipTextActive]} numberOfLines={1}>
+                <Text style={[styles.chipTitle, { color: active ? appTheme.colors.white : appTheme.colors.text }]} numberOfLines={1}>
                   {getEntityTitle(item, title)}
                 </Text>
                 {subtitle ? (
-                  <Text style={[styles.chipSubtitle, active && styles.chipTextActive]} numberOfLines={1}>
+                  <Text style={[styles.chipSubtitle, { color: active ? appTheme.colors.white : appTheme.colors.textMuted }]} numberOfLines={1}>
                     {subtitle}
                   </Text>
                 ) : null}
@@ -336,7 +347,7 @@ const SelectableSection = memo(function SelectableSection({
           })}
         </View>
       ) : (
-        <Text style={styles.emptyText}>{empty}</Text>
+        <Text style={[styles.emptyText, { color: appTheme.colors.textMuted }]}>{empty}</Text>
       )}
     </Card>
   );
@@ -351,6 +362,7 @@ function TemplateFieldInput({
   value: string;
   onChangeText: (value: string) => void;
 }) {
+  const appTheme = useAppTheme();
   const options = Array.isArray(field.options)
     ? field.options.map((option) => String(option))
     : [];
@@ -359,7 +371,7 @@ function TemplateFieldInput({
   if (field.field_type === 'boolean') {
     return (
       <View style={styles.booleanWrap}>
-        <Text style={styles.fieldLabel}>{field.label}{field.is_required ? ' *' : ''}</Text>
+        <Text style={[styles.fieldLabel, { color: appTheme.colors.textMuted }]}>{field.label}{field.is_required ? ' *' : ''}</Text>
         <View style={styles.booleanRow}>
           <Choice active={value === 'true'} label="Да" onPress={() => onChangeText('true')} />
           <Choice active={value === 'false'} label="Нет" onPress={() => onChangeText('false')} />
@@ -383,9 +395,20 @@ function TemplateFieldInput({
 }
 
 function Choice({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+  const appTheme = useAppTheme();
+
   return (
-    <Pressable onPress={onPress} style={[styles.choice, active && styles.choiceActive]}>
-      <Text style={[styles.choiceText, active && styles.choiceTextActive]}>{label}</Text>
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.choice,
+        {
+          borderColor: active ? appTheme.colors.primary : appTheme.colors.border,
+          backgroundColor: active ? appTheme.colors.primary : appTheme.colors.surfaceSoft,
+        },
+      ]}
+    >
+      <Text style={[styles.choiceText, { color: active ? appTheme.colors.white : appTheme.colors.textMuted }]}>{label}</Text>
     </Pressable>
   );
 }

@@ -59,11 +59,11 @@ export function SettingsScreen() {
       <Card style={styles.card}>
         <View style={styles.cardHeader}>
           <View>
-            <Text style={styles.cardTitle}>Состояние приложения</Text>
-            <Text style={styles.cardSubtitle}>Кабинет готов к работе.</Text>
+            <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>Состояние приложения</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>Кабинет готов к работе.</Text>
           </View>
-          <View style={styles.okBadge}>
-            <Text style={styles.okText}>Online</Text>
+          <View style={[styles.okBadge, { backgroundColor: appTheme.colors.successSoft }]}>
+            <Text style={[styles.okText, { color: appTheme.colors.success }]}>Online</Text>
           </View>
         </View>
         <InfoRow icon="shield-checkmark-outline" label="Сессия" value="Защищённый вход активен" />
@@ -71,8 +71,8 @@ export function SettingsScreen() {
       </Card>
 
       <Card style={styles.card}>
-        <Text style={styles.cardTitle}>Внешний вид</Text>
-        <Text style={styles.cardSubtitle}>
+        <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>Внешний вид</Text>
+        <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>
           Сейчас включена {themeMode === 'dark' ? 'тёмная' : 'светлая'} тема.
         </Text>
         <View style={styles.toggleRow}>
@@ -83,8 +83,8 @@ export function SettingsScreen() {
       </Card>
 
       <Card style={styles.card}>
-        <Text style={styles.cardTitle}>Push-уведомления</Text>
-        <Text style={styles.cardSubtitle}>{pushStatus}</Text>
+        <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>Push-уведомления</Text>
+        <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{pushStatus}</Text>
         <Button
           title="Подключить push"
           variant="primary"
@@ -94,7 +94,7 @@ export function SettingsScreen() {
       </Card>
 
       <Card style={styles.card}>
-        <Text style={styles.cardTitle}>Быстрое управление</Text>
+        <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>Быстрое управление</Text>
         <SettingsAction icon="person-circle-outline" title="Открыть профиль" onPress={() => router.push('/(app)/profile-v2' as any)} />
         <SettingsAction icon="reader-outline" title="Мои отчёты" onPress={() => router.push('/(app)/reports-history' as any)} />
         <SettingsAction icon="notifications-outline" title="Уведомления" onPress={() => router.push('/(app)/notifications' as any)} />
@@ -105,14 +105,16 @@ export function SettingsScreen() {
 }
 
 function InfoRow({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }) {
+  const { appTheme } = useTheme();
+
   return (
     <View style={styles.infoRow}>
-      <View style={styles.infoIcon}>
-        <Ionicons name={icon} size={18} color={theme.colors.primary} />
+      <View style={[styles.infoIcon, { backgroundColor: appTheme.colors.primarySoft }]}>
+        <Ionicons name={icon} size={18} color={appTheme.colors.primary} />
       </View>
       <View style={styles.infoText}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{value}</Text>
+        <Text style={[styles.infoLabel, { color: appTheme.colors.textMuted }]}>{label}</Text>
+        <Text style={[styles.infoValue, { color: appTheme.colors.text }]}>{value}</Text>
       </View>
     </View>
   );
@@ -127,9 +129,22 @@ function ThemeOption({
   title: string;
   onPress: () => void;
 }) {
+  const { appTheme } = useTheme();
+
   return (
-    <Pressable onPress={onPress} style={[styles.themeOption, active && styles.themeOptionActive]}>
-      <Text style={[styles.themeText, active && styles.themeTextActive]}>{title}</Text>
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.themeOption,
+        {
+          borderColor: active ? appTheme.colors.primary : appTheme.colors.border,
+          backgroundColor: active ? appTheme.colors.primary : appTheme.colors.surfaceSoft,
+        },
+      ]}
+    >
+      <Text style={[styles.themeText, { color: active ? appTheme.colors.white : appTheme.colors.textMuted }]}>
+        {title}
+      </Text>
     </Pressable>
   );
 }
@@ -143,13 +158,15 @@ function SettingsAction({
   title: string;
   onPress: () => void;
 }) {
+  const { appTheme } = useTheme();
+
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}>
-      <View style={styles.actionIcon}>
-        <Ionicons name={icon} size={20} color={theme.colors.primary} />
+      <View style={[styles.actionIcon, { backgroundColor: appTheme.colors.primarySoft }]}>
+        <Ionicons name={icon} size={20} color={appTheme.colors.primary} />
       </View>
-      <Text style={styles.actionText}>{title}</Text>
-      <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+      <Text style={[styles.actionText, { color: appTheme.colors.text }]}>{title}</Text>
+      <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
     </Pressable>
   );
 }

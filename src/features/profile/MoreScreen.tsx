@@ -8,6 +8,7 @@ import { Header } from '../../components/layout/Header';
 import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 
 type MoreItem = {
   title: string;
@@ -20,6 +21,7 @@ type MoreItem = {
 
 export function MoreScreen() {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const { logout } = useAuth();
 
   const confirmLogout = () => {
@@ -120,8 +122,8 @@ export function MoreScreen() {
       />
 
       <Card glass style={styles.hero}>
-        <Text style={styles.heroTitle}>ManagerSL mobile cabinet</Text>
-        <Text style={styles.heroText}>
+        <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>ManagerSL mobile cabinet</Text>
+        <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
           Управление CRM, задачами, документами, знаниями, отчётами и настройками собрано в одном месте.
         </Text>
       </Card>
@@ -133,23 +135,34 @@ export function MoreScreen() {
             onPress={() => (item.onPress ? item.onPress() : router.push(item.route as any))}
             style={({ pressed }) => [
               styles.row,
+              {
+                borderColor: item.danger ? appTheme.colors.dangerSoft : appTheme.colors.border,
+                backgroundColor: item.danger ? appTheme.colors.dangerSoft : appTheme.colors.surfaceStrong,
+                ...appTheme.shadow.card,
+              },
               pressed && styles.rowPressed,
-              item.danger && styles.rowDanger,
             ]}
           >
-            <View style={[styles.icon, item.danger && styles.iconDanger]}>
+            <View
+              style={[
+                styles.icon,
+                { backgroundColor: item.danger ? appTheme.colors.dangerSoft : appTheme.colors.primarySoft },
+              ]}
+            >
               <Ionicons
                 name={item.icon}
                 size={22}
-                color={item.danger ? theme.colors.danger : theme.colors.primary}
+                color={item.danger ? appTheme.colors.danger : appTheme.colors.primary}
               />
             </View>
             <View style={styles.rowText}>
-              <Text style={[styles.title, item.danger && styles.dangerText]}>{item.title}</Text>
-              <Text style={styles.subtitle}>{item.subtitle}</Text>
+              <Text style={[styles.title, { color: item.danger ? appTheme.colors.danger : appTheme.colors.text }]}>
+                {item.title}
+              </Text>
+              <Text style={[styles.subtitle, { color: appTheme.colors.textMuted }]}>{item.subtitle}</Text>
             </View>
             {!item.danger ? (
-              <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+              <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
             ) : null}
           </Pressable>
         ))}

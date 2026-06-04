@@ -25,12 +25,13 @@ import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { LoadingState } from '../../components/ui/LoadingState';
-import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { SectionTitle } from '../../components/ui/SectionTitle';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { usePagedResource } from '../../hooks/usePagedResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
 import {
   formatEntityDate,
@@ -66,6 +67,7 @@ function FinanceList({
   onSectionChange: (value: string) => void;
 }) {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
@@ -113,8 +115,8 @@ function FinanceList({
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
+          tintColor={appTheme.colors.primary}
+          colors={[appTheme.colors.primary]}
           onRefresh={refresh}
         />
       }
@@ -122,14 +124,14 @@ function FinanceList({
         <View style={styles.headerStack}>
           <Header
             title="Финансы"
-            eyebrow="Sprint 4"
+            eyebrow="Финансовая страничка"
             subtitle="Доходы, расходы, сделки и транзакции."
           />
 
           <Card glass style={styles.hero}>
-            <Text style={styles.heroKicker}>ManagerSL finance</Text>
-            <Text style={styles.heroTitle}>Деньги под контролем</Text>
-            <Text style={styles.heroText}>
+            <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>ManagerSL finance</Text>
+            <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Деньги под контролем</Text>
+            <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
               В текущем разделе найдено {count} записей. Списки работают через pagination, search и pull-to-refresh.
             </Text>
             <View style={styles.heroActions}>
@@ -175,7 +177,7 @@ function FinanceList({
           />
         )
       }
-      ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
     />
@@ -191,6 +193,7 @@ const FinanceCard = memo(function FinanceCard({
   section: string;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
   const statusKey =
     section === 'deals'
       ? getEntityString(item, ['payment_status'], 'new')
@@ -212,11 +215,11 @@ const FinanceCard = memo(function FinanceCard({
       <Card style={styles.itemCard}>
         <View style={styles.cardTop}>
           <View style={styles.cardTitleWrap}>
-            <Text style={styles.cardTitle}>{getEntityTitle(item, 'Финансовая запись')}</Text>
-            <Text style={styles.cardSubtitle}>{subtitle || formatEntityDate(item.date || item.created_at) || 'Без деталей'}</Text>
+            <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Финансовая запись')}</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{subtitle || formatEntityDate(item.date || item.created_at) || 'Без деталей'}</Text>
           </View>
-          <Text style={styles.amount}>{getMoneyAmount(item)}</Text>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+          <Text style={[styles.amount, { color: appTheme.colors.accent }]}>{getMoneyAmount(item)}</Text>
+          <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>
 
         <View style={styles.pills}>

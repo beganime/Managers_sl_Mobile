@@ -20,6 +20,7 @@ import { LoadingState } from '../../components/ui/LoadingState';
 import { SectionTitle } from '../../components/ui/SectionTitle';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem, EntityId } from '../../types';
 import { getEntityId, getEntityString, getEntityTitle } from '../../utils/entity';
 
@@ -37,6 +38,7 @@ function today() {
 
 export function FinanceEntryFormScreen() {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const pathname = usePathname();
   const params = useLocalSearchParams<{ kind?: string }>();
   const kind = params.kind === 'expenses' || pathname.includes('/expenses/') ? 'expenses' : 'incomes';
@@ -206,12 +208,17 @@ export function FinanceEntryFormScreen() {
                   onPress={() => setCashboxId(id)}
                   style={({ pressed }) => [
                     styles.chip,
-                    active && styles.chipActive,
+                    {
+                      borderColor: active ? appTheme.colors.primary : appTheme.colors.border,
+                      backgroundColor: active ? appTheme.colors.primary : appTheme.colors.surfaceSoft,
+                    },
                     pressed && styles.pressed,
                   ]}
                 >
-                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{getEntityTitle(cashbox)}</Text>
-                  <Text style={[styles.chipMeta, active && styles.chipTextActive]}>
+                  <Text style={[styles.chipText, { color: active ? appTheme.colors.white : appTheme.colors.text }]}>
+                    {getEntityTitle(cashbox)}
+                  </Text>
+                  <Text style={[styles.chipMeta, { color: active ? appTheme.colors.white : appTheme.colors.textMuted }]}>
                     {getEntityString(cashbox, ['currency_code'], 'currency')}
                   </Text>
                 </Pressable>
@@ -240,11 +247,16 @@ export function FinanceEntryFormScreen() {
                       onPress={() => setCategoryId(id)}
                       style={({ pressed }) => [
                         styles.chip,
-                        active && styles.chipActive,
+                        {
+                          borderColor: active ? appTheme.colors.primary : appTheme.colors.border,
+                          backgroundColor: active ? appTheme.colors.primary : appTheme.colors.surfaceSoft,
+                        },
                         pressed && styles.pressed,
                       ]}
                     >
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{getEntityTitle(category)}</Text>
+                      <Text style={[styles.chipText, { color: active ? appTheme.colors.white : appTheme.colors.text }]}>
+                        {getEntityTitle(category)}
+                      </Text>
                     </Pressable>
                   );
                 })}

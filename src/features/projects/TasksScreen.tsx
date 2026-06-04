@@ -20,12 +20,13 @@ import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { LoadingState } from '../../components/ui/LoadingState';
-import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { SectionTitle } from '../../components/ui/SectionTitle';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { usePagedResource } from '../../hooks/usePagedResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
 import {
   formatEntityDate,
@@ -73,6 +74,7 @@ type WorkspaceHeaderProps = {
 
 function TaskList({ workspace, onWorkspaceChange }: WorkspaceHeaderProps) {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [priority, setPriority] = useState('all');
@@ -110,8 +112,8 @@ function TaskList({ workspace, onWorkspaceChange }: WorkspaceHeaderProps) {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
+          tintColor={appTheme.colors.primary}
+          colors={[appTheme.colors.primary]}
           onRefresh={refresh}
         />
       }
@@ -119,14 +121,14 @@ function TaskList({ workspace, onWorkspaceChange }: WorkspaceHeaderProps) {
         <View style={styles.headerStack}>
           <Header
             title="Задачи"
-            eyebrow="Sprint 3 workspace"
+            eyebrow="Задачи и проекты"
             subtitle="Проектные задачи и статусы исполнения."
           />
 
           <Card glass style={styles.hero}>
-            <Text style={styles.heroKicker}>Students Life Program for Managers</Text>
-            <Text style={styles.heroTitle}>Командная работа без лишнего шума</Text>
-            <Text style={styles.heroText}>
+            <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>Students Life Program for Managers</Text>
+            <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Командная работа без лишнего шума</Text>
+            <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
               В работе {count} задач. Фильтры, поиск, pull-to-refresh и бесконечная подгрузка уже подключены к backend.
             </Text>
             <View style={styles.heroActions}>
@@ -178,7 +180,7 @@ function TaskList({ workspace, onWorkspaceChange }: WorkspaceHeaderProps) {
           />
         )
       }
-      ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
     />
@@ -187,6 +189,7 @@ function TaskList({ workspace, onWorkspaceChange }: WorkspaceHeaderProps) {
 
 function ProjectList({ workspace, onWorkspaceChange }: WorkspaceHeaderProps) {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
@@ -225,8 +228,8 @@ function ProjectList({ workspace, onWorkspaceChange }: WorkspaceHeaderProps) {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
+          tintColor={appTheme.colors.primary}
+          colors={[appTheme.colors.primary]}
           onRefresh={refresh}
         />
       }
@@ -239,9 +242,9 @@ function ProjectList({ workspace, onWorkspaceChange }: WorkspaceHeaderProps) {
           />
 
           <Card glass style={styles.hero}>
-            <Text style={styles.heroKicker}>Projects v2</Text>
-            <Text style={styles.heroTitle}>Проекты как рабочие контуры</Text>
-            <Text style={styles.heroText}>
+            <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>Projects v2</Text>
+            <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Проекты как рабочие контуры</Text>
+            <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
               Найдено {count} проектов. Внутри карточки проекта можно открыть задачи и быстро добавить новую.
             </Text>
             <View style={styles.heroActions}>
@@ -286,7 +289,7 @@ function ProjectList({ workspace, onWorkspaceChange }: WorkspaceHeaderProps) {
           />
         )
       }
-      ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
     />
@@ -300,6 +303,7 @@ const TaskCard = memo(function TaskCard({
   item: ApiListItem;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
   const status = getTaskStatus(item);
   const priority = getTaskPriority(item);
   const assignedTo = getEntityString(item, ['assigned_to_data', 'assigned_to_name', 'assigned_to']);
@@ -311,10 +315,10 @@ const TaskCard = memo(function TaskCard({
       <Card style={styles.itemCard}>
         <View style={styles.cardTop}>
           <View style={styles.cardTitleWrap}>
-            <Text style={styles.cardTitle}>{getEntityTitle(item, 'Задача')}</Text>
-            {projectTitle ? <Text style={styles.cardSubtitle}>{projectTitle}</Text> : null}
+            <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Задача')}</Text>
+            {projectTitle ? <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{projectTitle}</Text> : null}
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>
 
         <View style={styles.pills}>
@@ -346,6 +350,7 @@ const ProjectCard = memo(function ProjectCard({
   item: ApiListItem;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
   const status = getProjectStatus(item);
   const progress = getEntityNumber(item, ['progress_percent'], 0);
   const tasksCount = getEntityNumber(item, ['tasks_count'], 0);
@@ -358,12 +363,12 @@ const ProjectCard = memo(function ProjectCard({
       <Card style={styles.itemCard}>
         <View style={styles.cardTop}>
           <View style={styles.cardTitleWrap}>
-            <Text style={styles.cardTitle}>{getEntityTitle(item, 'Проект')}</Text>
-            <Text style={styles.cardSubtitle}>
+            <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Проект')}</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>
               {getEntityString(item, ['code'], 'Без кода')} - {tasksCount} задач
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>
 
         <View style={styles.pills}>
@@ -374,8 +379,8 @@ const ProjectCard = memo(function ProjectCard({
           <StatusPill label={`${progress}% прогресс`} tone="accent" />
         </View>
 
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${Math.min(progress, 100)}%` }]} />
+        <View style={[styles.progressTrack, { backgroundColor: appTheme.colors.primarySoft }]}>
+          <View style={[styles.progressFill, { width: `${Math.min(progress, 100)}%`, backgroundColor: appTheme.colors.accent }]} />
         </View>
 
         <View style={styles.metaGrid}>
@@ -390,10 +395,12 @@ const ProjectCard = memo(function ProjectCard({
 });
 
 function Meta({ label, value }: { label: string; value: string }) {
+  const appTheme = useAppTheme();
+
   return (
-    <View style={styles.meta}>
-      <Text style={styles.metaLabel}>{label}</Text>
-      <Text style={styles.metaValue} numberOfLines={1}>
+    <View style={[styles.meta, { backgroundColor: appTheme.colors.primarySoft }]}>
+      <Text style={[styles.metaLabel, { color: appTheme.colors.textMuted }]}>{label}</Text>
+      <Text style={[styles.metaValue, { color: appTheme.colors.text }]} numberOfLines={1}>
         {value}
       </Text>
     </View>

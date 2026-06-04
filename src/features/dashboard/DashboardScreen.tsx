@@ -11,6 +11,7 @@ import { listProjectTasks } from '../../api/projects';
 import { Card } from '../../components/cards/Card';
 import { StatCard } from '../../components/cards/StatCard';
 import { Header } from '../../components/layout/Header';
+import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState } from '../../components/ui/ErrorState';
@@ -19,9 +20,9 @@ import { SectionTitle } from '../../components/ui/SectionTitle';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem, DashboardSummary } from '../../types';
 import { formatWorkdayStatus, getItemTitle, getUserDisplayName, getUserPosition } from '../../utils/format';
-import { ScreenContainer } from '../../components/layout/ScreenContainer';
 
 type DashboardData = DashboardSummary & {
   todayTasks: ApiListItem[];
@@ -30,6 +31,7 @@ type DashboardData = DashboardSummary & {
 
 export function DashboardScreen() {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const { user } = useAuth();
   const [startingDay, setStartingDay] = useState(false);
 
@@ -97,7 +99,7 @@ export function DashboardScreen() {
       />
 
       <LinearGradient
-        colors={theme.gradients.hero as [string, string, ...string[]]}
+        colors={appTheme.gradients.hero as [string, string, ...string[]]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.hero}
@@ -106,14 +108,14 @@ export function DashboardScreen() {
         <Text style={styles.heroTitle}>Здравствуйте, {getUserDisplayName(user)}</Text>
         <Text style={styles.heroPosition}>{getUserPosition(user)}</Text>
         <Text style={styles.heroText}>
-          Рабочий день, CRM, задачи и уведомления собраны в одном мобильном кабинете.
+          Рабочий день, CRM, задачи и уведомления собраны в одном мобильном кабинете ManagerSL.
         </Text>
       </LinearGradient>
 
       <Card glass style={styles.workday}>
         <View style={styles.workdayText}>
-          <Text style={styles.workdayLabel}>Рабочий день</Text>
-          <Text style={styles.workdayStatus}>{formatWorkdayStatus(data.workday)}</Text>
+          <Text style={[styles.workdayLabel, { color: appTheme.colors.textMuted }]}>Рабочий день</Text>
+          <Text style={[styles.workdayStatus, { color: appTheme.colors.text }]}>{formatWorkdayStatus(data.workday)}</Text>
         </View>
         <Button title="Начать день" loading={startingDay} onPress={handleStartDay} />
       </Card>
@@ -149,18 +151,18 @@ export function DashboardScreen() {
       <SectionTitle title="Сегодня" subtitle="Календарь, задачи и рабочий день." />
 
       <Card style={styles.today}>
-        <Text style={styles.todayTitle}>Календарные события</Text>
-        <Text style={styles.todayText}>События появятся здесь после синхронизации календаря.</Text>
+        <Text style={[styles.todayTitle, { color: appTheme.colors.text }]}>Календарные события</Text>
+        <Text style={[styles.todayText, { color: appTheme.colors.textMuted }]}>События появятся здесь после синхронизации календаря.</Text>
       </Card>
 
       <Card style={styles.today}>
-        <Text style={styles.todayTitle}>Задачи</Text>
+        <Text style={[styles.todayTitle, { color: appTheme.colors.text }]}>Задачи</Text>
         {data.todayTasks.length ? (
           data.todayTasks.map((task) => (
-            <Text key={String(task.id)} style={styles.todayText}>• {getItemTitle(task)}</Text>
+            <Text key={String(task.id)} style={[styles.todayText, { color: appTheme.colors.textMuted }]}>• {getItemTitle(task)}</Text>
           ))
         ) : (
-          <Text style={styles.todayText}>На сегодня задач не найдено.</Text>
+          <Text style={[styles.todayText, { color: appTheme.colors.textMuted }]}>На сегодня задач не найдено.</Text>
         )}
       </Card>
 
@@ -168,12 +170,12 @@ export function DashboardScreen() {
       <Card style={styles.today}>
         {data.notifications.length ? (
           data.notifications.map((notification) => (
-            <Text key={String(notification.id)} style={styles.todayText}>
+            <Text key={String(notification.id)} style={[styles.todayText, { color: appTheme.colors.textMuted }]}>
               • {getItemTitle(notification)}
             </Text>
           ))
         ) : (
-          <Text style={styles.todayText}>Новых уведомлений нет.</Text>
+          <Text style={[styles.todayText, { color: appTheme.colors.textMuted }]}>Новых уведомлений нет.</Text>
         )}
       </Card>
     </ScreenContainer>
@@ -181,23 +183,37 @@ export function DashboardScreen() {
 }
 
 function QuickAction({ title, onPress }: { title: string; onPress: () => void }) {
+  const appTheme = useAppTheme();
+
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.quick, pressed && styles.pressed]}>
-      <Text style={styles.quickText}>{title}</Text>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.quick,
+        {
+          borderColor: appTheme.colors.border,
+          backgroundColor: appTheme.colors.surfaceStrong,
+        },
+        pressed && styles.pressed,
+      ]}
+    >
+      <Text style={[styles.quickText, { color: appTheme.colors.primary }]}>{title}</Text>
     </Pressable>
   );
 }
 
 function DashboardSkeleton() {
+  const appTheme = useAppTheme();
+
   return (
     <>
       <Header title="Главная" subtitle="ManagerSL ERP/CRM workspace" />
-      <View style={styles.skeletonHero} />
+      <View style={[styles.skeletonHero, { backgroundColor: appTheme.colors.surfaceStrong }]} />
       <View style={styles.skeletonGrid}>
-        <View style={styles.skeletonCard} />
-        <View style={styles.skeletonCard} />
-        <View style={styles.skeletonCard} />
-        <View style={styles.skeletonCard} />
+        <View style={[styles.skeletonCard, { backgroundColor: appTheme.colors.surfaceStrong }]} />
+        <View style={[styles.skeletonCard, { backgroundColor: appTheme.colors.surfaceStrong }]} />
+        <View style={[styles.skeletonCard, { backgroundColor: appTheme.colors.surfaceStrong }]} />
+        <View style={[styles.skeletonCard, { backgroundColor: appTheme.colors.surfaceStrong }]} />
       </View>
       <LoadingState title="Синхронизируем кабинет" />
     </>

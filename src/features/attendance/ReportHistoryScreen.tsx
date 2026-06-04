@@ -22,6 +22,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { usePagedResource } from '../../hooks/usePagedResource';
 import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
 import { formatEntityDate, getEntityId, getEntityNumber, getEntityString, stripHtml } from '../../utils/entity';
 
@@ -44,6 +45,7 @@ function relativeReportDate(value: unknown) {
 }
 
 export function ReportHistoryScreen() {
+  const appTheme = useAppTheme();
   const { user } = useAuth();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
@@ -75,8 +77,8 @@ export function ReportHistoryScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            tintColor={theme.colors.primary}
-            colors={[theme.colors.primary]}
+            tintColor={appTheme.colors.primary}
+            colors={[appTheme.colors.primary]}
             onRefresh={refresh}
           />
         }
@@ -90,12 +92,12 @@ export function ReportHistoryScreen() {
             />
 
             <Card glass style={styles.hero}>
-              <View style={styles.heroIcon}>
-                <Ionicons name="reader-outline" size={24} color={theme.colors.primary} />
+              <View style={[styles.heroIcon, { backgroundColor: appTheme.colors.primarySoft }]}>
+                <Ionicons name="reader-outline" size={24} color={appTheme.colors.primary} />
               </View>
               <View style={styles.heroTextWrap}>
-                <Text style={styles.heroTitle}>Отчёты всегда под рукой</Text>
-                <Text style={styles.heroText}>
+                <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Отчёты всегда под рукой</Text>
+                <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
                   Найдено {count} записей. Можно быстро открыть вчерашний, позавчерашний и более ранние отчёты.
                 </Text>
               </View>
@@ -119,7 +121,7 @@ export function ReportHistoryScreen() {
             <EmptyState title="Отчётов пока нет" message="Когда рабочий отчёт будет отправлен, он появится здесь." />
           )
         }
-        ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+        ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       />
@@ -128,6 +130,7 @@ export function ReportHistoryScreen() {
 }
 
 const ReportCard = memo(function ReportCard({ item }: { item: ApiListItem }) {
+  const appTheme = useAppTheme();
   const date = getEntityString(item, ['date']);
   const content = stripHtml(getEntityString(item, ['content', 'report']));
   const results = stripHtml(getEntityString(item, ['results']));
@@ -140,8 +143,8 @@ const ReportCard = memo(function ReportCard({ item }: { item: ApiListItem }) {
     <Card style={styles.card}>
       <View style={styles.cardTop}>
         <View>
-          <Text style={styles.cardDate}>{relativeReportDate(date)}</Text>
-          <Text style={styles.cardSubtitle}>{formatEntityDate(date) || getEntityString(item, ['submitted_at'])}</Text>
+          <Text style={[styles.cardDate, { color: appTheme.colors.text }]}>{relativeReportDate(date)}</Text>
+          <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{formatEntityDate(date) || getEntityString(item, ['submitted_at'])}</Text>
         </View>
         <StatusPill label={getEntityString(item, ['workday_status'], 'Отправлен')} tone="success" />
       </View>
@@ -160,19 +163,23 @@ const ReportCard = memo(function ReportCard({ item }: { item: ApiListItem }) {
 });
 
 function ReportBlock({ title, value }: { title: string; value: string }) {
+  const appTheme = useAppTheme();
+
   return (
     <View style={styles.block}>
-      <Text style={styles.blockTitle}>{title}</Text>
-      <Text style={styles.blockText}>{value}</Text>
+      <Text style={[styles.blockTitle, { color: appTheme.colors.textMuted }]}>{title}</Text>
+      <Text style={[styles.blockText, { color: appTheme.colors.text }]}>{value}</Text>
     </View>
   );
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
+  const appTheme = useAppTheme();
+
   return (
-    <View style={styles.metric}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+    <View style={[styles.metric, { backgroundColor: appTheme.colors.primarySoft }]}>
+      <Text style={[styles.metricValue, { color: appTheme.colors.text }]}>{value}</Text>
+      <Text style={[styles.metricLabel, { color: appTheme.colors.textMuted }]}>{label}</Text>
     </View>
   );
 }

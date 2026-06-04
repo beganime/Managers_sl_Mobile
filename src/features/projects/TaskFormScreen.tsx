@@ -21,6 +21,7 @@ import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { SectionTitle } from '../../components/ui/SectionTitle';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem, EntityId } from '../../types';
 import { getEntityId, getEntityString, getEntityTitle } from '../../utils/entity';
 import { taskFormStatusOptions, taskPriorityOptions } from './projectHelpers';
@@ -32,6 +33,7 @@ function normalizeId(value: string): EntityId {
 
 export function TaskFormScreen() {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const params = useLocalSearchParams<{ id?: string; project?: string }>();
   const editId = params.id;
   const initialProject = params.project || '';
@@ -164,11 +166,19 @@ export function TaskFormScreen() {
                   onPress={() => setProjectId(id)}
                   style={({ pressed }) => [
                     styles.projectChip,
-                    active && styles.projectChipActive,
+                    {
+                      borderColor: active ? appTheme.colors.primary : appTheme.colors.border,
+                      backgroundColor: active ? appTheme.colors.primary : appTheme.colors.surfaceSoft,
+                    },
                     pressed && styles.pressed,
                   ]}
                 >
-                  <Text style={[styles.projectChipText, active && styles.projectChipTextActive]}>
+                  <Text
+                    style={[
+                      styles.projectChipText,
+                      { color: active ? appTheme.colors.white : appTheme.colors.textMuted },
+                    ]}
+                  >
                     {getEntityTitle(project, 'Проект')}
                   </Text>
                 </Pressable>

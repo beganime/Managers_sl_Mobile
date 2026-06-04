@@ -25,6 +25,7 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { usePagedResource } from '../../hooks/usePagedResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
 import {
   formatEntityDate,
@@ -58,6 +59,7 @@ function ServiceList({
   onModeChange: (value: string) => void;
 }) {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
 
@@ -108,8 +110,8 @@ function ServiceList({
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          tintColor={theme.colors.primary}
-          colors={[theme.colors.primary]}
+          tintColor={appTheme.colors.primary}
+          colors={[appTheme.colors.primary]}
           onRefresh={refresh}
         />
       }
@@ -123,9 +125,9 @@ function ServiceList({
           />
 
           <Card glass style={styles.hero}>
-            <Text style={styles.heroKicker}>ERP services</Text>
-            <Text style={styles.heroTitle}>Сервисный каталог для сделок</Text>
-            <Text style={styles.heroText}>В текущем разделе найдено {count} записей.</Text>
+            <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>ERP services</Text>
+            <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Сервисный каталог для сделок</Text>
+            <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>В текущем разделе найдено {count} записей.</Text>
           </Card>
 
           <SegmentedControl options={serviceOptions} value={mode} onChange={onModeChange} />
@@ -149,7 +151,7 @@ function ServiceList({
           <EmptyState title="Записи не найдены" message="Попробуйте изменить поиск или открыть другой раздел." />
         )
       }
-      ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+      ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
     />
@@ -163,6 +165,7 @@ const ServiceCard = memo(function ServiceCard({
   item: ApiListItem;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
   const active = getEntityString(item, ['is_active'], 'true') !== 'false';
   const publicLabel = getEntityString(item, ['is_public'], 'false') === 'true' ? 'Публичная' : 'Внутренняя';
 
@@ -171,12 +174,12 @@ const ServiceCard = memo(function ServiceCard({
       <Card style={styles.itemCard}>
         <View style={styles.cardTop}>
           <View style={styles.titleWrap}>
-            <Text style={styles.cardTitle}>{getEntityTitle(item, 'Услуга')}</Text>
-            <Text style={styles.cardSubtitle}>
+            <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Услуга')}</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>
               {[getEntityString(item, ['category_name']), getEntityString(item, ['code'])].filter(Boolean).join(' - ')}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>
         <View style={styles.pills}>
           <StatusPill label={active ? 'Активна' : 'Неактивна'} tone={active ? 'success' : 'muted'} />
@@ -189,10 +192,12 @@ const ServiceCard = memo(function ServiceCard({
 });
 
 const CategoryCard = memo(function CategoryCard({ item }: { item: ApiListItem }) {
+  const appTheme = useAppTheme();
+
   return (
     <Card style={styles.itemCard}>
-      <Text style={styles.cardTitle}>{getEntityTitle(item, 'Категория')}</Text>
-      <Text style={styles.cardSubtitle}>{getEntityString(item, ['description'], 'Описание не заполнено')}</Text>
+      <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Категория')}</Text>
+      <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{getEntityString(item, ['description'], 'Описание не заполнено')}</Text>
       <View style={styles.pills}>
         <StatusPill label={getEntityString(item, ['code'], 'без кода')} tone="primary" />
         <StatusPill
@@ -205,15 +210,17 @@ const CategoryCard = memo(function CategoryCard({ item }: { item: ApiListItem })
 });
 
 const PriceCard = memo(function PriceCard({ item }: { item: ApiListItem }) {
+  const appTheme = useAppTheme();
+
   return (
     <Card style={styles.itemCard}>
-      <Text style={styles.cardTitle}>{getEntityString(item, ['service_title'], 'Цена услуги')}</Text>
-      <Text style={styles.price}>
+      <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityString(item, ['service_title'], 'Цена услуги')}</Text>
+      <Text style={[styles.price, { color: appTheme.colors.accent }]}>
         {[getEntityString(item, ['price', 'amount']), getEntityString(item, ['currency_code', 'currency_symbol'])]
           .filter(Boolean)
           .join(' ')}
       </Text>
-      <Text style={styles.cardSubtitle}>
+      <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>
         {[
           getEntityString(item, ['price_type', 'title']),
           formatEntityDate(item.valid_from),

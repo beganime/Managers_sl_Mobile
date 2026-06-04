@@ -12,8 +12,8 @@ import {
   View,
 } from 'react-native';
 
-import { listNotifications, markAllNotificationsRead } from '../../api/notifications';
 import { toApiError } from '../../api/client';
+import { listNotifications, markAllNotificationsRead } from '../../api/notifications';
 import { Card } from '../../components/cards/Card';
 import { Input } from '../../components/forms/Input';
 import { Header } from '../../components/layout/Header';
@@ -27,6 +27,7 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { usePagedResource } from '../../hooks/usePagedResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
 import {
   formatEntityDate,
@@ -53,6 +54,7 @@ function notificationTone(item: ApiListItem) {
 
 export function NotificationsScreen() {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [markingAll, setMarkingAll] = useState(false);
@@ -107,8 +109,8 @@ export function NotificationsScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            tintColor={theme.colors.primary}
-            colors={[theme.colors.primary]}
+            tintColor={appTheme.colors.primary}
+            colors={[appTheme.colors.primary]}
             onRefresh={refresh}
           />
         }
@@ -116,15 +118,15 @@ export function NotificationsScreen() {
           <View style={styles.headerStack}>
             <Header
               title="Уведомления"
-              eyebrow="Sprint 4"
+              eyebrow="Уведомления и события"
               subtitle="Лента событий, unread-фильтр и отметка прочтения."
               showBack
             />
 
             <Card glass style={styles.hero}>
-              <Text style={styles.heroKicker}>ERP notifications</Text>
-              <Text style={styles.heroTitle}>Важное не теряется</Text>
-              <Text style={styles.heroText}>
+              <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>ERP notifications</Text>
+              <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Важное не теряется</Text>
+              <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
                 В текущей ленте {count} уведомлений. Pull-to-refresh и mark-read подключены.
               </Text>
               <Button
@@ -155,7 +157,7 @@ export function NotificationsScreen() {
             <EmptyState title="Уведомлений нет" message="Когда появятся события, они будут здесь." />
           )
         }
-        ListFooterComponent={loadingMore ? <ActivityIndicator color={theme.colors.primary} /> : null}
+        ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       />
@@ -170,26 +172,37 @@ const NotificationCard = memo(function NotificationCard({
   item: ApiListItem;
   onPress: () => void;
 }) {
+  const appTheme = useAppTheme();
   const isRead = getEntityString(item, ['is_read']) === 'true' || getEntityString(item, ['status']) === 'read';
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
-      <Card style={[styles.itemCard, !isRead && styles.unreadCard]}>
+      <Card
+        style={[
+          styles.itemCard,
+          !isRead && { borderColor: appTheme.colors.accentSoft },
+        ]}
+      >
         <View style={styles.cardTop}>
-          <View style={[styles.iconWrap, !isRead && styles.iconUnread]}>
+          <View
+            style={[
+              styles.iconWrap,
+              { backgroundColor: isRead ? appTheme.colors.primarySoft : appTheme.colors.accentSoft },
+            ]}
+          >
             <Ionicons
               name={isRead ? 'mail-open-outline' : 'mail-unread-outline'}
               size={20}
-              color={isRead ? theme.colors.textMuted : theme.colors.accent}
+              color={isRead ? appTheme.colors.textMuted : appTheme.colors.accent}
             />
           </View>
           <View style={styles.cardTitleWrap}>
-            <Text style={styles.cardTitle}>{getEntityTitle(item, 'Уведомление')}</Text>
-            <Text style={styles.cardSubtitle}>
+            <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Уведомление')}</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>
               {stripHtml(getEntityString(item, ['body', 'message', 'text'])) || 'Без текста'}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+          <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>
         <View style={styles.pills}>
           <StatusPill label={getEntityString(item, ['type_display', 'notification_type'], 'Событие')} tone={notificationTone(item)} />
