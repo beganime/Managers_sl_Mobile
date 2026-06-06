@@ -25,6 +25,10 @@ export function listWorkdays(params?: ApiParams) {
   return getJson<CollectionResponse<ApiListItem>>(v1('/attendance/workdays/'), { params });
 }
 
+export function listWorkdayHistory(params?: ApiParams) {
+  return getJson<CollectionResponse<ApiListItem>>(v1('/attendance/workdays/history/'), { params });
+}
+
 export function closeWorkday(payload?: Record<string, unknown>) {
   return postJson<Workday>(v1('/attendance/workdays/close/'), payload || {});
 }

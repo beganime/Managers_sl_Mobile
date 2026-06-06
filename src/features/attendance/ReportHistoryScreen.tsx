@@ -10,7 +10,8 @@ import {
   View,
 } from 'react-native';
 
-import { listDailyReports } from '../../api/attendance';
+import { listDailyReports, listWorkdayHistory } from '../../api/attendance';
+import { toApiError } from '../../api/client';
 import { Card } from '../../components/cards/Card';
 import { Input } from '../../components/forms/Input';
 import { Header } from '../../components/layout/Header';
@@ -55,14 +56,27 @@ export function ReportHistoryScreen() {
   const employeeName = params.name ? String(params.name) : '';
 
   const loader = useCallback(
-    ({ limit, offset }: { limit: number; offset: number }) =>
-      listDailyReports({
-        limit,
-        offset,
-        employee: employeeId,
-        user: employeeId,
-        search: debouncedSearch || undefined,
-      }),
+    async ({ limit, offset }: { limit: number; offset: number }) => {
+      try {
+        return await listWorkdayHistory({
+          limit,
+          offset,
+          user_id: employeeId,
+          search: debouncedSearch || undefined,
+        });
+      } catch (requestError) {
+        const apiError = toApiError(requestError);
+        if (apiError.status !== 404) throw apiError;
+
+        return listDailyReports({
+          limit,
+          offset,
+          employee: employeeId,
+          user: employeeId,
+          search: debouncedSearch || undefined,
+        });
+      }
+    },
     [debouncedSearch, employeeId]
   );
 
@@ -137,13 +151,13 @@ export function ReportHistoryScreen() {
 const ReportCard = memo(function ReportCard({ item }: { item: ApiListItem }) {
   const appTheme = useAppTheme();
   const date = getEntityString(item, ['date']);
-  const content = stripHtml(getEntityString(item, ['content', 'report']));
+  const content = stripHtml(getEntityString(item, ['report_text', 'content', 'report', 'comment']));
   const results = stripHtml(getEntityString(item, ['results']));
   const plans = stripHtml(getEntityString(item, ['plans']));
   const problems = stripHtml(getEntityString(item, ['problems']));
   const startedAt = getEntityString(item, ['started_at', 'start_time', 'time_in']);
   const closedAt = getEntityString(item, ['closed_at', 'end_time', 'time_out']);
-  const status = getEntityString(item, ['workday_status', 'status'], 'Отправлен');
+  const status = getEntityString(item, ['status_display', 'workday_status', 'status'], 'Отправлен');
   const leads = getEntityNumber(item, ['leads_processed'], 0);
   const deals = getEntityNumber(item, ['deals_closed'], 0);
 

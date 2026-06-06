@@ -38,16 +38,48 @@ function getUniversityLogoUrl(item: ApiListItem) {
 }
 
 function buildUniversityCopyText(item: ApiListItem, programs: ApiListItem[]) {
+  const contacts = getEntityArray<ApiListItem>(item, 'contacts').length
+    ? getEntityArray<ApiListItem>(item, 'contacts')
+    : getEntityArray<ApiListItem>(item, 'contact_people');
+  const docs = getEntityArray<ApiListItem>(item, 'required_documents');
+  const fees = getEntityArray<ApiListItem>(item, 'fees_summary');
   const lines = [
     `ВУЗ: ${getEntityTitle(item, 'Университет')}`,
+    `Юридическое название: ${getEntityString(item, ['legal_name'], 'не указано')}`,
     `Страна: ${getEntityString(item, ['country_name'], 'не указана')}`,
     `Город: ${getEntityString(item, ['city_name'], 'не указан')}`,
+    `Адрес: ${getEntityString(item, ['address'], 'не указан')}`,
+    `Email: ${getEntityString(item, ['email'], 'не указан')}`,
+    `Телефон: ${getEntityString(item, ['phone'], 'не указан')}`,
     `Описание: ${stripHtml(getEntityString(item, ['description'])) || 'не заполнено'}`,
     `Сайт: ${getEntityString(item, ['website', 'site'], 'не указан')}`,
     `Условия поступления: ${stripHtml(getEntityString(item, ['admission_requirements', 'requirements'])) || 'не заполнено'}`,
-    `Общежитие: ${stripHtml(getEntityString(item, ['dormitory', 'hostel'])) || 'не заполнено'}`,
-    `Расходы: ${stripHtml(getEntityString(item, ['expenses', 'costs', 'living_costs'])) || 'не заполнено'}`,
+    `Приглашение: ${stripHtml(getEntityString(item, ['invitation_info'])) || 'не заполнено'}`,
+    `Общежитие: ${stripHtml(getEntityString(item, ['dormitory_info', 'dormitory', 'hostel'])) || 'не заполнено'}`,
+    `Расходы: ${stripHtml(getEntityString(item, ['expenses_info', 'expenses', 'costs', 'living_costs'])) || 'не заполнено'}`,
+    `Возраст: ${getEntityString(item, ['age_limit'], 'не указан')}`,
   ];
+
+  if (contacts.length) {
+    lines.push('Контакты:');
+    contacts.forEach((contact) => {
+      lines.push(`- ${getEntityTitle(contact, 'Контакт')} ${[getEntityString(contact, ['position']), getEntityString(contact, ['phone']), getEntityString(contact, ['email'])].filter(Boolean).join(', ')}`);
+    });
+  }
+
+  if (docs.length) {
+    lines.push('Документы:');
+    docs.forEach((doc) => {
+      lines.push(`- ${getEntityTitle(doc, 'Документ')}`);
+    });
+  }
+
+  if (fees.length) {
+    lines.push('Стоимость:');
+    fees.forEach((fee) => {
+      lines.push(`- ${getEntityString(fee, ['program_name'], 'Программа')}: ${getEntityString(fee, ['tuition_fee'], '-')} ${getEntityString(fee, ['currency'], '')}, услуги ${getEntityString(fee, ['service_fee_usd'], '-')} USD`);
+    });
+  }
 
   if (programs.length) {
     lines.push('Программы:');
@@ -95,11 +127,25 @@ export function UniversityDetailScreen() {
   }
 
   const programs = getEntityArray<ApiListItem>(data, 'programs');
-  const contacts = getEntityArray<ApiListItem>(data, 'contacts');
+  const contacts = getEntityArray<ApiListItem>(data, 'contacts').length
+    ? getEntityArray<ApiListItem>(data, 'contacts')
+    : getEntityArray<ApiListItem>(data, 'contact_people');
   const docs = getEntityArray<ApiListItem>(data, 'required_documents');
+  const feesSummary = getEntityArray<ApiListItem>(data, 'fees_summary');
   const website = getEntityString(data, ['website', 'site']);
   const imageUrl = getUniversityImageUrl(data);
   const logoUrl = getUniversityLogoUrl(data);
+  const infoRows = [
+    { label: 'Юридическое название', value: getEntityString(data, ['legal_name']) },
+    { label: 'Адрес', value: getEntityString(data, ['address']) },
+    { label: 'Email', value: getEntityString(data, ['email']) },
+    { label: 'Телефон', value: getEntityString(data, ['phone']) },
+    { label: 'Условия поступления', value: stripHtml(getEntityString(data, ['admission_requirements', 'requirements'])) },
+    { label: 'Приглашение', value: stripHtml(getEntityString(data, ['invitation_info'])) },
+    { label: 'Общежитие', value: stripHtml(getEntityString(data, ['dormitory_info', 'dormitory', 'hostel'])) },
+    { label: 'Расходы', value: stripHtml(getEntityString(data, ['expenses_info', 'expenses', 'costs', 'living_costs'])) },
+    { label: 'Возраст', value: getEntityString(data, ['age_limit']) },
+  ].filter((row) => row.value);
 
   const copyUniversityData = async () => {
     await Clipboard.setStringAsync(buildUniversityCopyText(data, programs));
@@ -151,6 +197,33 @@ export function UniversityDetailScreen() {
         ) : null}
         <Button title="Скопировать данные" variant="secondary" onPress={copyUniversityData} />
       </Card>
+
+      {infoRows.length ? (
+        <>
+          <SectionTitle title="Информация" />
+          <View style={styles.stack}>
+            {infoRows.map((row) => (
+              <InfoBlock key={row.label} label={row.label} value={row.value} />
+            ))}
+          </View>
+        </>
+      ) : null}
+
+      {feesSummary.length ? (
+        <>
+          <SectionTitle title="Стоимость" />
+          <View style={styles.stack}>
+            {feesSummary.map((fee, index) => (
+              <Card key={`${getEntityId(fee) || index}`} style={styles.block}>
+                <Text style={styles.rowTitle}>{getEntityString(fee, ['program_name'], 'Программа')}</Text>
+                <Text style={styles.rowSubtitle}>
+                  {[`${getEntityString(fee, ['tuition_fee'], '-')} ${getEntityString(fee, ['currency'], '')}`, `услуги ${getEntityString(fee, ['service_fee_usd'], '-')} USD`].join(' - ')}
+                </Text>
+              </Card>
+            ))}
+          </View>
+        </>
+      ) : null}
 
       <SectionTitle title="Программы" />
       {programs.length ? (
@@ -209,6 +282,15 @@ export function UniversityDetailScreen() {
         </>
       ) : null}
     </ScreenContainer>
+  );
+}
+
+function InfoBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <Card style={styles.block}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.rowSubtitle}>{value}</Text>
+    </Card>
   );
 }
 
@@ -296,6 +378,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 19,
+  },
+  infoLabel: {
+    color: theme.colors.accent,
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
   },
   block: {
     gap: theme.spacing.sm,

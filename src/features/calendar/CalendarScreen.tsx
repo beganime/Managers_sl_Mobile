@@ -242,6 +242,11 @@ const AgendaCard = memo(function AgendaCard({
 }) {
   const appTheme = useAppTheme();
   const isTask = item.type === 'task';
+  const isBirthday = item.type === 'birthday';
+  const iconName = isTask ? 'checkbox-outline' : isBirthday ? 'gift-outline' : 'calendar-outline';
+  const iconColor = isTask ? appTheme.colors.accent : isBirthday ? appTheme.colors.warning : appTheme.colors.success;
+  const typeLabel = isTask ? 'Задача' : isBirthday ? 'День рождения' : 'Событие';
+  const typeTone = isTask ? 'accent' : isBirthday ? 'warning' : 'success';
 
   return (
     <Pressable
@@ -252,9 +257,9 @@ const AgendaCard = memo(function AgendaCard({
       <Card glass style={styles.agendaCard}>
         <View style={[styles.iconBubble, { backgroundColor: appTheme.colors.primarySoft }]}>
           <Ionicons
-            name={isTask ? 'checkbox-outline' : 'calendar-outline'}
+            name={iconName}
             size={20}
-            color={isTask ? appTheme.colors.accent : appTheme.colors.success}
+            color={iconColor}
           />
         </View>
         <View style={styles.agendaBody}>
@@ -262,7 +267,7 @@ const AgendaCard = memo(function AgendaCard({
           <Text style={[styles.agendaTitle, { color: appTheme.colors.text }]}>{item.title}</Text>
           {item.subtitle ? <Text style={[styles.agendaSubtitle, { color: appTheme.colors.textMuted }]}>{item.subtitle}</Text> : null}
           <View style={styles.pills}>
-            <StatusPill label={isTask ? 'Задача' : 'Событие'} tone={isTask ? 'accent' : 'success'} />
+            <StatusPill label={typeLabel} tone={typeTone} />
             <StatusPill label={getStatusLabel(item.status)} tone="muted" />
           </View>
         </View>

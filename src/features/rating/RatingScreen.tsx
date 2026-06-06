@@ -102,8 +102,9 @@ export function RatingScreen() {
         offset,
         search: debouncedSearch || undefined,
         role: role === 'all' ? undefined : role,
+        include_hidden: isAdmin && visibility !== 'visible' ? 1 : undefined,
       }),
-    [debouncedSearch, role]
+    [debouncedSearch, isAdmin, role, visibility]
   );
 
   const { items, count, loading, refreshing, loadingMore, error, refresh, loadMore } =

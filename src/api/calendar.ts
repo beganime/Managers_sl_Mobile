@@ -6,7 +6,7 @@ export type CalendarAgendaItem = {
   title: string;
   subtitle?: string;
   date?: string;
-  type: 'event' | 'task' | 'workday';
+  type: 'event' | 'task' | 'workday' | 'birthday' | 'deadline' | 'important';
   status?: string;
   route?: string;
 };
@@ -135,7 +135,7 @@ async function listBackendCalendarEvents(params?: CalendarParams): Promise<Calen
             title: event.title || event.name || 'Событие',
             subtitle: [event.start_time, event.end_time, event.description].filter(Boolean).join(' - '),
             date: getEventDate(event),
-            type: 'event',
+            type: (event.type || event.event_type || 'event') as CalendarAgendaItem['type'],
             status: event.status || event.event_type || event.type || event.visibility || 'calendar',
           };
         }),

@@ -260,3 +260,25 @@ Production backend gaps if any of the above fields/routes are missing:
 - Document detail responses should include either preview text fields or preview/download URLs for mobile review before approval.
 - Document approve endpoints should accept stamp size/position fields in millimeters.
 - Rating responses should include leaderboard visibility fields and score fields (`score`, `rating`, `rating_score`, or `points`).
+
+## Backend Support API Update
+
+Implemented in backend branch `rebuild-erp-core` for the mobile app:
+
+- `GET /api/v1/documents/generated/{id}/preview/`
+- `GET /api/v1/documents/generated/{id}/download-docx/`
+- `GET /api/v1/documents/generated/{id}/download-pdf/`
+- document generated/detail responses include `preview_url`, `download_docx_url`, `download_pdf_url`, `approved_pdf_url`, `original_docx_url`, `can_download_docx`, `can_download_pdf`, `can_preview`, `can_approve`, `can_reject`.
+- document approve endpoints accept `stamp_position`, `stamp_width_mm`, `stamp_height_mm`, `stamp_x_mm`, `stamp_y_mm`, plus `width_mm`, `height_mm`, `x_mm`, `y_mm` aliases.
+- `GET /api/v1/rating/` filters hidden leaderboard users by default; admins can request `?include_hidden=1`.
+- rating rows include `can_be_in_leaderboard`, `is_hidden_from_rating`, `score`, `rating_score`, `points`.
+- country/city API responses include `image_url`, `cover_image_url`; countries also include `flag_url`.
+- client university API includes public contacts, `contact_people`, `fees_summary`, `email`, `phone`, `address`, public admission/living fields and program data.
+- `GET /api/v1/attendance/workdays/history/` returns workday history with start/close/report text.
+- `GET /api/v1/calendar/month/?year=YYYY&month=MM` returns full month events.
+- `GET /api/v1/calendar/events/?date=YYYY-MM-DD` and month/date range calls include employee birthdays as `type=birthday`.
+
+Remaining mobile/backend gaps after this pass:
+
+- `GET /api/v1/users/` or `GET /api/v1/employees/` should be confirmed for notification recipient selection if the legacy users endpoint is removed later.
+- `POST /api/v1/notifications/` with `send_to_all=true` should stay supported for mobile "send to all employees".

@@ -50,16 +50,24 @@ export function getGeneratedDocumentOriginalDownloadUrl(id: EntityId) {
   return absoluteUrl(v1(`/documents/generated/${id}/download-original/`));
 }
 
+export function getGeneratedDocumentDocxDownloadUrl(id: EntityId) {
+  return absoluteUrl(v1(`/documents/generated/${id}/download-docx/`));
+}
+
 export function getGeneratedDocumentApprovedDownloadUrl(id: EntityId) {
   return absoluteUrl(v1(`/documents/generated/${id}/download-approved/`));
+}
+
+export function getGeneratedDocumentPdfDownloadUrl(id: EntityId) {
+  return absoluteUrl(v1(`/documents/generated/${id}/download-pdf/`));
 }
 
 export function getGeneratedDocumentStampPreviewUrl(id: EntityId) {
   return absoluteUrl(v1(`/documents/generated/${id}/preview-stamp-preview/`));
 }
 
-export function getGeneratedDocumentApprovedPreviewUrl(id: EntityId) {
-  return absoluteUrl(v1(`/documents/generated/${id}/preview-approved/`));
+export function getGeneratedDocumentPreviewUrl(id: EntityId) {
+  return absoluteUrl(v1(`/documents/generated/${id}/preview/`));
 }
 
 export function listDocumentApprovals(params?: ApiParams) {

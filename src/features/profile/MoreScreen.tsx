@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -130,44 +131,71 @@ export function MoreScreen() {
 
       <View style={styles.list}>
         {items.map((item) => (
-          <Pressable
+          <MoreListItem
             key={item.title}
+            item={item}
             onPress={() => (item.onPress ? item.onPress() : router.push(item.route as any))}
-            style={({ pressed }) => [
-              styles.row,
-              {
-                borderColor: item.danger ? appTheme.colors.dangerSoft : appTheme.colors.border,
-                backgroundColor: item.danger ? appTheme.colors.dangerSoft : appTheme.colors.surfaceStrong,
-                ...appTheme.shadow.card,
-              },
-              pressed && styles.rowPressed,
-            ]}
-          >
-            <View
-              style={[
-                styles.icon,
-                { backgroundColor: item.danger ? appTheme.colors.dangerSoft : appTheme.colors.primarySoft },
-              ]}
-            >
-              <Ionicons
-                name={item.icon}
-                size={22}
-                color={item.danger ? appTheme.colors.danger : appTheme.colors.primary}
-              />
-            </View>
-            <View style={styles.rowText}>
-              <Text style={[styles.title, { color: item.danger ? appTheme.colors.danger : appTheme.colors.text }]}>
-                {item.title}
-              </Text>
-              <Text style={[styles.subtitle, { color: appTheme.colors.textMuted }]}>{item.subtitle}</Text>
-            </View>
-            {!item.danger ? (
-              <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
-            ) : null}
-          </Pressable>
+          />
         ))}
       </View>
     </ScreenContainer>
+  );
+}
+
+function MoreListItem({ item, onPress }: { item: MoreItem; onPress: () => void }) {
+  const appTheme = useAppTheme();
+
+  const content = (
+    <>
+      <View
+        style={[
+          styles.icon,
+          { backgroundColor: item.danger ? 'rgba(255,255,255,0.16)' : appTheme.colors.primarySoft },
+        ]}
+      >
+        <Ionicons
+          name={item.icon}
+          size={22}
+          color={item.danger ? appTheme.colors.white : appTheme.colors.primary}
+        />
+      </View>
+      <View style={styles.rowText}>
+        <Text style={[styles.title, { color: item.danger ? appTheme.colors.white : appTheme.colors.text }]}>
+          {item.title}
+        </Text>
+        <Text style={[styles.subtitle, { color: item.danger ? 'rgba(255,255,255,0.78)' : appTheme.colors.textMuted }]}>
+          {item.subtitle}
+        </Text>
+      </View>
+      {!item.danger ? (
+        <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
+      ) : (
+        <Ionicons name="log-out-outline" size={20} color={appTheme.colors.white} />
+      )}
+    </>
+  );
+
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.rowPressed]}>
+      {item.danger ? (
+        <LinearGradient colors={['#7A1020', '#981B2E', '#B4233A']} style={[styles.row, styles.logoutGradient, appTheme.shadow.card]}>
+          {content}
+        </LinearGradient>
+      ) : (
+        <View
+          style={[
+            styles.row,
+            {
+              borderColor: appTheme.colors.border,
+              backgroundColor: appTheme.colors.surfaceStrong,
+              ...appTheme.shadow.card,
+            },
+          ]}
+        >
+          {content}
+        </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -206,6 +234,9 @@ const styles = StyleSheet.create({
   },
   rowDanger: {
     borderColor: theme.colors.dangerSoft,
+  },
+  logoutGradient: {
+    borderColor: 'rgba(255,255,255,0.18)',
   },
   icon: {
     width: 44,

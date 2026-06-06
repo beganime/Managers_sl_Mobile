@@ -10,8 +10,10 @@ import {
   getDocumentTemplate,
   getGeneratedDocument,
   getGeneratedDocumentApprovedDownloadUrl,
-  getGeneratedDocumentApprovedPreviewUrl,
+  getGeneratedDocumentDocxDownloadUrl,
   getGeneratedDocumentOriginalDownloadUrl,
+  getGeneratedDocumentPdfDownloadUrl,
+  getGeneratedDocumentPreviewUrl,
   getGeneratedDocumentStampPreviewUrl,
   regenerateDocument,
   rejectDocumentApproval,
@@ -42,6 +44,7 @@ import {
   getEntityId,
   getEntityString,
   getEntityTitle,
+  getEntityValue,
   stripHtml,
 } from '../../utils/entity';
 import { displayDocumentStatus, documentStatusTone } from './documentHelpers';
@@ -103,8 +106,20 @@ function getDocumentUrl(item: ApiListItem, keys: string[]) {
   return resolveMediaUrl(value) || '';
 }
 
-function firstAvailableUrl(...urls: Array<string | null | undefined>) {
+function firstAvailableUrl(...urls: (string | null | undefined)[]) {
   return urls.find((url) => typeof url === 'string' && url.trim()) || '';
+}
+
+function getEntityBoolean(item: ApiListItem, keys: string[], fallback = false) {
+  const value = getEntityValue(item, keys);
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value > 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  }
+  return fallback;
 }
 
 function getPreviewText(item: ApiListItem) {
@@ -193,7 +208,7 @@ export function DocumentDetailScreen() {
           mode: 'approve_with_stamp',
           approval_type: 'with_stamp',
           with_stamp: true,
-          stamp_mode: 'executor',
+          stamp_mode: stampPosition === 'custom' ? 'manual' : 'position',
           stamp_position: stampPosition,
           position: stampPosition,
           stamp_width_mm: widthMm,
@@ -260,12 +275,19 @@ export function DocumentDetailScreen() {
   const documentId = getEntityId(item) || id;
   const status = getEntityString(item, ['status'], section === 'templates' ? 'active' : 'draft');
   const fields = getEntityArray<ApiListItem>(item, 'fields_config');
-  const canDownloadOriginal = getEntityString(item, ['can_download_original']) === 'true';
-  const canDownloadApproved = getEntityString(item, ['can_download_approved']) === 'true';
-  const hasStampPreview = getEntityString(item, ['has_stamp_preview']) === 'true';
+  const canDownloadOriginal = getEntityBoolean(item, ['can_download_original']);
+  const canDownloadApproved = getEntityBoolean(item, ['can_download_approved']);
+  const canDownloadDocx = getEntityBoolean(item, ['can_download_docx'], canDownloadOriginal);
+  const canDownloadPdf = getEntityBoolean(item, ['can_download_pdf'], canDownloadApproved);
+  const canApprove = getEntityBoolean(item, ['can_approve'], isAdmin);
+  const canReject = getEntityBoolean(item, ['can_reject'], isAdmin);
+  const hasStampPreview = getEntityBoolean(item, ['has_stamp_preview']);
 
   const generatedUrl = firstAvailableUrl(
     getDocumentUrl(item, [
+      'download_docx_url',
+      'links.api.download_docx',
+      'original_docx_url',
       'generated_file_url',
       'links.files.generated_file',
       'links.api.download_original',
@@ -278,22 +300,25 @@ export function DocumentDetailScreen() {
       'file_url',
       'download_url',
     ]),
+    canDownloadDocx ? getGeneratedDocumentDocxDownloadUrl(documentId) : '',
     canDownloadOriginal ? getGeneratedDocumentOriginalDownloadUrl(documentId) : ''
   );
 
   const approvedUrl = firstAvailableUrl(
     getDocumentUrl(item, [
+      'download_pdf_url',
+      'approved_pdf_url',
       'approved_file_url',
       'links.files.approved_file',
       'links.api.download_approved',
       'download_approved_url',
       'links.portal.download_approved',
       'portal_download_approved_url',
-      'approved_pdf_url',
       'sealed_pdf_url',
       'pdf_url',
       'stamped_pdf_url',
     ]),
+    canDownloadPdf ? getGeneratedDocumentPdfDownloadUrl(documentId) : '',
     canDownloadApproved ? getGeneratedDocumentApprovedDownloadUrl(documentId) : ''
   );
 
@@ -311,11 +336,13 @@ export function DocumentDetailScreen() {
 
   const previewUrl = firstAvailableUrl(
     getDocumentUrl(item, [
+      'preview_url',
+      'links.api.preview',
+      'links.portal.preview',
       'preview_approved_url',
       'links.api.preview_approved',
       'links.portal.preview_approved',
       'portal_preview_approved_url',
-      'preview_url',
       'pdf_preview_url',
       'preview_file_url',
       'approved_file_url',
@@ -324,14 +351,14 @@ export function DocumentDetailScreen() {
       'links.files.generated_file',
       'file_url',
     ]),
-    canDownloadApproved ? getGeneratedDocumentApprovedPreviewUrl(documentId) : '',
+    getEntityBoolean(item, ['can_preview']) ? getGeneratedDocumentPreviewUrl(documentId) : '',
     stampPreviewUrl,
     approvedUrl,
     generatedUrl
   );
 
   const previewText = getPreviewText(item);
-  const canPreview = Boolean(previewUrl || previewText);
+  const canPreview = getEntityBoolean(item, ['can_preview']) || Boolean(previewUrl || previewText);
   const stampPreviewStyle = getStampPreviewStyle(stampPosition);
   const displayTitle = section === 'approvals'
     ? getEntityString(item, ['document_title'], 'Согласование документа')
@@ -485,13 +512,14 @@ export function DocumentDetailScreen() {
             <Button
               title="Одобрить и поставить печать"
               loading={saving === 'approve'}
-              disabled={!previewOpened}
+              disabled={!previewOpened || !canApprove}
               onPress={() => runAction('approve')}
             />
             <Button
               title="Отклонить"
               variant="danger"
               loading={saving === 'reject'}
+              disabled={!canReject}
               onPress={() => runAction('reject')}
             />
           </View>
