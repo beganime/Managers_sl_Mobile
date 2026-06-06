@@ -1,5 +1,10 @@
 import { ApiListItem, ApiParams, CollectionResponse, EntityId } from '../types';
-import { getJson, postJson, v1 } from './client';
+import { API_BASE_URL, getJson, postJson, v1 } from './client';
+
+function absoluteUrl(path: string) {
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
 
 export function listDocumentTemplates(params?: ApiParams) {
   return getJson<CollectionResponse<ApiListItem>>(v1('/documents/templates/'), { params });
@@ -39,6 +44,22 @@ export function approveGeneratedDocument(id: EntityId, payload?: Record<string, 
 
 export function rejectGeneratedDocument(id: EntityId, reason: string) {
   return postJson<ApiListItem>(v1(`/documents/generated/${id}/reject/`), { reason });
+}
+
+export function getGeneratedDocumentOriginalDownloadUrl(id: EntityId) {
+  return absoluteUrl(v1(`/documents/generated/${id}/download-original/`));
+}
+
+export function getGeneratedDocumentApprovedDownloadUrl(id: EntityId) {
+  return absoluteUrl(v1(`/documents/generated/${id}/download-approved/`));
+}
+
+export function getGeneratedDocumentStampPreviewUrl(id: EntityId) {
+  return absoluteUrl(v1(`/documents/generated/${id}/preview-stamp-preview/`));
+}
+
+export function getGeneratedDocumentApprovedPreviewUrl(id: EntityId) {
+  return absoluteUrl(v1(`/documents/generated/${id}/preview-approved/`));
 }
 
 export function listDocumentApprovals(params?: ApiParams) {
