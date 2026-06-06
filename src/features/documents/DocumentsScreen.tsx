@@ -45,6 +45,28 @@ import {
   documentStatusTone,
 } from './documentHelpers';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getNestedValue(entity: unknown, path: string) {
+  let current: unknown = entity;
+  for (const part of path.split('.')) {
+    if (!isRecord(current)) return undefined;
+    current = current[part];
+    if (current === null || current === undefined) return undefined;
+  }
+  return current;
+}
+
+function hasAnyValue(entity: unknown, paths: string[]) {
+  return paths.some((path) => {
+    const value = getNestedValue(entity, path);
+    if (typeof value === 'string') return Boolean(value.trim());
+    return Boolean(value);
+  });
+}
+
 export function DocumentsScreen() {
   const [section, setSection] = useState('templates');
 
@@ -125,8 +147,8 @@ function DocumentList({
           <Card glass style={styles.hero}>
             <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>ERP documents</Text>
             <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Документы без ручной рутины</Text>
-            <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
-              В текущем разделе {count} записей. Шаблоны, генерация и согласование готовы к работе.
+            <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}> 
+              В текущем разделе {count} записей. Если документ сгенерирован, в карточке появится DOCX, а после одобрения — PDF с печатью.
             </Text>
           </Card>
 
@@ -181,6 +203,22 @@ const DocumentCard = memo(function DocumentCard({
       : [getEntityString(item, ['template_name', 'document_title']), getEntityString(item, ['client_name'])]
           .filter(Boolean)
           .join(' - ');
+  const hasDocx = hasAnyValue(item, [
+    'generated_file_url',
+    'download_original_url',
+    'portal_download_original_url',
+    'links.files.generated_file',
+    'links.api.download_original',
+    'links.portal.download_original',
+  ]);
+  const hasPdf = hasAnyValue(item, [
+    'approved_file_url',
+    'download_approved_url',
+    'portal_download_approved_url',
+    'links.files.approved_file',
+    'links.api.download_approved',
+    'links.portal.download_approved',
+  ]);
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
@@ -201,6 +239,8 @@ const DocumentCard = memo(function DocumentCard({
           {getEntityString(item, ['requires_approval']) === 'true' ? (
             <StatusPill label="Нужно согласование" tone="warning" />
           ) : null}
+          {hasDocx ? <StatusPill label="DOCX" tone="success" /> : null}
+          {hasPdf ? <StatusPill label="PDF" tone="success" /> : null}
         </View>
       </Card>
     </Pressable>
