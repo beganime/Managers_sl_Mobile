@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { StatusBar } from 'expo-status-bar';
 import React from 'react';
-import { ScrollView, StatusBar, StyleSheet, View, ViewStyle } from 'react-native';
+import { ScrollView, StyleSheet, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../src/context/ThemeContext';
 
@@ -15,7 +16,7 @@ export default function AppScreen({ children, scroll = true, contentContainerSty
 
   const content = (
     <>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} translucent backgroundColor="transparent" />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       <LinearGradient
         colors={theme.gradientMain as [string, string, ...string[]]}
         style={StyleSheet.absoluteFillObject}

@@ -47,7 +47,7 @@ type SupportMessage = {
 
 type UploadFile = { uri: string; name: string; type: string };
 
-const CATEGORIES: Array<{ value: CategoryValue; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+const CATEGORIES: { value: CategoryValue; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { value: 'support', label: 'Поддержка', icon: 'help-buoy-outline' },
   { value: 'admin', label: 'Админу', icon: 'shield-checkmark-outline' },
   { value: 'bug', label: 'Ошибка', icon: 'bug-outline' },

@@ -61,11 +61,11 @@ type Project = {
 
 type ProjectStatus = 'active' | 'paused' | 'done' | 'archived';
 
-const STATUS_FILTERS: Array<{
+const STATUS_FILTERS: {
   value: '' | ProjectStatus;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
-}> = [
+}[] = [
   { value: '', label: 'Все', icon: 'albums-outline' },
   { value: 'active', label: 'Активные', icon: 'radio-button-on-outline' },
   { value: 'paused', label: 'Пауза', icon: 'pause-circle-outline' },
@@ -73,11 +73,11 @@ const STATUS_FILTERS: Array<{
   { value: 'archived', label: 'Архив', icon: 'archive-outline' },
 ];
 
-const PROJECT_STATUSES: Array<{
+const PROJECT_STATUSES: {
   value: ProjectStatus;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
-}> = [
+}[] = [
   { value: 'active', label: 'Активный', icon: 'radio-button-on-outline' },
   { value: 'paused', label: 'Пауза', icon: 'pause-circle-outline' },
   { value: 'done', label: 'Завершён', icon: 'checkmark-done-outline' },
@@ -347,7 +347,7 @@ export default function ProjectsScreen() {
 
   useEffect(() => {
     void load();
-  }, [status]);
+  }, [load]);
 
   const refresh = () => {
     setRefreshing(true);

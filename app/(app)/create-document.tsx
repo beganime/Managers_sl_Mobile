@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -72,7 +72,7 @@ export default function CreateDocumentScreen() {
   const [selectedDealId, setSelectedDealId] = useState(params.dealId ? String(params.dealId) : '');
   const [formData, setFormData] = useState<Record<string, string>>({});
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [tplData, dealData] = await Promise.all([
         fetchAllPages('documents/templates/').catch(() => []),
@@ -99,11 +99,11 @@ export default function CreateDocumentScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [params.dealId]);
 
   useEffect(() => {
     void loadData();
-  }, []);
+  }, [loadData]);
 
   const selectedDeal = useMemo(
     () => deals.find((d) => String(d.id) === String(selectedDealId)),

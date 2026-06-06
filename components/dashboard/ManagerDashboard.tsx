@@ -50,14 +50,14 @@ type OfficeDashboardData = {
   monthly_revenue_usd?: string | number;
   monthly_plan_usd?: string | number;
   plan_progress_percent?: string | number;
-  managers?: Array<{
+  managers?: {
     id: number;
     full_name?: string;
     email?: string;
     revenue_usd?: string | number;
     plan_usd?: string | number;
     progress_percent?: string | number;
-  }>;
+  }[];
 };
 
 type QuickOfficeEntryType = 'income' | 'expense';
@@ -223,10 +223,8 @@ function InfoRow({
 }
 
 export default function ManagerDashboard({ user, onRefresh }: Props) {
-  const { theme, themeMode } = useTheme();
+  const { theme } = useTheme();
   const router = useRouter();
-
-  const dark = themeMode === 'dark';
 
   const POSITIVE = theme.success || GREEN;
   const NEGATIVE = theme.red || RED;

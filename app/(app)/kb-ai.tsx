@@ -59,7 +59,7 @@ export default function KbAiScreen() {
       };
       
       setMessages((prev) => [...prev, aiMessage]);
-    } catch (e: any) {
+    } catch {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'ai',

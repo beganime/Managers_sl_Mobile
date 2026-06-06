@@ -1,9 +1,8 @@
 // components/AnimatedSplash.tsx
 import React, { useEffect, useRef } from 'react';
-import { Animated, Dimensions, StyleSheet, View } from 'react-native';
+import { Animated, StyleSheet, View } from 'react-native';
 import Svg, { G, Path } from 'react-native-svg';
 
-const { width, height } = Dimensions.get('window');
 const AnimatedG = Animated.createAnimatedComponent(G) as any;
 const AnimatedPath = Animated.createAnimatedComponent(Path) as any;
 
@@ -35,7 +34,7 @@ export default function AnimatedSplash({ onAnimationFinish }: Props) {
     );
 
     // Запускаем появление букв каскадом (stagger) через 1800мс
-    setTimeout(() => {
+    const staggerTimer = setTimeout(() => {
       Animated.stagger(50, textAnimations).start();
     }, 1800);
 
@@ -44,8 +43,11 @@ export default function AnimatedSplash({ onAnimationFinish }: Props) {
       onAnimationFinish();
     }, 3500);
 
-    return () => clearTimeout(timer);
-  }, []);
+    return () => {
+      clearTimeout(staggerTimer);
+      clearTimeout(timer);
+    };
+  }, [iconAnim, onAnimationFinish, textAnims]);
 
   // --- ИНТЕРПОЛЯЦИИ ---
   // Движение иконки: начинается с +108px (центр), затем едет к 0px

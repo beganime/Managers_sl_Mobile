@@ -73,7 +73,7 @@ type OrderingValue =
 
 const PAGE_SIZE = 20;
 
-const STATUS_OPTIONS: Array<{ key: StatusFilter; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+const STATUS_OPTIONS: { key: StatusFilter; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'all', label: 'Все', icon: 'layers-outline' },
   { key: 'new', label: 'Новые', icon: 'sparkles-outline' },
   { key: 'contacted', label: 'В работе', icon: 'call-outline' },
@@ -81,7 +81,7 @@ const STATUS_OPTIONS: Array<{ key: StatusFilter; label: string; icon: keyof type
   { key: 'rejected', label: 'Отказ', icon: 'close-circle-outline' },
 ];
 
-const DIRECTION_OPTIONS: Array<{ key: DirectionFilter; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+const DIRECTION_OPTIONS: { key: DirectionFilter; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'all', label: 'Все направления', icon: 'grid-outline' },
   { key: 'admission', label: 'Поступление', icon: 'school-outline' },
   { key: 'translation', label: 'Переводы', icon: 'language-outline' },
@@ -92,7 +92,7 @@ const DIRECTION_OPTIONS: Array<{ key: DirectionFilter; label: string; icon: keyo
   { key: 'work_visa', label: 'Рабочие визы', icon: 'briefcase-outline' },
 ];
 
-const ORDERING_OPTIONS: Array<{ key: OrderingValue; label: string }> = [
+const ORDERING_OPTIONS: { key: OrderingValue; label: string }[] = [
   { key: '-created_at', label: 'Новые сверху' },
   { key: 'created_at', label: 'Старые сверху' },
   { key: '-updated_at', label: 'Недавно обновлены' },
@@ -174,7 +174,7 @@ export default function LeadsScreen() {
   }, [count]);
 
   const load = useCallback(
-    async (targetPage = page) => {
+    async (targetPage: number) => {
       try {
         const response = await apiClient.get('leads/mobile/', {
           params: {
@@ -200,13 +200,13 @@ export default function LeadsScreen() {
         setRefreshing(false);
       }
     },
-    [page, submittedSearch, statusFilter, directionFilter, ordering]
+    [submittedSearch, statusFilter, directionFilter, ordering]
   );
 
   useEffect(() => {
     setLoading(true);
     void load(0);
-  }, [submittedSearch, statusFilter, directionFilter, ordering]);
+  }, [load]);
 
   const onRefresh = () => {
     setRefreshing(true);

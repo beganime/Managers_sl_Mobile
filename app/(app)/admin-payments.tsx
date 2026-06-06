@@ -92,11 +92,11 @@ type CashflowItem = {
 
 const GREEN = '#1AAE6F';
 
-const FINANCE_CATEGORIES: Array<{
+const FINANCE_CATEGORIES: {
   key: string;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
-}> = [
+}[] = [
   { key: 'custom', label: 'Другое', icon: 'apps-outline' },
   { key: 'visa', label: 'Виза', icon: 'document-text-outline' },
   { key: 'air_tickets', label: 'Авиабилеты', icon: 'airplane-outline' },

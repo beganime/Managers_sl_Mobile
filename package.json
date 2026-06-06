@@ -1,9 +1,11 @@
 {
   "name": "managerssl",
   "main": "expo-router/entry",
-  "version": "2.3.0",
+  "version": "2.3.2",
   "scripts": {
     "start": "expo start",
+    "start:clear": "expo start --clear",
+    "typecheck": "tsc --noEmit",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",

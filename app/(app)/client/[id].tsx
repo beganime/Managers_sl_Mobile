@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 
 import ScreenWrapper from '../../../components/ScreenWrapper';
-import { useCurrentUser } from '../../../hooks/useCurrentUser';
 import apiClient from '../../../src/api/apiClient';
 import { useTheme } from '../../../src/context/ThemeContext';
 import { getToken } from '../../../src/utils/storage';
@@ -299,8 +298,6 @@ export default function ClientDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { theme } = useTheme();
-  const { user } = useCurrentUser();
-
   const [client, setClient] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -311,8 +308,6 @@ export default function ClientDetailScreen() {
   const [form, setForm] = useState<ClientFormState | null>(null);
 
   const isOfflineClient = Boolean(client?.isOffline);
-  const isAdmin = Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
-
   const initials = useMemo(() => {
     const name = String(client?.full_name || '').trim();
     if (!name) return '?';

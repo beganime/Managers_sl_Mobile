@@ -54,21 +54,21 @@ type ProjectTask = {
   updated_at?: string;
 };
 
-const TASK_STATUSES: Array<{
+const TASK_STATUSES: {
   value: TaskStatus;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
-}> = [
+}[] = [
   { value: 'todo', label: 'План', icon: 'ellipse-outline' },
   { value: 'process', label: 'В работе', icon: 'flash-outline' },
   { value: 'review', label: 'Проверка', icon: 'eye-outline' },
   { value: 'done', label: 'Готово', icon: 'checkmark-done-outline' },
 ];
 
-const PRIORITIES: Array<{
+const PRIORITIES: {
   value: TaskPriority;
   label: string;
-}> = [
+}[] = [
   { value: 'low', label: 'Низкий' },
   { value: 'medium', label: 'Средний' },
   { value: 'high', label: 'Высокий' },

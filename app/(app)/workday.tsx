@@ -223,6 +223,7 @@ export default function WorkdayScreen() {
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   const buildReportPayload = () => ({

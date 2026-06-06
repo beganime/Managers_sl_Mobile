@@ -123,13 +123,13 @@ type TabKey = 'knowledge' | 'videos' | 'tests';
 type EditorEntity = 'section' | 'snippet' | 'attachment';
 type EditorMode = 'create' | 'edit';
 
-const TABS: Array<{ key: TabKey; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+const TABS: { key: TabKey; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'knowledge', label: 'База', icon: 'library-outline' },
   { key: 'videos', label: 'Видео', icon: 'play-circle-outline' },
   { key: 'tests', label: 'Тесты', icon: 'checkmark-done-circle-outline' },
 ];
 
-const CATEGORIES: Array<{ key: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+const CATEGORIES: { key: string; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: '', label: 'Все', icon: 'albums-outline' },
   { key: 'faq', label: 'FAQ', icon: 'help-circle-outline' },
   { key: 'script', label: 'Скрипты', icon: 'chatbubbles-outline' },
@@ -137,7 +137,7 @@ const CATEGORIES: Array<{ key: string; label: string; icon: keyof typeof Ionicon
   { key: 'links', label: 'Ссылки', icon: 'link-outline' },
 ];
 
-const SECTION_ICONS: Array<{ key: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+const SECTION_ICONS: { key: string; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'folder', label: 'Папка', icon: 'folder-outline' },
   { key: 'book', label: 'Книга', icon: 'book-outline' },
   { key: 'school', label: 'Обучение', icon: 'school-outline' },
