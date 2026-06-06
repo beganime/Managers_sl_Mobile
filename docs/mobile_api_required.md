@@ -209,3 +209,29 @@ Still required for full portal calendar parity:
 - `POST /api/v1/calendar/events/`
 - `PATCH /api/v1/calendar/events/{id}/`
 - `DELETE /api/v1/calendar/events/{id}/`
+
+## Final Mobile Sprint: Dashboard, Documents, Notifications, Knowledge
+
+Mobile now uses existing APIs first and does not invent separate backend URLs.
+
+Current mobile behavior:
+
+- Workday dashboard uses `GET /api/v1/attendance/workdays/today/`, `POST /api/v1/attendance/workdays/start/`, `POST /api/v1/attendance/workdays/report/`, `POST /api/v1/attendance/workdays/close/`.
+- Workday history uses `GET /api/v1/attendance/reports/` with optional `employee`/`user` params.
+- Admin dashboard table is built from available report records. Full "all employees today" parity needs a team workday endpoint if reports do not include all staff.
+- Notifications list/read uses confirmed `GET /api/v1/notifications/`, `POST /api/v1/notifications/{id}/mark-read/`, `POST /api/v1/notifications/mark-all-read/`.
+- Notification create screen sends `POST /api/v1/notifications/` only from the admin UI and shows a clear server note if the endpoint returns `404/405`.
+- Documents approval uses existing generated/approval approve endpoints and sends stamp fields in the payload.
+- Education cards read optional image fields and work with null values.
+- Knowledge article create screen sends `POST /api/v1/knowledge/articles/` and shows a clear server note if creation is not enabled.
+
+Required if production backend does not already support these contracts:
+
+- `GET /api/v1/attendance/reports/?employee={id}` or `?user={id}` — employee report history for admin and personal history for staff.
+- `GET /api/v1/attendance/workdays/today/team/` — admin table for employees who started/reported/closed the current workday.
+- `POST /api/v1/notifications/` — create notification with `target`, `recipient_id`/`user_id`, `office_id`, `send_to_all`, `title`, `body`, `notification_type`.
+- `GET /api/v1/documents/generated/{id}/preview/` or `preview_url`/`pdf_preview_url` in `GET /api/v1/documents/generated/{id}/` — mobile document preview before approval.
+- `POST /api/v1/documents/generated/{id}/approve/` and `POST /api/v1/documents/approvals/{id}/approve/` should accept stamp fields: `stamp_position`, `width_mm`, `height_mm`, `x_mm`, `y_mm`.
+- `POST /api/v1/knowledge/articles/` — create article with `title`, `content`, `category_id`, `visibility`, `selected_users`.
+- Education image fields in countries/cities/universities responses: `image_url`, `cover_image_url`, `logo_url`, `flag_url`.
+- `GET /api/v1/calendar/events/` should support `month`, `year`, `date_from`, `date_to` and include events, birthdays, deadlines and important dates. Workday should not be returned as a calendar event.

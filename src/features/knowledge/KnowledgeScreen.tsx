@@ -16,6 +16,7 @@ import { Card } from '../../components/cards/Card';
 import { Input } from '../../components/forms/Input';
 import { Header } from '../../components/layout/Header';
 import { ScreenContainer } from '../../components/layout/ScreenContainer';
+import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { LoadingState } from '../../components/ui/LoadingState';
@@ -123,6 +124,10 @@ function KnowledgeList({
             <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
               В разделе {count} записей. Материалы синхронизируются с базой знаний.
             </Text>
+            <Button
+              title="Добавить статью"
+              onPress={() => router.push('/(app)/knowledge/articles/create' as any)}
+            />
           </Card>
 
           <SegmentedControl options={knowledgeOptions} value={mode} onChange={onModeChange} />

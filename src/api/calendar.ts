@@ -1,4 +1,3 @@
-import { getTodayWorkday } from './attendance';
 import { extractItems, getJson, toApiError, v1 } from './client';
 import { listProjectTasks } from './projects';
 
@@ -17,35 +16,78 @@ export type CalendarAgenda = {
   warnings: string[];
 };
 
+export type CalendarParams = {
+  month?: number;
+  year?: number;
+  date?: string;
+};
+
 type CalendarEventRecord = {
   id?: string | number;
   title?: string;
+  name?: string;
   description?: string;
   event_date?: string;
+  date?: string;
+  start?: string;
+  start_date?: string;
+  deadline?: string;
+  birthday?: string;
   start_time?: string;
   end_time?: string;
   visibility?: string;
+  type?: string;
+  event_type?: string;
+  status?: string;
 };
 
-async function listBackendCalendarEvents(): Promise<CalendarAgenda | null> {
+function getMonthRange(params?: CalendarParams) {
+  const now = params?.date ? new Date(params.date) : new Date();
+  const year = params?.year || now.getFullYear();
+  const month = params?.month || now.getMonth() + 1;
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0);
+
+  return {
+    year,
+    month,
+    dateFrom: start.toISOString().slice(0, 10),
+    dateTo: end.toISOString().slice(0, 10),
+  };
+}
+
+function getEventDate(event: CalendarEventRecord) {
+  return event.event_date || event.date || event.start || event.start_date || event.deadline || event.birthday;
+}
+
+async function listBackendCalendarEvents(params?: CalendarParams): Promise<CalendarAgenda | null> {
+  const range = getMonthRange(params);
+
   try {
     const payload = await getJson(v1('/calendar/events/'), {
       params: {
-        limit: 100,
-        date_from: new Date().toISOString().slice(0, 10),
+        limit: 300,
+        month: range.month,
+        year: range.year,
+        date_from: range.dateFrom,
+        date_to: range.dateTo,
       },
     });
     const events = extractItems<CalendarEventRecord>(payload);
 
     return {
-      items: events.map((event) => ({
-        id: `event-${event.id}`,
-        title: event.title || 'Событие',
-        subtitle: [event.start_time, event.end_time, event.description].filter(Boolean).join(' - '),
-        date: event.event_date,
-        type: 'event',
-        status: event.visibility || 'calendar',
-      })),
+      items: events.map((event) => {
+        const id = String(event.id || `${getEventDate(event)}-${event.title || event.name}`);
+
+        return {
+          id: `event-${id}`,
+          title: event.title || event.name || 'Событие',
+          subtitle: [event.start_time, event.end_time, event.description].filter(Boolean).join(' - '),
+          date: getEventDate(event),
+          type: 'event',
+          status: event.status || event.event_type || event.type || event.visibility || 'calendar',
+        };
+      }),
       warnings: [],
     };
   } catch (error) {
@@ -55,22 +97,23 @@ async function listBackendCalendarEvents(): Promise<CalendarAgenda | null> {
   }
 }
 
-async function buildFallbackAgenda(): Promise<CalendarAgenda> {
-  const [tasksResult, workdayResult] = await Promise.allSettled([
-    listProjectTasks({ limit: 80, offset: 0 }),
-    getTodayWorkday(),
+async function buildFallbackAgenda(params?: CalendarParams): Promise<CalendarAgenda> {
+  const range = getMonthRange(params);
+  const tasksResult = await Promise.allSettled([
+    listProjectTasks({ limit: 120, offset: 0, date_from: range.dateFrom, date_to: range.dateTo }),
   ]);
 
   const warnings: string[] = [
-    'Календарь временно собирается из задач и рабочего дня.',
+    'Календарь временно собирается из задач. Рабочий день не добавляется как событие.',
   ];
   const items: CalendarAgendaItem[] = [];
+  const tasksPromise = tasksResult[0];
 
-  if (tasksResult.status === 'fulfilled') {
-    const tasks = extractItems<Record<string, unknown>>(tasksResult.value);
+  if (tasksPromise.status === 'fulfilled') {
+    const tasks = extractItems<Record<string, unknown>>(tasksPromise.value);
 
     tasks
-      .filter((task) => Boolean(task.deadline))
+      .filter((task) => Boolean(task.deadline || task.due_date || task.end_date))
       .forEach((task) => {
         const id = String(task.id || task.pk || '');
 
@@ -78,30 +121,14 @@ async function buildFallbackAgenda(): Promise<CalendarAgenda> {
           id: `task-${id}`,
           title: String(task.title || task.name || 'Задача'),
           subtitle: String(task.project_title || task.project_name || task.priority || ''),
-          date: String(task.deadline || ''),
+          date: String(task.deadline || task.due_date || task.end_date || ''),
           type: 'task',
           status: String(task.status || 'todo'),
           route: id ? `/(app)/tasks-v2/${id}` : undefined,
         });
       });
   } else {
-    warnings.push(toApiError(tasksResult.reason).message);
-  }
-
-  if (workdayResult.status === 'fulfilled' && workdayResult.value) {
-    const workday = workdayResult.value;
-
-    items.unshift({
-      id: `workday-${workday.id || workday.date || 'today'}`,
-      title: 'Рабочий день',
-      subtitle: workday.started_at ? 'День начат' : 'День ещё не начат',
-      date: workday.date || new Date().toISOString(),
-      type: 'workday',
-      status: workday.status || 'not_started',
-      route: '/(app)/workday',
-    });
-  } else if (workdayResult.status === 'rejected') {
-    warnings.push(toApiError(workdayResult.reason).message);
+    warnings.push(toApiError(tasksPromise.reason).message);
   }
 
   return {
@@ -120,7 +147,7 @@ function sortAgenda(agenda: CalendarAgenda) {
   return agenda;
 }
 
-export async function listCalendarEvents(): Promise<CalendarAgenda> {
-  const backendAgenda = await listBackendCalendarEvents();
-  return sortAgenda(backendAgenda || (await buildFallbackAgenda()));
+export async function listCalendarEvents(params?: CalendarParams): Promise<CalendarAgenda> {
+  const backendAgenda = await listBackendCalendarEvents(params);
+  return sortAgenda(backendAgenda || (await buildFallbackAgenda(params)));
 }

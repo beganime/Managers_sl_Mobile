@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 
-import { extractItems, toApiError } from '../../api/client';
+import { extractCount, extractItems, toApiError } from '../../api/client';
 import { listNotifications, markNotificationRead } from '../../api/notifications';
 import { theme } from '../../theme/theme';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -27,6 +27,7 @@ export function NotificationBell() {
   const appTheme = useAppTheme();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<ApiListItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [markingId, setMarkingId] = useState<string | number | null>(null);
@@ -37,12 +38,34 @@ export function NotificationBell() {
 
     try {
       const response = await listNotifications({ limit: 3 });
-      setItems(extractItems<ApiListItem>(response).slice(0, 3));
+      const nextItems = extractItems<ApiListItem>(response).slice(0, 3);
+      setItems(nextItems);
+      setUnreadCount(nextItems.filter(isUnread).length);
     } catch (requestError) {
       setError(toApiError(requestError).message);
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadBadge = async () => {
+      try {
+        const response = await listNotifications({ limit: 1, unread: true });
+        const count = extractCount<ApiListItem>(response);
+        if (mounted) setUnreadCount(count);
+      } catch {
+        if (mounted) setUnreadCount(0);
+      }
+    };
+
+    void loadBadge();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const openPanel = () => {
@@ -58,6 +81,7 @@ export function NotificationBell() {
     try {
       const updated = await markNotificationRead(id);
       setItems((current) => current.map((entry) => (getEntityId(entry) === id ? updated : entry)));
+      setUnreadCount((current) => Math.max(0, current - 1));
     } catch (requestError) {
       setError(toApiError(requestError).message);
     } finally {
@@ -99,7 +123,11 @@ export function NotificationBell() {
           size={20}
           color={appTheme.dark ? appTheme.colors.screenText : appTheme.colors.primary}
         />
-        {items.some(isUnread) ? <View style={[styles.dot, { backgroundColor: appTheme.colors.accent }]} /> : null}
+        {unreadCount > 0 ? (
+          <View style={[styles.badge, { backgroundColor: appTheme.colors.accent }]}>
+            <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+          </View>
+        ) : null}
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
@@ -231,6 +259,22 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: theme.colors.accent,
+  },
+  badge: {
+    position: 'absolute',
+    right: -4,
+    top: -5,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: theme.colors.white,
+    fontSize: 10,
+    fontWeight: '900',
   },
   overlay: {
     flex: 1,

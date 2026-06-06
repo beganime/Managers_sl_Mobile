@@ -24,13 +24,21 @@ import { usePagedResource } from '../../hooks/usePagedResource';
 import { theme } from '../../theme/theme';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
-import { getEntityId, getEntityNumber, getEntityString, getEntityTitle } from '../../utils/entity';
+import { getEntityId, getEntityNumber, getEntityString, getEntityTitle, getEntityValue } from '../../utils/entity';
 
 const roleOptions = [
   { label: 'Все', value: 'all' },
   { label: 'Менеджеры', value: 'manager' },
   { label: 'Админы', value: 'admin' },
 ];
+
+function getRatingScore(item: ApiListItem) {
+  const value = getEntityValue(item, ['rating_score', 'points', 'score', 'total_score', 'kpi_score', 'rating']);
+  if (value === null || value === undefined || value === '') return null;
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
 
 export function RatingScreen() {
   const appTheme = useAppTheme();
@@ -96,6 +104,8 @@ export function RatingScreen() {
               </View>
             </Card>
 
+            {items.length ? <Podium items={items.slice(0, 3)} /> : null}
+
             <SegmentedControl options={roleOptions} value={role} onChange={setRole} />
 
             <Input
@@ -124,6 +134,33 @@ export function RatingScreen() {
   );
 }
 
+function Podium({ items }: { items: ApiListItem[] }) {
+  const appTheme = useAppTheme();
+
+  return (
+    <View style={styles.podium}>
+      {items.map((item, index) => {
+        const rank = getEntityNumber(item, ['rank', 'position_index'], index + 1);
+        const score = getRatingScore(item);
+
+        return (
+          <Card key={String(getEntityId(item) || index)} glass style={[styles.podiumCard, rank === 1 && styles.podiumFirst]}>
+            <View style={[styles.podiumRank, { backgroundColor: appTheme.colors.accent }]}>
+              <Text style={styles.podiumRankText}>{rank}</Text>
+            </View>
+            <Text style={[styles.podiumName, { color: appTheme.colors.text }]} numberOfLines={2}>
+              {getEntityTitle(item, 'Сотрудник')}
+            </Text>
+            <Text style={[styles.podiumScore, { color: appTheme.colors.accent }]}>
+              {score === null ? 'Баллы: нет данных' : `${score.toLocaleString('ru-RU')} баллов`}
+            </Text>
+          </Card>
+        );
+      })}
+    </View>
+  );
+}
+
 const RatingRow = memo(function RatingRow({
   item,
   fallbackRank,
@@ -133,8 +170,11 @@ const RatingRow = memo(function RatingRow({
 }) {
   const appTheme = useAppTheme();
   const rank = getEntityNumber(item, ['rank', 'position_index'], fallbackRank);
-  const score = getEntityNumber(item, ['score', 'points', 'total_score', 'kpi_score'], 0);
+  const score = getRatingScore(item);
   const revenue = getEntityNumber(item, ['revenue', 'revenue_usd', 'current_month_revenue'], 0);
+  const leads = getEntityNumber(item, ['leads', 'leads_count', 'lead_count'], 0);
+  const clients = getEntityNumber(item, ['clients', 'clients_count', 'client_count'], 0);
+  const workdays = getEntityNumber(item, ['workdays', 'workdays_count', 'closed_workdays'], 0);
   const office = getEntityString(item, ['office_name', 'office_city', 'office']);
   const position = getEntityString(item, ['position', 'role_display', 'role'], 'Должность не указана');
 
@@ -153,8 +193,11 @@ const RatingRow = memo(function RatingRow({
         <Text style={[styles.rowSubtitle, { color: appTheme.colors.accent }]}>{position}</Text>
         <Text style={[styles.rowMeta, { color: appTheme.colors.textMuted }]}>{office || getEntityString(item, ['email'], 'Офис не указан')}</Text>
         <View style={styles.pills}>
-          <StatusPill label={`${score.toLocaleString('ru-RU')} баллов`} tone={rank <= 3 ? 'accent' : 'primary'} />
+          <StatusPill label={score === null ? 'Баллы: нет данных' : `${score.toLocaleString('ru-RU')} баллов`} tone={rank <= 3 ? 'accent' : 'primary'} />
+          <StatusPill label={`${leads.toLocaleString('ru-RU')} лидов`} tone="primary" />
+          <StatusPill label={`${clients.toLocaleString('ru-RU')} клиентов`} tone="accent" />
           <StatusPill label={`${revenue.toLocaleString('ru-RU')} USD`} tone="success" />
+          <StatusPill label={`${workdays.toLocaleString('ru-RU')} дней`} tone="muted" />
         </View>
       </View>
       <Ionicons name={rank <= 3 ? 'trophy' : 'trending-up-outline'} size={22} color={rank <= 3 ? appTheme.colors.accent : appTheme.colors.textMuted} />
@@ -207,6 +250,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     lineHeight: 20,
+  },
+  podium: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.md,
+  },
+  podiumCard: {
+    alignItems: 'center',
+    flex: 1,
+    gap: theme.spacing.sm,
+    minWidth: 96,
+  },
+  podiumFirst: {
+    transform: [{ translateY: -4 }],
+  },
+  podiumRank: {
+    alignItems: 'center',
+    borderRadius: theme.radius.pill,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  podiumRankText: {
+    color: theme.colors.white,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  podiumName: {
+    fontSize: 13,
+    fontWeight: '900',
+    minHeight: 34,
+    textAlign: 'center',
+  },
+  podiumScore: {
+    fontSize: 12,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   row: {
     flexDirection: 'row',

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 
 import { toApiError } from '../../api/client';
-import { listNotifications, markAllNotificationsRead } from '../../api/notifications';
+import { listNotifications, markAllNotificationsRead, markNotificationRead } from '../../api/notifications';
 import { Card } from '../../components/cards/Card';
 import { Input } from '../../components/forms/Input';
 import { Header } from '../../components/layout/Header';
@@ -26,6 +26,7 @@ import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { usePagedResource } from '../../hooks/usePagedResource';
+import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
@@ -55,10 +56,13 @@ function notificationTone(item: ApiListItem) {
 export function NotificationsScreen() {
   const router = useRouter();
   const appTheme = useAppTheme();
+  const { user } = useAuth();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [markingAll, setMarkingAll] = useState(false);
+  const [markingId, setMarkingId] = useState<string | number | null>(null);
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
+  const isAdmin = Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
 
   const loader = useCallback(
     ({ limit, offset }: { limit: number; offset: number }) =>
@@ -88,14 +92,32 @@ export function NotificationsScreen() {
     }
   };
 
+  const markSingleRead = useCallback(async (item: ApiListItem) => {
+    const id = getEntityId(item);
+    if (!id) return;
+
+    setMarkingId(id);
+
+    try {
+      await markNotificationRead(id);
+      await refresh();
+    } catch (requestError) {
+      Alert.alert('Уведомления', toApiError(requestError).message);
+    } finally {
+      setMarkingId(null);
+    }
+  }, [refresh]);
+
   const renderItem = useCallback(
     ({ item }: { item: ApiListItem }) => (
       <NotificationCard
         item={item}
         onPress={() => router.push(`/(app)/notifications/${getEntityId(item)}` as any)}
+        onMarkRead={() => markSingleRead(item)}
+        marking={markingId === getEntityId(item)}
       />
     ),
-    [router]
+    [markSingleRead, markingId, router]
   );
 
   return (
@@ -135,6 +157,12 @@ export function NotificationsScreen() {
                 loading={markingAll}
                 onPress={markAllRead}
               />
+              {isAdmin ? (
+                <Button
+                  title="Создать уведомление"
+                  onPress={() => router.push('/(app)/notifications/create' as any)}
+                />
+              ) : null}
             </Card>
 
             <SegmentedControl options={notificationFilters} value={filter} onChange={setFilter} />
@@ -168,9 +196,13 @@ export function NotificationsScreen() {
 const NotificationCard = memo(function NotificationCard({
   item,
   onPress,
+  onMarkRead,
+  marking,
 }: {
   item: ApiListItem;
   onPress: () => void;
+  onMarkRead: () => void;
+  marking: boolean;
 }) {
   const appTheme = useAppTheme();
   const isRead = getEntityString(item, ['is_read']) === 'true' || getEntityString(item, ['status']) === 'read';
@@ -209,6 +241,25 @@ const NotificationCard = memo(function NotificationCard({
           <StatusPill label={getEntityString(item, ['priority_display', 'priority'], 'Обычный')} tone="primary" />
           <StatusPill label={formatEntityDate(item.created_at) || 'Без даты'} tone="muted" />
         </View>
+        {!isRead ? (
+          <Pressable
+            disabled={marking}
+            onPress={(event) => {
+              event.stopPropagation();
+              onMarkRead();
+            }}
+            style={[styles.readInlineButton, { backgroundColor: appTheme.colors.accentSoft }]}
+          >
+            {marking ? (
+              <ActivityIndicator size="small" color={appTheme.colors.accent} />
+            ) : (
+              <>
+                <Ionicons name="checkmark-done-outline" size={16} color={appTheme.colors.accent} />
+                <Text style={[styles.readInlineText, { color: appTheme.colors.accent }]}>Прочитано</Text>
+              </>
+            )}
+          </Pressable>
+        ) : null}
       </Card>
     </Pressable>
   );
@@ -288,6 +339,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: theme.spacing.sm,
+  },
+  readInlineButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: theme.radius.pill,
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: theme.spacing.sm,
+    minHeight: 34,
+    paddingHorizontal: theme.spacing.md,
+  },
+  readInlineText: {
+    fontSize: 12,
+    fontWeight: '900',
   },
   pressed: {
     opacity: 0.72,

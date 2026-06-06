@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { memo, useCallback } from 'react';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { CalendarAgendaItem, listCalendarEvents } from '../../api/calendar';
@@ -17,10 +17,23 @@ import { theme } from '../../theme/theme';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { formatEntityDate, getStatusLabel } from '../../utils/entity';
 
+function addMonths(date: Date, amount: number) {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+}
+
+function formatMonth(date: Date) {
+  return date.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+}
+
 export function CalendarScreen() {
   const router = useRouter();
   const appTheme = useAppTheme();
-  const loadEvents = useCallback(() => listCalendarEvents(), []);
+  const [monthDate, setMonthDate] = useState(() => new Date());
+  const calendarParams = useMemo(
+    () => ({ month: monthDate.getMonth() + 1, year: monthDate.getFullYear() }),
+    [monthDate]
+  );
+  const loadEvents = useCallback(() => listCalendarEvents(calendarParams), [calendarParams]);
   const { data, loading, error, reload } = useAsyncResource(loadEvents);
   const items = data?.items || [];
 
@@ -56,20 +69,35 @@ export function CalendarScreen() {
           <View style={styles.headerStack}>
             <Header
               title="Календарь"
-              subtitle="Agenda из задач, дедлайнов и рабочего дня."
+              subtitle="События, дедлайны, дни рождения и важные даты."
               showBack
               parentFallback="/(app)/(tabs)/more"
             />
 
             <Card glass style={styles.hero}>
               <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>Calendar</Text>
-              <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Сегодня, задачи и встречи</Text>
+              <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Полная повестка месяца</Text>
               <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
-                События, задачи и рабочий день собраны в единую повестку.
+                Загружаем события месяца через API календаря. Если endpoint ещё не доступен, показываем дедлайны задач.
               </Text>
+              <View style={styles.monthRow}>
+                <Pressable
+                  onPress={() => setMonthDate((current) => addMonths(current, -1))}
+                  style={[styles.monthButton, { backgroundColor: appTheme.colors.primarySoft }]}
+                >
+                  <Ionicons name="chevron-back" size={18} color={appTheme.colors.primary} />
+                </Pressable>
+                <Text style={[styles.monthTitle, { color: appTheme.colors.text }]}>{formatMonth(monthDate)}</Text>
+                <Pressable
+                  onPress={() => setMonthDate((current) => addMonths(current, 1))}
+                  style={[styles.monthButton, { backgroundColor: appTheme.colors.primarySoft }]}
+                >
+                  <Ionicons name="chevron-forward" size={18} color={appTheme.colors.primary} />
+                </Pressable>
+              </View>
               <View style={styles.pills}>
                 <StatusPill label={`${items.length} событий`} tone="success" />
-                <StatusPill label="Готово к синхронизации" tone="primary" />
+                <StatusPill label="Pull-to-refresh" tone="primary" />
               </View>
             </Card>
 
@@ -93,7 +121,7 @@ export function CalendarScreen() {
               />
             ) : null}
 
-            <SectionTitle title="Ближайшее" />
+            <SectionTitle title="События месяца" />
           </View>
         }
         ListEmptyComponent={
@@ -102,7 +130,7 @@ export function CalendarScreen() {
           ) : (
             <EmptyState
               title="Пока нет событий"
-              message="Добавьте дедлайны задач или начните рабочий день, и они появятся здесь."
+              message="Календарь будет доступен после подключения API событий, дней рождения и важных дат."
             />
           )
         }
@@ -122,7 +150,6 @@ const AgendaCard = memo(function AgendaCard({
 }) {
   const appTheme = useAppTheme();
   const isTask = item.type === 'task';
-  const isEvent = item.type === 'event';
 
   return (
     <Pressable
@@ -130,12 +157,12 @@ const AgendaCard = memo(function AgendaCard({
       onPress={onPress}
       style={({ pressed }) => [pressed && styles.pressed]}
     >
-      <Card style={styles.agendaCard}>
+      <Card glass style={styles.agendaCard}>
         <View style={[styles.iconBubble, { backgroundColor: appTheme.colors.primarySoft }]}>
           <Ionicons
-            name={isEvent ? 'calendar-outline' : isTask ? 'checkbox-outline' : 'briefcase-outline'}
+            name={isTask ? 'checkbox-outline' : 'calendar-outline'}
             size={20}
-            color={isEvent ? appTheme.colors.success : isTask ? appTheme.colors.accent : appTheme.colors.primary}
+            color={isTask ? appTheme.colors.accent : appTheme.colors.success}
           />
         </View>
         <View style={styles.agendaBody}>
@@ -143,7 +170,7 @@ const AgendaCard = memo(function AgendaCard({
           <Text style={[styles.agendaTitle, { color: appTheme.colors.text }]}>{item.title}</Text>
           {item.subtitle ? <Text style={[styles.agendaSubtitle, { color: appTheme.colors.textMuted }]}>{item.subtitle}</Text> : null}
           <View style={styles.pills}>
-            <StatusPill label={isEvent ? 'Событие' : isTask ? 'Задача' : 'Рабочий день'} tone={isEvent ? 'success' : isTask ? 'accent' : 'primary'} />
+            <StatusPill label={isTask ? 'Задача' : 'Событие'} tone={isTask ? 'accent' : 'success'} />
             <StatusPill label={getStatusLabel(item.status)} tone="muted" />
           </View>
         </View>
@@ -181,6 +208,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     lineHeight: 21,
+  },
+  monthRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    justifyContent: 'space-between',
+  },
+  monthButton: {
+    alignItems: 'center',
+    borderRadius: theme.radius.pill,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  monthTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '900',
+    textAlign: 'center',
+    textTransform: 'capitalize',
   },
   pills: {
     flexDirection: 'row',

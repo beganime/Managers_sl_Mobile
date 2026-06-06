@@ -23,10 +23,13 @@ import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { LoadingState } from '../../components/ui/LoadingState';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { SectionTitle } from '../../components/ui/SectionTitle';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
+import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
 import {
   formatEntityDate,
@@ -44,6 +47,15 @@ function sectionTitle(section: string) {
   return 'Документ';
 }
 
+const stampPositionOptions = [
+  { label: 'Bottom L', value: 'bottom_left' },
+  { label: 'Bottom R', value: 'bottom_right' },
+  { label: 'Top L', value: 'top_left' },
+  { label: 'Top R', value: 'top_right' },
+  { label: 'Center', value: 'center' },
+  { label: 'Custom', value: 'custom' },
+];
+
 function loadDocument(section: string, id: string) {
   if (section === 'templates') return getDocumentTemplate(id);
   if (section === 'approvals') return getDocumentApproval(id);
@@ -52,12 +64,20 @@ function loadDocument(section: string, id: string) {
 
 export function DocumentDetailScreen() {
   const router = useRouter();
+  const appTheme = useAppTheme();
+  const { user } = useAuth();
   const params = useLocalSearchParams<{ section: string; id: string }>();
   const section = params.section || 'generated';
   const id = params.id;
   const [saving, setSaving] = useState<string | null>(null);
   const [comment, setComment] = useState('');
   const [reason, setReason] = useState('');
+  const [stampPosition, setStampPosition] = useState('bottom_right');
+  const [stampWidth, setStampWidth] = useState('38');
+  const [stampHeight, setStampHeight] = useState('38');
+  const [stampX, setStampX] = useState('');
+  const [stampY, setStampY] = useState('');
+  const isAdmin = Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
 
   const loader = useCallback(() => loadDocument(section, id), [id, section]);
   const { data, loading, error, reload } = useAsyncResource(loader);
@@ -71,10 +91,20 @@ export function DocumentDetailScreen() {
       } else if (action === 'submit') {
         await submitDocumentForApproval(id, comment.trim());
       } else if (action === 'approve') {
+        const approvalPayload = {
+          comment: comment.trim(),
+          stamp_position: stampPosition,
+          position: stampPosition,
+          width_mm: Number(stampWidth) || undefined,
+          height_mm: Number(stampHeight) || undefined,
+          x_mm: stampPosition === 'custom' ? Number(stampX) || undefined : undefined,
+          y_mm: stampPosition === 'custom' ? Number(stampY) || undefined : undefined,
+        };
+
         if (section === 'approvals') {
-          await approveDocumentApproval(id, { comment: comment.trim() });
+          await approveDocumentApproval(id, approvalPayload);
         } else {
-          await approveGeneratedDocument(id, { comment: comment.trim() });
+          await approveGeneratedDocument(id, approvalPayload);
         }
       } else if (section === 'approvals') {
         await rejectDocumentApproval(id, reason.trim());
@@ -122,6 +152,7 @@ export function DocumentDetailScreen() {
   const fields = getEntityArray<ApiListItem>(item, 'fields_config');
   const generatedUrl = getEntityString(item, ['generated_file_url', 'file_url']);
   const approvedUrl = getEntityString(item, ['approved_file_url']);
+  const previewUrl = getEntityString(item, ['preview_url', 'pdf_preview_url', 'approved_file_url', 'generated_file_url', 'file_url']);
   const displayTitle = section === 'approvals'
     ? getEntityString(item, ['document_title'], 'Согласование документа')
     : getEntityTitle(item, sectionTitle(section));
@@ -158,7 +189,7 @@ export function DocumentDetailScreen() {
           />
         ) : null}
 
-        {section !== 'templates' ? (
+        {isAdmin && section !== 'templates' ? (
           <View style={styles.actions}>
             <Button
               title="Перегенерировать"
@@ -176,8 +207,37 @@ export function DocumentDetailScreen() {
         ) : null}
       </Card>
 
-      {section !== 'templates' ? (
+      {isAdmin && section !== 'templates' ? (
         <Card style={styles.block}>
+          <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>Печать и согласование</Text>
+          <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>
+            Выберите место и размер печати перед одобрением документа.
+          </Text>
+          <SegmentedControl options={stampPositionOptions} value={stampPosition} onChange={setStampPosition} />
+          <View style={styles.actions}>
+            <View style={styles.stampField}>
+              <Input label="Ширина, мм" value={stampWidth} onChangeText={setStampWidth} keyboardType="decimal-pad" />
+            </View>
+            <View style={styles.stampField}>
+              <Input label="Высота, мм" value={stampHeight} onChangeText={setStampHeight} keyboardType="decimal-pad" />
+            </View>
+          </View>
+          {stampPosition === 'custom' ? (
+            <View style={styles.actions}>
+              <View style={styles.stampField}>
+                <Input label="X, мм" value={stampX} onChangeText={setStampX} keyboardType="decimal-pad" />
+              </View>
+              <View style={styles.stampField}>
+                <Input label="Y, мм" value={stampY} onChangeText={setStampY} keyboardType="decimal-pad" />
+              </View>
+            </View>
+          ) : null}
+          <Button
+            title="Предпросмотр"
+            variant="secondary"
+            disabled={!previewUrl}
+            onPress={() => Linking.openURL(previewUrl)}
+          />
           <Input
             label="Комментарий к действию"
             placeholder="Комментарий для согласования"
@@ -192,7 +252,7 @@ export function DocumentDetailScreen() {
           />
           <View style={styles.actions}>
             <Button
-              title="Одобрить"
+              title="Одобрить и поставить печать"
               loading={saving === 'approve'}
               onPress={() => runAction('approve')}
             />
@@ -208,8 +268,8 @@ export function DocumentDetailScreen() {
 
       <SectionTitle title="Файлы" />
       <View style={styles.stack}>
-        <FileAction title="Исходный файл" url={generatedUrl} />
-        <FileAction title="Одобренный файл" url={approvedUrl} />
+        <FileAction title="Скачать DOCX без печати" url={generatedUrl} />
+        <FileAction title="Скачать PDF с печатью" url={approvedUrl} />
       </View>
 
       <SectionTitle title="Детали" />
@@ -304,6 +364,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: theme.spacing.md,
+  },
+  stampField: {
+    flex: 1,
+    minWidth: 130,
   },
   block: {
     gap: theme.spacing.md,

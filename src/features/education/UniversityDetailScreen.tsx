@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { getUniversity } from '../../api/education';
 import { Card } from '../../components/cards/Card';
@@ -24,6 +26,32 @@ import {
   getEntityTitle,
   stripHtml,
 } from '../../utils/entity';
+
+function getUniversityImageUrl(item: ApiListItem) {
+  return getEntityString(item, ['cover_image_url', 'image_url', 'logo_url']);
+}
+
+function buildUniversityCopyText(item: ApiListItem, programs: ApiListItem[]) {
+  const lines = [
+    `ВУЗ: ${getEntityTitle(item, 'Университет')}`,
+    `Страна: ${getEntityString(item, ['country_name'], 'не указана')}`,
+    `Город: ${getEntityString(item, ['city_name'], 'не указан')}`,
+    `Описание: ${stripHtml(getEntityString(item, ['description'])) || 'не заполнено'}`,
+    `Сайт: ${getEntityString(item, ['website', 'site'], 'не указан')}`,
+    `Условия поступления: ${stripHtml(getEntityString(item, ['admission_requirements', 'requirements'])) || 'не заполнено'}`,
+    `Общежитие: ${stripHtml(getEntityString(item, ['dormitory', 'hostel'])) || 'не заполнено'}`,
+    `Расходы: ${stripHtml(getEntityString(item, ['expenses', 'costs', 'living_costs'])) || 'не заполнено'}`,
+  ];
+
+  if (programs.length) {
+    lines.push('Программы:');
+    programs.forEach((program) => {
+      lines.push(`- ${getEntityTitle(program, 'Программа')}`);
+    });
+  }
+
+  return lines.join('\n');
+}
 
 export function UniversityDetailScreen() {
   const router = useRouter();
@@ -64,6 +92,12 @@ export function UniversityDetailScreen() {
   const contacts = getEntityArray<ApiListItem>(data, 'contacts');
   const docs = getEntityArray<ApiListItem>(data, 'required_documents');
   const website = getEntityString(data, ['website', 'site']);
+  const imageUrl = getUniversityImageUrl(data);
+
+  const copyUniversityData = async () => {
+    await Clipboard.setStringAsync(buildUniversityCopyText(data, programs));
+    Alert.alert('Вуз', 'Данные ВУЗа скопированы.');
+  };
 
   return (
     <ScreenContainer>
@@ -75,6 +109,7 @@ export function UniversityDetailScreen() {
       />
 
       <Card glass style={styles.hero}>
+        {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.heroImage} contentFit="cover" /> : null}
         <Text style={styles.heroKicker}>University</Text>
         <Text style={styles.heroTitle}>{getEntityTitle(data, 'Университет')}</Text>
         <Text style={styles.heroText}>
@@ -91,6 +126,7 @@ export function UniversityDetailScreen() {
             onPress={() => Linking.openURL(website)}
           />
         ) : null}
+        <Button title="Скопировать данные" variant="secondary" onPress={copyUniversityData} />
       </Card>
 
       <SectionTitle title="Программы" />
@@ -156,6 +192,12 @@ export function UniversityDetailScreen() {
 const styles = StyleSheet.create({
   hero: {
     gap: theme.spacing.md,
+  },
+  heroImage: {
+    alignSelf: 'stretch',
+    height: 178,
+    marginHorizontal: -theme.spacing.lg,
+    marginTop: -theme.spacing.lg,
   },
   heroKicker: {
     color: theme.colors.accent,

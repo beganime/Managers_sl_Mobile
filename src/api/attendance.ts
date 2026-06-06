@@ -13,6 +13,10 @@ export function getWorkdayReport(params?: ApiParams) {
   return getJson(v1('/attendance/workdays/report/'), { params });
 }
 
+export function submitWorkdayReport(payload: Record<string, unknown>) {
+  return postJson<Workday>(v1('/attendance/workdays/report/'), payload);
+}
+
 export function listDailyReports(params?: ApiParams) {
   return getJson<CollectionResponse<ApiListItem>>(v1('/attendance/reports/'), { params });
 }

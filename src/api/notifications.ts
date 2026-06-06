@@ -18,6 +18,10 @@ export function getNotification(id: EntityId) {
   return getJson<ApiListItem>(v1(`/notifications/${id}/`));
 }
 
+export function createNotification(payload: Record<string, unknown>) {
+  return postJson<ApiListItem>(v1('/notifications/'), payload);
+}
+
 export function markNotificationRead(id: EntityId) {
   return postJson<ApiListItem>(v1(`/notifications/${id}/mark-read/`));
 }

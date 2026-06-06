@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import React, { memo, useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -47,18 +48,22 @@ function relativeReportDate(value: unknown) {
 export function ReportHistoryScreen() {
   const appTheme = useAppTheme();
   const { user } = useAuth();
+  const params = useLocalSearchParams<{ employee?: string; name?: string }>();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
+  const employeeId = params.employee || (user?.id ? String(user.id) : undefined);
+  const employeeName = params.name ? String(params.name) : '';
 
   const loader = useCallback(
     ({ limit, offset }: { limit: number; offset: number }) =>
       listDailyReports({
         limit,
         offset,
-        employee: user?.id,
+        employee: employeeId,
+        user: employeeId,
         search: debouncedSearch || undefined,
       }),
-    [debouncedSearch, user?.id]
+    [debouncedSearch, employeeId]
   );
 
   const { items, count, loading, refreshing, loadingMore, error, refresh, loadMore } =
@@ -85,7 +90,7 @@ export function ReportHistoryScreen() {
         ListHeaderComponent={
           <View style={styles.headerStack}>
             <Header
-              title="Мои отчёты"
+              title={employeeName ? `Отчёты: ${employeeName}` : 'Мои отчёты'}
               subtitle="История рабочих отчётов по дням."
               showBack
               parentFallback="/(app)/(tabs)/more"

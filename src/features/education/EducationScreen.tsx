@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
@@ -705,6 +706,10 @@ function FilterChip({
   );
 }
 
+function getCatalogImageUrl(item: ApiListItem, keys: string[]) {
+  return getEntityString(item, keys);
+}
+
 const CountryCard = memo(function CountryCard({
   item,
   onPress,
@@ -715,10 +720,12 @@ const CountryCard = memo(function CountryCard({
   const appTheme = useAppTheme();
   const code = getEntityString(item, ['code']);
   const description = stripHtml(getEntityString(item, ['description']));
+  const imageUrl = getCatalogImageUrl(item, ['image_url', 'cover_image_url', 'flag_url']);
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
       <Card style={styles.itemCard}>
+        {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.catalogImage} contentFit="cover" /> : null}
         <View style={styles.cardTop}>
           <View style={[styles.iconBubble, { backgroundColor: appTheme.colors.primarySoft }]}>
             <Ionicons name="flag-outline" size={20} color={appTheme.colors.accent} />
@@ -748,10 +755,12 @@ const CityCard = memo(function CityCard({
   const appTheme = useAppTheme();
   const country = getEntityString(item, ['country_name']);
   const description = stripHtml(getEntityString(item, ['description']));
+  const imageUrl = getCatalogImageUrl(item, ['image_url', 'cover_image_url']);
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
       <Card style={styles.itemCard}>
+        {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.catalogImage} contentFit="cover" /> : null}
         <View style={styles.cardTop}>
           <View style={[styles.iconBubble, { backgroundColor: appTheme.colors.primarySoft }]}>
             <Ionicons name="business-outline" size={20} color={appTheme.colors.primary} />
@@ -782,10 +791,12 @@ const UniversityCard = memo(function UniversityCard({
   const city = getEntityString(item, ['city_name']);
   const country = getEntityString(item, ['country_name']);
   const active = getEntityString(item, ['is_active'], 'true') !== 'false';
+  const imageUrl = getCatalogImageUrl(item, ['cover_image_url', 'image_url', 'logo_url']);
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed]}>
       <Card style={styles.itemCard}>
+        {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.catalogImage} contentFit="cover" /> : null}
         <View style={styles.cardTop}>
           <View style={[styles.iconBubble, { backgroundColor: appTheme.colors.accentSoft }]}>
             <Ionicons name="school-outline" size={20} color={appTheme.colors.accent} />
@@ -977,6 +988,12 @@ const styles = StyleSheet.create({
   },
   itemCard: {
     gap: theme.spacing.md,
+  },
+  catalogImage: {
+    alignSelf: 'stretch',
+    height: 132,
+    marginHorizontal: -theme.spacing.lg,
+    marginTop: -theme.spacing.lg,
   },
   cardTop: {
     flexDirection: 'row',
