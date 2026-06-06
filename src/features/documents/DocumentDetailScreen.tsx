@@ -9,6 +9,10 @@ import {
   getDocumentApproval,
   getDocumentTemplate,
   getGeneratedDocument,
+  getGeneratedDocumentApprovedDownloadUrl,
+  getGeneratedDocumentApprovedPreviewUrl,
+  getGeneratedDocumentOriginalDownloadUrl,
+  getGeneratedDocumentStampPreviewUrl,
   regenerateDocument,
   rejectDocumentApproval,
   rejectGeneratedDocument,
@@ -68,9 +72,39 @@ function loadDocument(section: string, id: string) {
   return getGeneratedDocument(id);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getNestedValue(entity: unknown, path: string) {
+  if (!isRecord(entity)) return undefined;
+  let current: unknown = entity;
+  for (const part of path.split('.')) {
+    if (!isRecord(current)) return undefined;
+    current = current[part];
+    if (current === null || current === undefined) return undefined;
+  }
+  return current;
+}
+
+function getNestedString(entity: unknown, paths: string[]) {
+  for (const path of paths) {
+    const value = path.includes('.') ? getNestedValue(entity, path) : getNestedValue(entity, path);
+    if (typeof value === 'string' && value.trim()) return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  }
+  return '';
+}
+
 function getDocumentUrl(item: ApiListItem, keys: string[]) {
-  const value = getEntityString(item, keys);
+  const nested = getNestedString(item, keys);
+  const flat = getEntityString(item, keys);
+  const value = nested || flat;
   return resolveMediaUrl(value) || '';
+}
+
+function firstAvailableUrl(...urls: Array<string | null | undefined>) {
+  return urls.find((url) => typeof url === 'string' && url.trim()) || '';
 }
 
 function getPreviewText(item: ApiListItem) {
@@ -93,6 +127,24 @@ function getStampPreviewStyle(position: string) {
   };
 
   return base[position as keyof typeof base] || { left: 28, bottom: 28 };
+}
+
+async function openExternalUrl(title: string, url: string) {
+  if (!url) {
+    Alert.alert(title, 'Ссылка пока недоступна.');
+    return;
+  }
+
+  try {
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      Alert.alert(title, 'Устройство не может открыть эту ссылку.');
+      return;
+    }
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert(title, 'Не удалось открыть ссылку.');
+  }
 }
 
 export function DocumentDetailScreen() {
@@ -131,14 +183,27 @@ export function DocumentDetailScreen() {
           return;
         }
 
+        const widthMm = toMillimeters(stampWidth, stampUnit);
+        const heightMm = toMillimeters(stampHeight, stampUnit);
+        const xMm = stampPosition === 'custom' ? toMillimeters(stampX, stampUnit) : undefined;
+        const yMm = stampPosition === 'custom' ? toMillimeters(stampY, stampUnit) : undefined;
+
         const approvalPayload = {
           comment: comment.trim(),
+          mode: 'approve_with_stamp',
+          approval_type: 'with_stamp',
+          with_stamp: true,
+          stamp_mode: 'executor',
           stamp_position: stampPosition,
           position: stampPosition,
-          width_mm: toMillimeters(stampWidth, stampUnit),
-          height_mm: toMillimeters(stampHeight, stampUnit),
-          x_mm: stampPosition === 'custom' ? toMillimeters(stampX, stampUnit) : undefined,
-          y_mm: stampPosition === 'custom' ? toMillimeters(stampY, stampUnit) : undefined,
+          stamp_width_mm: widthMm,
+          stamp_height_mm: heightMm,
+          width_mm: widthMm,
+          height_mm: heightMm,
+          stamp_x_mm: xMm,
+          stamp_y_mm: yMm,
+          x_mm: xMm,
+          y_mm: yMm,
           unit: 'mm',
         };
 
@@ -192,32 +257,79 @@ export function DocumentDetailScreen() {
   }
 
   const item = data as ApiListItem;
+  const documentId = getEntityId(item) || id;
   const status = getEntityString(item, ['status'], section === 'templates' ? 'active' : 'draft');
   const fields = getEntityArray<ApiListItem>(item, 'fields_config');
-  const generatedUrl = getDocumentUrl(item, [
-    'generated_file_url',
-    'docx_url',
-    'download_docx_url',
-    'original_file_url',
-    'file_url',
-    'download_url',
-  ]);
-  const approvedUrl = getDocumentUrl(item, [
-    'approved_file_url',
-    'approved_pdf_url',
-    'sealed_pdf_url',
-    'pdf_url',
-    'stamped_pdf_url',
-  ]);
-  const previewUrl = getDocumentUrl(item, [
-    'preview_url',
-    'pdf_preview_url',
-    'preview_file_url',
-    'approved_pdf_url',
-    'approved_file_url',
-    'generated_file_url',
-    'file_url',
-  ]);
+  const canDownloadOriginal = getEntityString(item, ['can_download_original']) === 'true';
+  const canDownloadApproved = getEntityString(item, ['can_download_approved']) === 'true';
+  const hasStampPreview = getEntityString(item, ['has_stamp_preview']) === 'true';
+
+  const generatedUrl = firstAvailableUrl(
+    getDocumentUrl(item, [
+      'generated_file_url',
+      'links.files.generated_file',
+      'links.api.download_original',
+      'download_original_url',
+      'links.portal.download_original',
+      'portal_download_original_url',
+      'docx_url',
+      'download_docx_url',
+      'original_file_url',
+      'file_url',
+      'download_url',
+    ]),
+    canDownloadOriginal ? getGeneratedDocumentOriginalDownloadUrl(documentId) : ''
+  );
+
+  const approvedUrl = firstAvailableUrl(
+    getDocumentUrl(item, [
+      'approved_file_url',
+      'links.files.approved_file',
+      'links.api.download_approved',
+      'download_approved_url',
+      'links.portal.download_approved',
+      'portal_download_approved_url',
+      'approved_pdf_url',
+      'sealed_pdf_url',
+      'pdf_url',
+      'stamped_pdf_url',
+    ]),
+    canDownloadApproved ? getGeneratedDocumentApprovedDownloadUrl(documentId) : ''
+  );
+
+  const stampPreviewUrl = firstAvailableUrl(
+    getDocumentUrl(item, [
+      'stamp_preview_file_url',
+      'links.files.stamp_preview_file',
+      'links.api.stamp_preview',
+      'stamp_preview_url',
+      'links.portal.stamp_preview',
+      'portal_stamp_preview_url',
+    ]),
+    hasStampPreview ? getGeneratedDocumentStampPreviewUrl(documentId) : ''
+  );
+
+  const previewUrl = firstAvailableUrl(
+    getDocumentUrl(item, [
+      'preview_approved_url',
+      'links.api.preview_approved',
+      'links.portal.preview_approved',
+      'portal_preview_approved_url',
+      'preview_url',
+      'pdf_preview_url',
+      'preview_file_url',
+      'approved_file_url',
+      'links.files.approved_file',
+      'generated_file_url',
+      'links.files.generated_file',
+      'file_url',
+    ]),
+    canDownloadApproved ? getGeneratedDocumentApprovedPreviewUrl(documentId) : '',
+    stampPreviewUrl,
+    approvedUrl,
+    generatedUrl
+  );
+
   const previewText = getPreviewText(item);
   const canPreview = Boolean(previewUrl || previewText);
   const stampPreviewStyle = getStampPreviewStyle(stampPosition);
@@ -233,12 +345,7 @@ export function DocumentDetailScreen() {
     setPreviewOpened(true);
 
     if (!previewUrl) return;
-
-    try {
-      await Linking.openURL(previewUrl);
-    } catch {
-      Alert.alert('Предпросмотр', 'Не удалось открыть файл предпросмотра. Текст документа показан ниже, если backend его вернул.');
-    }
+    await openExternalUrl('Предпросмотр', previewUrl);
   };
 
   return (
@@ -253,7 +360,7 @@ export function DocumentDetailScreen() {
       <Card glass style={styles.hero}>
         <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>ERP documents</Text>
         <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>{displayTitle}</Text>
-        <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
+        <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}> 
           {stripHtml(getEntityString(item, ['description', 'generation_error'])) || 'Данные документа загружены из backend.'}
         </Text>
         <View style={styles.pills}>
@@ -264,6 +371,8 @@ export function DocumentDetailScreen() {
           {getEntityString(item, ['requires_approval']) === 'true' ? (
             <StatusPill label="Нужно согласование" tone="warning" />
           ) : null}
+          {generatedUrl ? <StatusPill label="DOCX доступен" tone="success" /> : null}
+          {approvedUrl ? <StatusPill label="PDF с печатью" tone="success" /> : null}
         </View>
 
         {section === 'templates' ? (
@@ -299,10 +408,10 @@ export function DocumentDetailScreen() {
       ) : null}
 
       {isAdmin && section !== 'templates' && !canPreview ? (
-        <Card style={[styles.noteCard, { borderColor: appTheme.colors.warningSoft }]}>
+        <Card style={[styles.noteCard, { borderColor: appTheme.colors.warningSoft }]}> 
           <Text style={[styles.rowTitle, { color: appTheme.colors.warning }]}>Предпросмотр недоступен</Text>
-          <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>
-            Нужен preview_url/pdf_preview_url или текстовый preview от backend. До подключения можно скачать DOCX, если файл доступен.
+          <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}> 
+            Backend не вернул preview/text или ссылку на файл. После генерации DOCX появится кнопка скачивания.
           </Text>
         </Card>
       ) : null}
@@ -310,7 +419,7 @@ export function DocumentDetailScreen() {
       {isAdmin && section !== 'templates' ? (
         <Card style={styles.block}>
           <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>Печать и согласование</Text>
-          <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>
+          <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}> 
             Выберите место и размер печати перед одобрением документа.
           </Text>
           <SegmentedControl options={stampPositionOptions} value={stampPosition} onChange={setStampPosition} />
@@ -333,7 +442,7 @@ export function DocumentDetailScreen() {
               </View>
             </View>
           ) : null}
-          <View style={[styles.stampPreview, { borderColor: appTheme.colors.border, backgroundColor: appTheme.colors.surfaceSoft }]}>
+          <View style={[styles.stampPreview, { borderColor: appTheme.colors.border, backgroundColor: appTheme.colors.surfaceSoft }]}> 
             <View style={[styles.documentMockLine, { backgroundColor: appTheme.colors.border }]} />
             <View style={[styles.documentMockLineShort, { backgroundColor: appTheme.colors.border }]} />
             <View
@@ -356,8 +465,8 @@ export function DocumentDetailScreen() {
             onPress={openPreview}
           />
           {!previewOpened ? (
-            <Text style={[styles.rowSubtitle, { color: appTheme.colors.warning }]}>
-              Сначала откройте предпросмотр документа. После проверки станет доступно одобрение.
+            <Text style={[styles.rowSubtitle, { color: appTheme.colors.warning }]}> 
+              Сначала откройте предпросмотр документа. После проверки станет доступно одобрение с печатью.
             </Text>
           ) : null}
           <Input
@@ -389,15 +498,16 @@ export function DocumentDetailScreen() {
         </Card>
       ) : null}
 
-      <SectionTitle title="Файлы" />
+      <SectionTitle title="Файлы и ссылки" />
       <View style={styles.stack}>
-        {generatedUrl ? <FileAction title="Скачать DOCX без печати" url={generatedUrl} /> : null}
-        {approvedUrl ? <FileAction title="Скачать PDF с печатью" url={approvedUrl} /> : null}
-        {!generatedUrl && !approvedUrl ? (
+        {generatedUrl ? <FileAction title="Скачать DOCX без печати" subtitle="Оригинальный документ без штампа" url={generatedUrl} /> : null}
+        {approvedUrl ? <FileAction title="Скачать PDF с печатью" subtitle="Доступно только после одобрения администратора" url={approvedUrl} /> : null}
+        {stampPreviewUrl ? <FileAction title="Предпросмотр PDF со штампом" subtitle="Проверочный файл перед финальным одобрением" url={stampPreviewUrl} /> : null}
+        {!generatedUrl && !approvedUrl && !stampPreviewUrl ? (
           <Card style={styles.block}>
             <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>Файлы пока недоступны</Text>
-            <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>
-              Backend не вернул ссылку на DOCX/PDF. Нужны поля generated_file_url/docx_url и approved_pdf_url/approved_file_url.
+            <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}> 
+              Документ ещё не сгенерирован или backend не вернул ссылки. После генерации здесь появится DOCX, а после одобрения — PDF с печатью.
             </Text>
           </Card>
         ) : null}
@@ -420,7 +530,7 @@ export function DocumentDetailScreen() {
             {fields.map((field) => (
               <Card key={String(getEntityId(field))} style={styles.block}>
                 <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>{getEntityString(field, ['label', 'key'], 'Поле')}</Text>
-                <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>
+                <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}> 
                   {[getEntityString(field, ['key']), getEntityString(field, ['field_type', 'type'])]
                     .filter(Boolean)
                     .join(' - ')}
@@ -434,22 +544,22 @@ export function DocumentDetailScreen() {
   );
 }
 
-function FileAction({ title, url }: { title: string; url: string }) {
+function FileAction({ title, subtitle, url }: { title: string; subtitle?: string; url: string }) {
   const appTheme = useAppTheme();
 
   return (
     <Pressable
       disabled={!url}
-      onPress={() => Linking.openURL(url)}
+      onPress={() => openExternalUrl(title, url)}
       style={({ pressed }) => [pressed && styles.pressed, !url && styles.disabled]}
     >
       <Card style={styles.file}>
-        <View style={[styles.fileIcon, { backgroundColor: appTheme.colors.primarySoft }]}>
+        <View style={[styles.fileIcon, { backgroundColor: appTheme.colors.primarySoft }]}> 
           <Ionicons name="document-attach-outline" size={20} color={appTheme.colors.primary} />
         </View>
         <View style={styles.fileText}>
           <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>{title}</Text>
-          <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>{url ? 'Файл готов к открытию' : 'Файл пока недоступен'}</Text>
+          <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>{subtitle || 'Файл готов к открытию'}</Text>
         </View>
         {url ? <Ionicons name="open-outline" size={19} color={appTheme.colors.textMuted} /> : null}
       </Card>
