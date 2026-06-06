@@ -11,11 +11,13 @@ import { LoadingState } from '../../components/ui/LoadingState';
 import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { SectionTitle } from '../../components/ui/SectionTitle';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { DetailRow } from './components';
 import { statusLabel } from './constants';
 
 export function ApplicationDetailScreen() {
+  const appTheme = useAppTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const loadApplication = useCallback(() => getApplication(id), [id]);
   const { data, loading, error, reload } = useAsyncResource<ApiListItem>(loadApplication);
@@ -28,8 +30,8 @@ export function ApplicationDetailScreen() {
       {data ? (
         <>
           <Card glass style={styles.hero}>
-            <Text style={styles.name}>{String(data.client_name || data.full_name || 'Заявка')}</Text>
-            <Text style={styles.status}>{statusLabel(data.status_display || data.status)}</Text>
+            <Text style={[styles.name, { color: appTheme.colors.text }]}>{String(data.client_name || data.full_name || 'Заявка')}</Text>
+            <Text style={[styles.status, { color: appTheme.colors.accent }]}>{statusLabel(data.status_display || data.status)}</Text>
           </Card>
           <SectionTitle title="Детали" />
           <Card>

@@ -12,16 +12,30 @@ import {
 import { ApiListItem } from '../../types';
 import { Card } from '../../components/cards/Card';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { getItemTitle } from '../../utils/format';
 import { statusLabel } from './constants';
 
 export function SearchInput(props: TextInputProps) {
+  const appTheme = useAppTheme();
+
   return (
-    <View style={styles.searchWrap}>
-      <Ionicons name="search" size={18} color={theme.colors.textMuted} />
+    <View
+      style={[
+        styles.searchWrap,
+        {
+          borderColor: appTheme.colors.border,
+          backgroundColor: appTheme.colors.surfaceStrong,
+        },
+      ]}
+    >
+      <Ionicons name="search" size={18} color={appTheme.colors.textMuted} />
       <TextInput
-        placeholderTextColor={theme.colors.textSoft}
-        style={styles.searchInput}
+        placeholderTextColor={appTheme.colors.textSoft}
+        selectionColor={appTheme.colors.primary}
+        cursorColor={appTheme.colors.primary}
+        keyboardAppearance={appTheme.dark ? 'dark' : 'light'}
+        style={[styles.searchInput, { color: appTheme.colors.text }]}
         autoCapitalize="none"
         autoCorrect={false}
         {...props}
@@ -39,6 +53,8 @@ export function FilterChips({
   items: { label: string; value: string }[];
   onChange: (value: string) => void;
 }) {
+  const appTheme = useAppTheme();
+
   return (
     <View style={styles.chips}>
       {items.map((item) => {
@@ -47,9 +63,17 @@ export function FilterChips({
           <Pressable
             key={item.value || 'all'}
             onPress={() => onChange(item.value)}
-            style={[styles.chip, active && styles.chipActive]}
+            style={[
+              styles.chip,
+              {
+                borderColor: active ? appTheme.colors.accent : appTheme.colors.border,
+                backgroundColor: active ? appTheme.colors.accentSoft : appTheme.colors.surfaceStrong,
+              },
+            ]}
           >
-            <Text style={[styles.chipText, active && styles.chipTextActive]}>{item.label}</Text>
+            <Text style={[styles.chipText, { color: active ? appTheme.colors.accent : appTheme.colors.textMuted }]}>
+              {item.label}
+            </Text>
           </Pressable>
         );
       })}
@@ -68,6 +92,7 @@ export const CrmListCard = memo(function CrmListCard({
   onPress: () => void;
   actionLabel?: string;
 }) {
+  const appTheme = useAppTheme();
   const title = getItemTitle(item);
   const phone = String(item.phone || '');
   const email = String(item.email || '');
@@ -78,25 +103,25 @@ export const CrmListCard = memo(function CrmListCard({
     <Pressable onPress={onPress} style={({ pressed }) => pressed && styles.pressed}>
       <Card style={styles.card}>
         <View style={styles.cardHead}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{title.slice(0, 1).toUpperCase()}</Text>
+          <View style={[styles.avatar, { backgroundColor: appTheme.colors.primarySoft }]}>
+            <Text style={[styles.avatarText, { color: appTheme.colors.primary }]}>{title.slice(0, 1).toUpperCase()}</Text>
           </View>
           <View style={styles.cardMain}>
-            <Text numberOfLines={1} style={styles.cardTitle}>{title}</Text>
-            <Text numberOfLines={1} style={styles.cardMeta}>
+            <Text numberOfLines={1} style={[styles.cardTitle, { color: appTheme.colors.text }]}>{title}</Text>
+            <Text numberOfLines={1} style={[styles.cardMeta, { color: appTheme.colors.textMuted }]}>
               {[phone, email].filter(Boolean).join(' · ') || 'Контакты не указаны'}
             </Text>
           </View>
-          <View style={[styles.badge, type === 'lead' && styles.badgeRed]}>
-            <Text style={[styles.badgeText, type === 'lead' && styles.badgeTextRed]}>{status}</Text>
+          <View style={[styles.badge, { backgroundColor: type === 'lead' ? appTheme.colors.accentSoft : appTheme.colors.primarySoft }]}>
+            <Text style={[styles.badgeText, { color: type === 'lead' ? appTheme.colors.accent : appTheme.colors.primary }]}>{status}</Text>
           </View>
         </View>
 
         <View style={styles.cardFooter}>
-          <Text numberOfLines={1} style={styles.manager}>
+          <Text numberOfLines={1} style={[styles.manager, { color: appTheme.colors.textMuted }]}>
             {manager ? `Ответственный: ${manager}` : 'Ответственный не указан'}
           </Text>
-          <Text style={styles.action}>{actionLabel || 'Открыть'}</Text>
+          <Text style={[styles.action, { color: appTheme.colors.accent }]}>{actionLabel || 'Открыть'}</Text>
         </View>
       </Card>
     </Pressable>
@@ -104,12 +129,14 @@ export const CrmListCard = memo(function CrmListCard({
 });
 
 export function DetailRow({ label, value }: { label: string; value?: unknown }) {
+  const appTheme = useAppTheme();
+
   if (value === undefined || value === null || value === '') return null;
 
   return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{String(value)}</Text>
+    <View style={[styles.detailRow, { borderBottomColor: appTheme.colors.border }]}>
+      <Text style={[styles.detailLabel, { color: appTheme.colors.textMuted }]}>{label}</Text>
+      <Text style={[styles.detailValue, { color: appTheme.colors.text }]}>{String(value)}</Text>
     </View>
   );
 }

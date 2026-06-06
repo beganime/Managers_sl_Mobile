@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -26,9 +27,14 @@ import {
   getEntityTitle,
   stripHtml,
 } from '../../utils/entity';
+import { getEntityMediaUrl } from '../../utils/media';
 
 function getUniversityImageUrl(item: ApiListItem) {
-  return getEntityString(item, ['cover_image_url', 'image_url', 'logo_url']);
+  return getEntityMediaUrl(item, ['cover_image_url', 'cover_image', 'image_url', 'image', 'logo_url', 'logo']);
+}
+
+function getUniversityLogoUrl(item: ApiListItem) {
+  return getEntityMediaUrl(item, ['logo_url', 'logo', 'image_url', 'image']);
 }
 
 function buildUniversityCopyText(item: ApiListItem, programs: ApiListItem[]) {
@@ -93,6 +99,7 @@ export function UniversityDetailScreen() {
   const docs = getEntityArray<ApiListItem>(data, 'required_documents');
   const website = getEntityString(data, ['website', 'site']);
   const imageUrl = getUniversityImageUrl(data);
+  const logoUrl = getUniversityLogoUrl(data);
 
   const copyUniversityData = async () => {
     await Clipboard.setStringAsync(buildUniversityCopyText(data, programs));
@@ -109,7 +116,23 @@ export function UniversityDetailScreen() {
       />
 
       <Card glass style={styles.hero}>
-        {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.heroImage} contentFit="cover" /> : null}
+        <View style={styles.heroMedia}>
+          {imageUrl ? (
+            <Image source={{ uri: imageUrl }} style={styles.heroImage} contentFit="cover" />
+          ) : (
+            <LinearGradient colors={['#071A33', '#0B2545', '#7A1020']} style={styles.heroPlaceholder}>
+              <Ionicons name="school-outline" size={42} color="#FFFFFF" />
+            </LinearGradient>
+          )}
+          <LinearGradient colors={['rgba(7,26,51,0.02)', 'rgba(7,26,51,0.58)']} style={StyleSheet.absoluteFillObject} />
+          <View style={styles.logoWrap}>
+            {logoUrl ? (
+              <Image source={{ uri: logoUrl }} style={styles.logoImage} contentFit="cover" />
+            ) : (
+              <Ionicons name="school-outline" size={28} color={theme.colors.accent} />
+            )}
+          </View>
+        </View>
         <Text style={styles.heroKicker}>University</Text>
         <Text style={styles.heroTitle}>{getEntityTitle(data, 'Университет')}</Text>
         <Text style={styles.heroText}>
@@ -193,11 +216,40 @@ const styles = StyleSheet.create({
   hero: {
     gap: theme.spacing.md,
   },
-  heroImage: {
+  heroMedia: {
     alignSelf: 'stretch',
     height: 178,
     marginHorizontal: -theme.spacing.lg,
     marginTop: -theme.spacing.lg,
+    overflow: 'hidden',
+  },
+  heroImage: {
+    height: '100%',
+    width: '100%',
+  },
+  heroPlaceholder: {
+    alignItems: 'center',
+    height: '100%',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  logoWrap: {
+    alignItems: 'center',
+    backgroundColor: theme.colors.white,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.55)',
+    bottom: theme.spacing.md,
+    height: 58,
+    justifyContent: 'center',
+    left: theme.spacing.md,
+    overflow: 'hidden',
+    position: 'absolute',
+    width: 58,
+  },
+  logoImage: {
+    height: '100%',
+    width: '100%',
   },
   heroKicker: {
     color: theme.colors.accent,

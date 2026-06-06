@@ -12,9 +12,11 @@ import { Header } from '../../components/layout/Header';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 
 export function ClientTimelineScreen() {
+  const appTheme = useAppTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const loadTimeline = useCallback(async () => extractItems<ApiListItem>(await getClientTimeline(id)), [id]);
   const { data, loading, error, reload } = useAsyncResource(loadTimeline);
@@ -37,10 +39,10 @@ export function ClientTimelineScreen() {
         }
         renderItem={({ item }) => (
           <Card style={styles.item}>
-            <View style={styles.dot} />
+            <View style={[styles.dot, { backgroundColor: appTheme.colors.accent }]} />
             <View style={styles.body}>
-              <Text style={styles.title}>{String(item.activity_type_display || item.title || 'Событие')}</Text>
-              <Text style={styles.text}>{String(item.description || item.text || item.created_at || '')}</Text>
+              <Text style={[styles.title, { color: appTheme.colors.text }]}>{String(item.activity_type_display || item.title || 'Событие')}</Text>
+              <Text style={[styles.text, { color: appTheme.colors.textMuted }]}>{String(item.description || item.text || item.created_at || '')}</Text>
             </View>
           </Card>
         )}

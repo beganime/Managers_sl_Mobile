@@ -14,6 +14,7 @@ import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { SectionTitle } from '../../components/ui/SectionTitle';
 import { StatCard } from '../../components/cards/StatCard';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 
 type CrmData = {
@@ -54,6 +55,7 @@ const sections = [
 
 export function CrmScreen() {
   const router = useRouter();
+  const appTheme = useAppTheme();
 
   const loadCrm = useCallback(async (): Promise<CrmData> => {
     const [leads, clients, incoming, applications] = await Promise.all([
@@ -114,14 +116,14 @@ export function CrmScreen() {
             style={({ pressed }) => [pressed && styles.pressed]}
           >
             <Card style={styles.sectionCard}>
-              <View style={styles.sectionIcon}>
-                <Ionicons name={section.icon} size={22} color={theme.colors.accent} />
+              <View style={[styles.sectionIcon, { backgroundColor: appTheme.colors.accentSoft }]}>
+                <Ionicons name={section.icon} size={22} color={appTheme.colors.accent} />
               </View>
               <View style={styles.sectionBody}>
-                <Text style={styles.sectionTitle}>{section.title}</Text>
-                <Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
+                <Text style={[styles.sectionTitle, { color: appTheme.colors.text }]}>{section.title}</Text>
+                <Text style={[styles.sectionSubtitle, { color: appTheme.colors.textMuted }]}>{section.subtitle}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />
+              <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
             </Card>
           </Pressable>
         ))}

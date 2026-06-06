@@ -141,6 +141,9 @@ const ReportCard = memo(function ReportCard({ item }: { item: ApiListItem }) {
   const results = stripHtml(getEntityString(item, ['results']));
   const plans = stripHtml(getEntityString(item, ['plans']));
   const problems = stripHtml(getEntityString(item, ['problems']));
+  const startedAt = getEntityString(item, ['started_at', 'start_time', 'time_in']);
+  const closedAt = getEntityString(item, ['closed_at', 'end_time', 'time_out']);
+  const status = getEntityString(item, ['workday_status', 'status'], 'Отправлен');
   const leads = getEntityNumber(item, ['leads_processed'], 0);
   const deals = getEntityNumber(item, ['deals_closed'], 0);
 
@@ -151,7 +154,12 @@ const ReportCard = memo(function ReportCard({ item }: { item: ApiListItem }) {
           <Text style={[styles.cardDate, { color: appTheme.colors.text }]}>{relativeReportDate(date)}</Text>
           <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{formatEntityDate(date) || getEntityString(item, ['submitted_at'])}</Text>
         </View>
-        <StatusPill label={getEntityString(item, ['workday_status'], 'Отправлен')} tone="success" />
+        <StatusPill label={status} tone="success" />
+      </View>
+
+      <View style={styles.timeRow}>
+        <StatusPill label={startedAt ? `Начало: ${startedAt}` : 'Начало не указано'} tone={startedAt ? 'primary' : 'muted'} />
+        <StatusPill label={closedAt ? `Закрытие: ${closedAt}` : 'Не закрыт'} tone={closedAt ? 'success' : 'warning'} />
       </View>
 
       {content ? <ReportBlock title="Отчёт" value={content} /> : null}
@@ -236,6 +244,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: theme.spacing.md,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
   },
   cardDate: {
     color: theme.colors.text,

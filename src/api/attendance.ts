@@ -21,6 +21,10 @@ export function listDailyReports(params?: ApiParams) {
   return getJson<CollectionResponse<ApiListItem>>(v1('/attendance/reports/'), { params });
 }
 
+export function listWorkdays(params?: ApiParams) {
+  return getJson<CollectionResponse<ApiListItem>>(v1('/attendance/workdays/'), { params });
+}
+
 export function closeWorkday(payload?: Record<string, unknown>) {
   return postJson<Workday>(v1('/attendance/workdays/close/'), payload || {});
 }

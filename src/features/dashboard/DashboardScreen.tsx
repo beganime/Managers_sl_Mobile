@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { closeWorkday, listDailyReports, startWorkday, submitWorkdayReport } from '../../api/attendance';
+import { closeWorkday, listDailyReports, listWorkdays, startWorkday, submitWorkdayReport } from '../../api/attendance';
 import { extractItems, toApiError } from '../../api/client';
 import { getDashboardSummary } from '../../api/dashboard';
 import { listNotifications } from '../../api/notifications';
@@ -26,13 +26,14 @@ import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem, DashboardSummary, Workday } from '../../types';
-import { formatEntityDate, getEntityId, getEntityString } from '../../utils/entity';
+import { formatEntityDate, getEntityId, getEntityString, getEntityValue } from '../../utils/entity';
 import { formatWorkdayStatus, getItemTitle, getUserDisplayName, getUserPosition } from '../../utils/format';
 
 type DashboardData = DashboardSummary & {
   todayTasks: ApiListItem[];
   notifications: ApiListItem[];
   reports: ApiListItem[];
+  workdays: ApiListItem[];
 };
 
 type QuickTask = {
@@ -67,6 +68,56 @@ function hasWorkdayReport(workday?: Workday | null) {
 function getQuickTaskKey(userId?: number) {
   const today = new Date().toISOString().slice(0, 10);
   return `managersl.quickTasks.${userId || 'guest'}.${today}`;
+}
+
+function getNestedRecordValue(entity: ApiListItem, key: string, fields: string[]) {
+  const nested = getEntityValue(entity, [key]);
+
+  if (!nested || typeof nested !== 'object' || Array.isArray(nested)) return '';
+
+  return getEntityString(nested as Record<string, unknown>, fields);
+}
+
+function getWorkdayEmployeeId(item: ApiListItem, fallback: string | number) {
+  return (
+    getEntityString(item, ['employee_id', 'user_id', 'manager_id', 'staff_id']) ||
+    getNestedRecordValue(item, 'employee', ['id']) ||
+    getNestedRecordValue(item, 'user', ['id']) ||
+    fallback
+  );
+}
+
+function getWorkdayEmployeeName(item: ApiListItem) {
+  return (
+    getEntityString(item, ['employee_name', 'user_name', 'manager_name', 'full_name', 'name']) ||
+    getNestedRecordValue(item, 'employee', ['full_name', 'name', 'email', 'username']) ||
+    getNestedRecordValue(item, 'user', ['full_name', 'name', 'email', 'username']) ||
+    'Сотрудник'
+  );
+}
+
+function getWorkdayOffice(item: ApiListItem) {
+  return (
+    getEntityString(item, ['office_name', 'office_city', 'office', 'city']) ||
+    getNestedRecordValue(item, 'office', ['city', 'name', 'address']) ||
+    'Офис не указан'
+  );
+}
+
+function getWorkdayStartedAt(item: ApiListItem) {
+  return getEntityString(item, ['started_at', 'start_time', 'time_in', 'opened_at']);
+}
+
+function getWorkdayClosedAt(item: ApiListItem) {
+  return getEntityString(item, ['closed_at', 'end_time', 'time_out', 'finished_at']);
+}
+
+function getWorkdayReportText(item: ApiListItem) {
+  return getEntityString(item, ['report', 'report_text', 'daily_report', 'text', 'comment']);
+}
+
+function getWorkdayStatus(item: ApiListItem) {
+  return getEntityString(item, ['status', 'workday_status', 'state']);
 }
 
 function buildDailyTip(data: DashboardData, admin: boolean, workday?: Workday | null) {
@@ -120,11 +171,13 @@ export function DashboardScreen() {
   const quickTaskKey = useMemo(() => getQuickTaskKey(user?.id), [user?.id]);
 
   const loadDashboard = useCallback(async (): Promise<DashboardData> => {
-    const [summary, tasks, notifications, reports] = await Promise.all([
+    const today = new Date().toISOString().slice(0, 10);
+    const [summary, tasks, notifications, reports, workdays] = await Promise.all([
       getDashboardSummary(),
       listProjectTasks({ limit: 5 }).catch(() => []),
       listNotifications({ limit: 5 }).catch(() => []),
-      listDailyReports({ limit: 12 }).catch(() => []),
+      listDailyReports({ limit: 50, date: today, date_from: today, date_to: today }).catch(() => []),
+      listWorkdays({ limit: 80, date: today, date_from: today, date_to: today }).catch(() => []),
     ]);
 
     return {
@@ -132,6 +185,7 @@ export function DashboardScreen() {
       todayTasks: extractItems<ApiListItem>(tasks),
       notifications: extractItems<ApiListItem>(notifications),
       reports: extractItems<ApiListItem>(reports),
+      workdays: extractItems<ApiListItem>(workdays),
     };
   }, []);
 
@@ -319,6 +373,7 @@ export function DashboardScreen() {
       {isAdmin ? (
         <AdminWorkdayTable
           reports={data.reports}
+          workdays={data.workdays}
           onOpenReports={(employeeId, employeeName) =>
             router.push({
               pathname: '/(app)/reports-history',
@@ -483,12 +538,32 @@ function WorkdayCard({
 
 function AdminWorkdayTable({
   reports,
+  workdays,
   onOpenReports,
 }: {
   reports: ApiListItem[];
+  workdays: ApiListItem[];
   onOpenReports: (employeeId: string | number, employeeName: string) => void;
 }) {
   const appTheme = useAppTheme();
+  const rows = useMemo(() => {
+    const map = new Map<string, ApiListItem>();
+
+    workdays.forEach((workday, index) => {
+      const employeeId = getWorkdayEmployeeId(workday, `workday-${index}`);
+      const key = String(employeeId || getWorkdayEmployeeName(workday));
+      map.set(key, { ...workday, employee_id: employeeId });
+    });
+
+    reports.forEach((report, index) => {
+      const employeeId = getWorkdayEmployeeId(report, `report-${index}`);
+      const key = String(employeeId || getWorkdayEmployeeName(report));
+      const previous = map.get(key) || {};
+      map.set(key, { ...previous, ...report, employee_id: employeeId });
+    });
+
+    return Array.from(map.values());
+  }, [reports, workdays]);
 
   return (
     <Card glass style={styles.adminTable}>
@@ -496,25 +571,21 @@ function AdminWorkdayTable({
         <View>
           <Text style={[styles.todayTitle, { color: appTheme.colors.text }]}>Рабочий день сегодня</Text>
           <Text style={[styles.todayText, { color: appTheme.colors.textMuted }]}>
-            Таблица строится из доступной истории отчётов и смен.
+            Кто начал день, отправил отчёт и закрыл смену. Нажмите сотрудника, чтобы открыть историю.
           </Text>
         </View>
-        <StatusPill label={`${reports.length} записей`} tone="primary" />
+        <StatusPill label={`${rows.length} сотрудников`} tone="primary" />
       </View>
 
-      {reports.length ? (
-        reports.slice(0, 8).map((report, index) => {
-          const employeeId =
-            getEntityString(report, ['employee_id', 'user_id', 'manager_id']) || getEntityId(report) || index;
-          const employeeName = getEntityString(
-            report,
-            ['employee_name', 'user_name', 'manager_name', 'full_name', 'name'],
-            'Сотрудник'
-          );
-          const office = getEntityString(report, ['office_name', 'office', 'city'], 'Офис не указан');
-          const reportText = getEntityString(report, ['report', 'report_text', 'daily_report']);
-          const startedAt = getEntityString(report, ['started_at', 'start_time']);
-          const closedAt = getEntityString(report, ['closed_at', 'end_time']);
+      {rows.length ? (
+        rows.slice(0, 10).map((row, index) => {
+          const employeeId = getWorkdayEmployeeId(row, getEntityId(row) || index);
+          const employeeName = getWorkdayEmployeeName(row);
+          const office = getWorkdayOffice(row);
+          const reportText = getWorkdayReportText(row);
+          const startedAt = getWorkdayStartedAt(row);
+          const closedAt = getWorkdayClosedAt(row);
+          const status = getWorkdayStatus(row);
 
           return (
             <Pressable
@@ -534,6 +605,7 @@ function AdminWorkdayTable({
                 <StatusPill label={startedAt ? 'Начал' : 'Не начал'} tone={startedAt ? 'success' : 'warning'} />
                 <StatusPill label={reportText ? 'Отчёт есть' : 'Без отчёта'} tone={reportText ? 'success' : 'muted'} />
                 <StatusPill label={closedAt ? 'Закрыл' : 'Открыт'} tone={closedAt ? 'muted' : 'primary'} />
+                {status ? <StatusPill label={status} tone="muted" /> : null}
               </View>
               <Ionicons name="chevron-forward" size={18} color={appTheme.colors.textMuted} />
             </Pressable>
@@ -541,7 +613,7 @@ function AdminWorkdayTable({
         })
       ) : (
         <Text style={[styles.todayText, { color: appTheme.colors.textMuted }]}>
-          Сегодняшняя таблица сотрудников появится после подключения командного endpoint. До этого доступны личные отчёты.
+          Данные рабочего дня сотрудников недоступны. Проверьте endpoint /api/v1/attendance/workdays/.
         </Text>
       )}
     </Card>

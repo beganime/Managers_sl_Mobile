@@ -1,5 +1,5 @@
 import { ApiListItem, ApiParams, CollectionResponse, EntityId } from '../types';
-import { getJson, v1 } from './client';
+import { getJson, requestFirst, v1 } from './client';
 
 export function listCountries(params?: ApiParams) {
   return getJson<CollectionResponse<ApiListItem>>(v1('/education/countries/'), { params });
@@ -14,11 +14,17 @@ export function listCurrencies(params?: ApiParams) {
 }
 
 export function listUniversities(params?: ApiParams) {
-  return getJson<CollectionResponse<ApiListItem>>(v1('/education/universities/'), { params });
+  return requestFirst<CollectionResponse<ApiListItem>>(
+    [v1('/education/universities/'), '/api/client/v1/universities/'],
+    (path) => getJson<CollectionResponse<ApiListItem>>(path, { params })
+  );
 }
 
 export function getUniversity(id: EntityId) {
-  return getJson<ApiListItem>(v1(`/education/universities/${id}/`));
+  return requestFirst<ApiListItem>(
+    [v1(`/education/universities/${id}/`), `/api/client/v1/universities/${id}/`],
+    (path) => getJson<ApiListItem>(path)
+  );
 }
 
 export function listPrograms(params?: ApiParams) {

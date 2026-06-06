@@ -21,6 +21,7 @@ import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { usePagedResource } from '../../hooks/usePagedResource';
+import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
@@ -32,6 +33,50 @@ const roleOptions = [
   { label: 'Админы', value: 'admin' },
 ];
 
+const visibilityOptions = [
+  { label: 'Показываемые', value: 'visible' },
+  { label: 'Скрытые', value: 'hidden' },
+  { label: 'Все', value: 'all' },
+];
+
+function getNestedValue(entity: ApiListItem, paths: string[]) {
+  for (const path of paths) {
+    const value = path.split('.').reduce<unknown>((current, key) => {
+      if (!current || typeof current !== 'object') return undefined;
+      return (current as Record<string, unknown>)[key];
+    }, entity);
+
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+
+  return undefined;
+}
+
+function isHiddenFromRating(item: ApiListItem) {
+  const value = getNestedValue(item, [
+    'can_be_in_leaderboard',
+    'is_in_leaderboard',
+    'show_in_rating',
+    'rating_enabled',
+    'employee.access.can_be_in_leaderboard',
+    'employee_profile.access.can_be_in_leaderboard',
+    'access_profile.can_be_in_leaderboard',
+  ]);
+
+  if (value === undefined) return false;
+  if (typeof value === 'boolean') return !value;
+  const normalized = String(value).toLowerCase();
+  return ['false', '0', 'no', 'hidden', 'disabled'].includes(normalized);
+}
+
+function getOfficeKey(item: ApiListItem) {
+  return String(
+    getNestedValue(item, ['office.id', 'office_id', 'employee.office.id', 'employee.office_id']) ||
+      getEntityString(item, ['office_name', 'office_city', 'office']) ||
+      ''
+  ).trim();
+}
+
 function getRatingScore(item: ApiListItem) {
   const value = getEntityValue(item, ['rating_score', 'points', 'score', 'total_score', 'kpi_score', 'rating']);
   if (value === null || value === undefined || value === '') return null;
@@ -42,9 +87,13 @@ function getRatingScore(item: ApiListItem) {
 
 export function RatingScreen() {
   const appTheme = useAppTheme();
+  const { user } = useAuth();
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('all');
+  const [visibility, setVisibility] = useState('visible');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
+  const isAdmin = Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
+  const userOfficeKey = String(user?.office?.id || user?.office?.city || '').trim();
 
   const loader = useCallback(
     ({ limit, offset }: { limit: number; offset: number }) =>
@@ -60,9 +109,26 @@ export function RatingScreen() {
   const { items, count, loading, refreshing, loadingMore, error, refresh, loadMore } =
     usePagedResource<ApiListItem>(loader);
 
+  const displayItems = items.filter((item) => {
+    const hidden = isHiddenFromRating(item);
+
+    if (!isAdmin && hidden) return false;
+
+    if (!isAdmin && userOfficeKey) {
+      const itemOfficeKey = getOfficeKey(item);
+      if (itemOfficeKey && itemOfficeKey !== userOfficeKey) return false;
+    }
+
+    if (isAdmin && visibility === 'hidden') return hidden;
+    if (isAdmin && visibility === 'visible') return !hidden;
+
+    return true;
+  });
+  const podiumItems = displayItems.filter((item) => !isHiddenFromRating(item)).slice(0, 3);
+
   const renderItem = useCallback(
     ({ item, index }: { item: ApiListItem; index: number }) => (
-      <RatingRow item={item} fallbackRank={index + 1} />
+      <RatingRow item={item} fallbackRank={index + 1} hidden={isHiddenFromRating(item)} />
     ),
     []
   );
@@ -70,7 +136,7 @@ export function RatingScreen() {
   return (
     <ScreenContainer scroll={false} style={styles.screen}>
       <FlatList
-        data={items}
+        data={displayItems}
         keyExtractor={(item, index) => String(getEntityId(item) || index)}
         renderItem={renderItem}
         onEndReached={loadMore}
@@ -99,14 +165,15 @@ export function RatingScreen() {
                 <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>Students Life Program for Managers</Text>
                 <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>Командный рейтинг</Text>
                 <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
-                  В списке {count} сотрудников. Можно искать по имени, email, офису или должности.
+                  В списке {displayItems.length} из {count} сотрудников. Можно искать по имени, email, офису или должности.
                 </Text>
               </View>
             </Card>
 
-            {items.length ? <Podium items={items.slice(0, 3)} /> : null}
+            {podiumItems.length ? <Podium items={podiumItems} /> : null}
 
             <SegmentedControl options={roleOptions} value={role} onChange={setRole} />
+            {isAdmin ? <SegmentedControl options={visibilityOptions} value={visibility} onChange={setVisibility} /> : null}
 
             <Input
               label="Поиск"
@@ -164,9 +231,11 @@ function Podium({ items }: { items: ApiListItem[] }) {
 const RatingRow = memo(function RatingRow({
   item,
   fallbackRank,
+  hidden,
 }: {
   item: ApiListItem;
   fallbackRank: number;
+  hidden: boolean;
 }) {
   const appTheme = useAppTheme();
   const rank = getEntityNumber(item, ['rank', 'position_index'], fallbackRank);
@@ -198,6 +267,7 @@ const RatingRow = memo(function RatingRow({
           <StatusPill label={`${clients.toLocaleString('ru-RU')} клиентов`} tone="accent" />
           <StatusPill label={`${revenue.toLocaleString('ru-RU')} USD`} tone="success" />
           <StatusPill label={`${workdays.toLocaleString('ru-RU')} дней`} tone="muted" />
+          {hidden ? <StatusPill label="Скрыт из рейтинга" tone="warning" /> : null}
         </View>
       </View>
       <Ionicons name={rank <= 3 ? 'trophy' : 'trending-up-outline'} size={22} color={rank <= 3 ? appTheme.colors.accent : appTheme.colors.textMuted} />

@@ -12,6 +12,7 @@ import { LoadingState } from '../../components/ui/LoadingState';
 import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { SectionTitle } from '../../components/ui/SectionTitle';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { toApiError } from '../../api/client';
 import { DetailRow } from './components';
@@ -19,6 +20,7 @@ import { statusLabel } from './constants';
 
 export function LeadDetailScreen() {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [converting, setConverting] = useState(false);
   const loadLead = useCallback(() => getLead(id), [id]);
@@ -50,8 +52,8 @@ export function LeadDetailScreen() {
       {data ? (
         <>
           <Card glass style={styles.hero}>
-            <Text style={styles.name}>{String(data.full_name || data.name || 'Лид')}</Text>
-            <Text style={styles.status}>{statusLabel(data.status)}</Text>
+            <Text style={[styles.name, { color: appTheme.colors.text }]}>{String(data.full_name || data.name || 'Лид')}</Text>
+            <Text style={[styles.status, { color: appTheme.colors.accent }]}>{statusLabel(data.status)}</Text>
           </Card>
 
           <View style={styles.actions}>

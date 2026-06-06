@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { memo, useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { CalendarAgendaItem, listCalendarEvents } from '../../api/calendar';
 import { Card } from '../../components/cards/Card';
@@ -25,17 +25,75 @@ function formatMonth(date: Date) {
   return date.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
 }
 
+const EMPTY_AGENDA_ITEMS: CalendarAgendaItem[] = [];
+
+function formatDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function toDateKey(value?: string) {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return formatDateKey(date);
+}
+
+function getMonthDays(date: Date) {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const days = new Date(year, month + 1, 0).getDate();
+
+  return Array.from({ length: days }, (_, index) => {
+    const current = new Date(year, month, index + 1);
+    return {
+      date: formatDateKey(current),
+      day: index + 1,
+      weekDay: current.toLocaleDateString('ru-RU', { weekday: 'short' }),
+    };
+  });
+}
+
 export function CalendarScreen() {
   const router = useRouter();
   const appTheme = useAppTheme();
   const [monthDate, setMonthDate] = useState(() => new Date());
+  const [selectedDate, setSelectedDate] = useState(() => formatDateKey(new Date()));
   const calendarParams = useMemo(
     () => ({ month: monthDate.getMonth() + 1, year: monthDate.getFullYear() }),
     [monthDate]
   );
   const loadEvents = useCallback(() => listCalendarEvents(calendarParams), [calendarParams]);
   const { data, loading, error, reload } = useAsyncResource(loadEvents);
-  const items = data?.items || [];
+  const items = data?.items || EMPTY_AGENDA_ITEMS;
+  const monthDays = useMemo(() => getMonthDays(monthDate), [monthDate]);
+  const selectedItems = useMemo(
+    () => items.filter((item) => toDateKey(item.date) === selectedDate),
+    [items, selectedDate]
+  );
+  const eventCountByDay = useMemo(() => {
+    const map = new Map<string, number>();
+
+    items.forEach((item) => {
+      const key = toDateKey(item.date);
+      if (!key) return;
+      map.set(key, (map.get(key) || 0) + 1);
+    });
+
+    return map;
+  }, [items]);
+
+  useEffect(() => {
+    const sameMonth = selectedDate.startsWith(`${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`);
+    if (!sameMonth) {
+      const today = new Date();
+      const todayKey = formatDateKey(today);
+      const sameAsViewedMonth = today.getFullYear() === monthDate.getFullYear() && today.getMonth() === monthDate.getMonth();
+      setSelectedDate(sameAsViewedMonth ? todayKey : formatDateKey(new Date(monthDate.getFullYear(), monthDate.getMonth(), 1)));
+    }
+  }, [monthDate, selectedDate]);
 
   const renderItem = useCallback(
     ({ item }: { item: CalendarAgendaItem }) => (
@@ -54,7 +112,7 @@ export function CalendarScreen() {
   return (
     <ScreenContainer scroll={false}>
       <FlatList
-        data={items}
+        data={selectedItems}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         refreshControl={
@@ -97,9 +155,43 @@ export function CalendarScreen() {
               </View>
               <View style={styles.pills}>
                 <StatusPill label={`${items.length} событий`} tone="success" />
+                <StatusPill label={`${selectedItems.length} за день`} tone="accent" />
                 <StatusPill label="Pull-to-refresh" tone="primary" />
               </View>
             </Card>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayStrip}>
+              {monthDays.map((day) => {
+                const active = day.date === selectedDate;
+                const count = eventCountByDay.get(day.date) || 0;
+
+                return (
+                  <Pressable
+                    key={day.date}
+                    onPress={() => setSelectedDate(day.date)}
+                    style={[
+                      styles.dayChip,
+                      {
+                        borderColor: active ? appTheme.colors.accent : appTheme.colors.border,
+                        backgroundColor: active ? appTheme.colors.accentSoft : appTheme.colors.surfaceStrong,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.dayWeek, { color: active ? appTheme.colors.accent : appTheme.colors.textMuted }]}>
+                      {day.weekDay}
+                    </Text>
+                    <Text style={[styles.dayNumber, { color: active ? appTheme.colors.accent : appTheme.colors.text }]}>
+                      {day.day}
+                    </Text>
+                    {count ? (
+                      <View style={[styles.dayDot, { backgroundColor: appTheme.colors.success }]}>
+                        <Text style={styles.dayDotText}>{count}</Text>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
 
             {data?.warnings?.length ? (
               <Card style={[styles.warningCard, { borderColor: appTheme.colors.warningSoft }]}>
@@ -121,7 +213,7 @@ export function CalendarScreen() {
               />
             ) : null}
 
-            <SectionTitle title="События месяца" />
+            <SectionTitle title="События выбранного дня" subtitle={formatEntityDate(selectedDate)} />
           </View>
         }
         ListEmptyComponent={
@@ -130,7 +222,7 @@ export function CalendarScreen() {
           ) : (
             <EmptyState
               title="Пока нет событий"
-              message="Календарь будет доступен после подключения API событий, дней рождения и важных дат."
+              message="На выбранный день событий нет. Проверьте другой день месяца или обновите календарь."
             />
           )
         }
@@ -248,6 +340,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 17,
+  },
+  dayStrip: {
+    gap: theme.spacing.sm,
+    paddingRight: theme.spacing.lg,
+  },
+  dayChip: {
+    alignItems: 'center',
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    gap: 3,
+    minHeight: 74,
+    minWidth: 56,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm,
+  },
+  dayWeek: {
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  dayNumber: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  dayDot: {
+    alignItems: 'center',
+    borderRadius: theme.radius.pill,
+    minWidth: 22,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  dayDotText: {
+    color: theme.colors.white,
+    fontSize: 10,
+    fontWeight: '900',
   },
   agendaCard: {
     flexDirection: 'row',

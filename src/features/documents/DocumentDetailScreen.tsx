@@ -31,6 +31,7 @@ import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
+import { resolveMediaUrl } from '../../utils/media';
 import {
   formatEntityDate,
   getEntityArray,
@@ -48,18 +49,50 @@ function sectionTitle(section: string) {
 }
 
 const stampPositionOptions = [
-  { label: 'Bottom L', value: 'bottom_left' },
-  { label: 'Bottom R', value: 'bottom_right' },
-  { label: 'Top L', value: 'top_left' },
-  { label: 'Top R', value: 'top_right' },
-  { label: 'Center', value: 'center' },
-  { label: 'Custom', value: 'custom' },
+  { label: 'Снизу слева', value: 'bottom_left' },
+  { label: 'Снизу справа', value: 'bottom_right' },
+  { label: 'Сверху слева', value: 'top_left' },
+  { label: 'Сверху справа', value: 'top_right' },
+  { label: 'Центр', value: 'center' },
+  { label: 'Своя', value: 'custom' },
+];
+
+const stampUnitOptions = [
+  { label: 'мм', value: 'mm' },
+  { label: 'см', value: 'cm' },
 ];
 
 function loadDocument(section: string, id: string) {
   if (section === 'templates') return getDocumentTemplate(id);
   if (section === 'approvals') return getDocumentApproval(id);
   return getGeneratedDocument(id);
+}
+
+function getDocumentUrl(item: ApiListItem, keys: string[]) {
+  const value = getEntityString(item, keys);
+  return resolveMediaUrl(value) || '';
+}
+
+function getPreviewText(item: ApiListItem) {
+  return stripHtml(getEntityString(item, ['preview_text', 'text_preview', 'document_text', 'rendered_text', 'content', 'body']));
+}
+
+function toMillimeters(value: string, unit: string) {
+  const normalized = Number(String(value).replace(',', '.'));
+  if (!Number.isFinite(normalized) || normalized <= 0) return undefined;
+  return unit === 'cm' ? Math.round(normalized * 10 * 10) / 10 : normalized;
+}
+
+function getStampPreviewStyle(position: string) {
+  const base = {
+    bottom_left: { left: 22, bottom: 22 },
+    bottom_right: { right: 22, bottom: 22 },
+    top_left: { left: 22, top: 22 },
+    top_right: { right: 22, top: 22 },
+    center: { left: '50%' as const, top: '50%' as const, transform: [{ translateX: -34 }, { translateY: -22 }] },
+  };
+
+  return base[position as keyof typeof base] || { left: 28, bottom: 28 };
 }
 
 export function DocumentDetailScreen() {
@@ -75,8 +108,10 @@ export function DocumentDetailScreen() {
   const [stampPosition, setStampPosition] = useState('bottom_right');
   const [stampWidth, setStampWidth] = useState('38');
   const [stampHeight, setStampHeight] = useState('38');
+  const [stampUnit, setStampUnit] = useState('mm');
   const [stampX, setStampX] = useState('');
   const [stampY, setStampY] = useState('');
+  const [previewOpened, setPreviewOpened] = useState(false);
   const isAdmin = Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
 
   const loader = useCallback(() => loadDocument(section, id), [id, section]);
@@ -91,14 +126,20 @@ export function DocumentDetailScreen() {
       } else if (action === 'submit') {
         await submitDocumentForApproval(id, comment.trim());
       } else if (action === 'approve') {
+        if (!previewOpened) {
+          Alert.alert('Предпросмотр', 'Сначала откройте предпросмотр документа и проверьте данные.');
+          return;
+        }
+
         const approvalPayload = {
           comment: comment.trim(),
           stamp_position: stampPosition,
           position: stampPosition,
-          width_mm: Number(stampWidth) || undefined,
-          height_mm: Number(stampHeight) || undefined,
-          x_mm: stampPosition === 'custom' ? Number(stampX) || undefined : undefined,
-          y_mm: stampPosition === 'custom' ? Number(stampY) || undefined : undefined,
+          width_mm: toMillimeters(stampWidth, stampUnit),
+          height_mm: toMillimeters(stampHeight, stampUnit),
+          x_mm: stampPosition === 'custom' ? toMillimeters(stampX, stampUnit) : undefined,
+          y_mm: stampPosition === 'custom' ? toMillimeters(stampY, stampUnit) : undefined,
+          unit: 'mm',
         };
 
         if (section === 'approvals') {
@@ -113,6 +154,9 @@ export function DocumentDetailScreen() {
       }
 
       await reload();
+      if (action === 'approve') {
+        setPreviewOpened(false);
+      }
     } catch (requestError) {
       Alert.alert(sectionTitle(section), toApiError(requestError).message);
     } finally {
@@ -150,12 +194,52 @@ export function DocumentDetailScreen() {
   const item = data as ApiListItem;
   const status = getEntityString(item, ['status'], section === 'templates' ? 'active' : 'draft');
   const fields = getEntityArray<ApiListItem>(item, 'fields_config');
-  const generatedUrl = getEntityString(item, ['generated_file_url', 'file_url']);
-  const approvedUrl = getEntityString(item, ['approved_file_url']);
-  const previewUrl = getEntityString(item, ['preview_url', 'pdf_preview_url', 'approved_file_url', 'generated_file_url', 'file_url']);
+  const generatedUrl = getDocumentUrl(item, [
+    'generated_file_url',
+    'docx_url',
+    'download_docx_url',
+    'original_file_url',
+    'file_url',
+    'download_url',
+  ]);
+  const approvedUrl = getDocumentUrl(item, [
+    'approved_file_url',
+    'approved_pdf_url',
+    'sealed_pdf_url',
+    'pdf_url',
+    'stamped_pdf_url',
+  ]);
+  const previewUrl = getDocumentUrl(item, [
+    'preview_url',
+    'pdf_preview_url',
+    'preview_file_url',
+    'approved_pdf_url',
+    'approved_file_url',
+    'generated_file_url',
+    'file_url',
+  ]);
+  const previewText = getPreviewText(item);
+  const canPreview = Boolean(previewUrl || previewText);
+  const stampPreviewStyle = getStampPreviewStyle(stampPosition);
   const displayTitle = section === 'approvals'
     ? getEntityString(item, ['document_title'], 'Согласование документа')
     : getEntityTitle(item, sectionTitle(section));
+  const openPreview = async () => {
+    if (!canPreview) {
+      Alert.alert('Предпросмотр', 'Preview недоступен: нужен PDF/text preview или ссылка на DOCX/PDF.');
+      return;
+    }
+
+    setPreviewOpened(true);
+
+    if (!previewUrl) return;
+
+    try {
+      await Linking.openURL(previewUrl);
+    } catch {
+      Alert.alert('Предпросмотр', 'Не удалось открыть файл предпросмотра. Текст документа показан ниже, если backend его вернул.');
+    }
+  };
 
   return (
     <ScreenContainer>
@@ -167,9 +251,9 @@ export function DocumentDetailScreen() {
       />
 
       <Card glass style={styles.hero}>
-        <Text style={styles.heroKicker}>ERP documents</Text>
-        <Text style={styles.heroTitle}>{displayTitle}</Text>
-        <Text style={styles.heroText}>
+        <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>ERP documents</Text>
+        <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>{displayTitle}</Text>
+        <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
           {stripHtml(getEntityString(item, ['description', 'generation_error'])) || 'Данные документа загружены из backend.'}
         </Text>
         <View style={styles.pills}>
@@ -207,6 +291,22 @@ export function DocumentDetailScreen() {
         ) : null}
       </Card>
 
+      {previewOpened && previewText ? (
+        <Card style={styles.previewCard}>
+          <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>Текст документа</Text>
+          <Text style={[styles.previewText, { color: appTheme.colors.textMuted }]}>{previewText}</Text>
+        </Card>
+      ) : null}
+
+      {isAdmin && section !== 'templates' && !canPreview ? (
+        <Card style={[styles.noteCard, { borderColor: appTheme.colors.warningSoft }]}>
+          <Text style={[styles.rowTitle, { color: appTheme.colors.warning }]}>Предпросмотр недоступен</Text>
+          <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>
+            Нужен preview_url/pdf_preview_url или текстовый preview от backend. До подключения можно скачать DOCX, если файл доступен.
+          </Text>
+        </Card>
+      ) : null}
+
       {isAdmin && section !== 'templates' ? (
         <Card style={styles.block}>
           <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>Печать и согласование</Text>
@@ -214,30 +314,52 @@ export function DocumentDetailScreen() {
             Выберите место и размер печати перед одобрением документа.
           </Text>
           <SegmentedControl options={stampPositionOptions} value={stampPosition} onChange={setStampPosition} />
+          <SegmentedControl options={stampUnitOptions} value={stampUnit} onChange={setStampUnit} />
           <View style={styles.actions}>
             <View style={styles.stampField}>
-              <Input label="Ширина, мм" value={stampWidth} onChangeText={setStampWidth} keyboardType="decimal-pad" />
+              <Input label={`Ширина, ${stampUnit}`} value={stampWidth} onChangeText={setStampWidth} keyboardType="decimal-pad" />
             </View>
             <View style={styles.stampField}>
-              <Input label="Высота, мм" value={stampHeight} onChangeText={setStampHeight} keyboardType="decimal-pad" />
+              <Input label={`Высота, ${stampUnit}`} value={stampHeight} onChangeText={setStampHeight} keyboardType="decimal-pad" />
             </View>
           </View>
           {stampPosition === 'custom' ? (
             <View style={styles.actions}>
               <View style={styles.stampField}>
-                <Input label="X, мм" value={stampX} onChangeText={setStampX} keyboardType="decimal-pad" />
+                <Input label={`X, ${stampUnit}`} value={stampX} onChangeText={setStampX} keyboardType="decimal-pad" />
               </View>
               <View style={styles.stampField}>
-                <Input label="Y, мм" value={stampY} onChangeText={setStampY} keyboardType="decimal-pad" />
+                <Input label={`Y, ${stampUnit}`} value={stampY} onChangeText={setStampY} keyboardType="decimal-pad" />
               </View>
             </View>
           ) : null}
+          <View style={[styles.stampPreview, { borderColor: appTheme.colors.border, backgroundColor: appTheme.colors.surfaceSoft }]}>
+            <View style={[styles.documentMockLine, { backgroundColor: appTheme.colors.border }]} />
+            <View style={[styles.documentMockLineShort, { backgroundColor: appTheme.colors.border }]} />
+            <View
+              style={[
+                styles.stampMock,
+                stampPreviewStyle,
+                {
+                  borderColor: appTheme.colors.accent,
+                  backgroundColor: appTheme.colors.accentSoft,
+                },
+              ]}
+            >
+              <Text style={[styles.stampMockText, { color: appTheme.colors.accent }]}>Печать</Text>
+            </View>
+          </View>
           <Button
-            title="Предпросмотр"
+            title={previewOpened ? 'Предпросмотр открыт' : 'Открыть предпросмотр'}
             variant="secondary"
-            disabled={!previewUrl}
-            onPress={() => Linking.openURL(previewUrl)}
+            disabled={!canPreview}
+            onPress={openPreview}
           />
+          {!previewOpened ? (
+            <Text style={[styles.rowSubtitle, { color: appTheme.colors.warning }]}>
+              Сначала откройте предпросмотр документа. После проверки станет доступно одобрение.
+            </Text>
+          ) : null}
           <Input
             label="Комментарий к действию"
             placeholder="Комментарий для согласования"
@@ -254,6 +376,7 @@ export function DocumentDetailScreen() {
             <Button
               title="Одобрить и поставить печать"
               loading={saving === 'approve'}
+              disabled={!previewOpened}
               onPress={() => runAction('approve')}
             />
             <Button
@@ -268,8 +391,16 @@ export function DocumentDetailScreen() {
 
       <SectionTitle title="Файлы" />
       <View style={styles.stack}>
-        <FileAction title="Скачать DOCX без печати" url={generatedUrl} />
-        <FileAction title="Скачать PDF с печатью" url={approvedUrl} />
+        {generatedUrl ? <FileAction title="Скачать DOCX без печати" url={generatedUrl} /> : null}
+        {approvedUrl ? <FileAction title="Скачать PDF с печатью" url={approvedUrl} /> : null}
+        {!generatedUrl && !approvedUrl ? (
+          <Card style={styles.block}>
+            <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>Файлы пока недоступны</Text>
+            <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>
+              Backend не вернул ссылку на DOCX/PDF. Нужны поля generated_file_url/docx_url и approved_pdf_url/approved_file_url.
+            </Text>
+          </Card>
+        ) : null}
       </View>
 
       <SectionTitle title="Детали" />
@@ -288,8 +419,8 @@ export function DocumentDetailScreen() {
           <View style={styles.stack}>
             {fields.map((field) => (
               <Card key={String(getEntityId(field))} style={styles.block}>
-                <Text style={styles.rowTitle}>{getEntityString(field, ['label', 'key'], 'Поле')}</Text>
-                <Text style={styles.rowSubtitle}>
+                <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>{getEntityString(field, ['label', 'key'], 'Поле')}</Text>
+                <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>
                   {[getEntityString(field, ['key']), getEntityString(field, ['field_type', 'type'])]
                     .filter(Boolean)
                     .join(' - ')}
@@ -304,6 +435,8 @@ export function DocumentDetailScreen() {
 }
 
 function FileAction({ title, url }: { title: string; url: string }) {
+  const appTheme = useAppTheme();
+
   return (
     <Pressable
       disabled={!url}
@@ -311,24 +444,26 @@ function FileAction({ title, url }: { title: string; url: string }) {
       style={({ pressed }) => [pressed && styles.pressed, !url && styles.disabled]}
     >
       <Card style={styles.file}>
-        <View style={styles.fileIcon}>
-          <Ionicons name="document-attach-outline" size={20} color={theme.colors.primary} />
+        <View style={[styles.fileIcon, { backgroundColor: appTheme.colors.primarySoft }]}>
+          <Ionicons name="document-attach-outline" size={20} color={appTheme.colors.primary} />
         </View>
         <View style={styles.fileText}>
-          <Text style={styles.rowTitle}>{title}</Text>
-          <Text style={styles.rowSubtitle}>{url ? 'Файл готов к открытию' : 'Файл пока недоступен'}</Text>
+          <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>{title}</Text>
+          <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>{url ? 'Файл готов к открытию' : 'Файл пока недоступен'}</Text>
         </View>
-        {url ? <Ionicons name="open-outline" size={19} color={theme.colors.textMuted} /> : null}
+        {url ? <Ionicons name="open-outline" size={19} color={appTheme.colors.textMuted} /> : null}
       </Card>
     </Pressable>
   );
 }
 
 function Meta({ label, value }: { label: string; value: string }) {
+  const appTheme = useAppTheme();
+
   return (
     <Card style={styles.meta}>
-      <Text style={styles.metaLabel}>{label}</Text>
-      <Text style={styles.metaValue}>{value}</Text>
+      <Text style={[styles.metaLabel, { color: appTheme.colors.textMuted }]}>{label}</Text>
+      <Text style={[styles.metaValue, { color: appTheme.colors.text }]}>{value}</Text>
     </Card>
   );
 }
@@ -372,8 +507,54 @@ const styles = StyleSheet.create({
   block: {
     gap: theme.spacing.md,
   },
+  noteCard: {
+    gap: theme.spacing.sm,
+  },
+  previewCard: {
+    gap: theme.spacing.md,
+  },
+  previewText: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
   stack: {
     gap: theme.spacing.md,
+  },
+  stampPreview: {
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    height: 182,
+    overflow: 'hidden',
+    padding: theme.spacing.lg,
+    position: 'relative',
+  },
+  documentMockLine: {
+    borderRadius: theme.radius.pill,
+    height: 8,
+    opacity: 0.8,
+    width: '72%',
+  },
+  documentMockLineShort: {
+    borderRadius: theme.radius.pill,
+    height: 8,
+    marginTop: theme.spacing.sm,
+    opacity: 0.58,
+    width: '48%',
+  },
+  stampMock: {
+    alignItems: 'center',
+    borderRadius: theme.radius.md,
+    borderWidth: 2,
+    height: 44,
+    justifyContent: 'center',
+    position: 'absolute',
+    width: 68,
+  },
+  stampMockText: {
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
   },
   file: {
     flexDirection: 'row',

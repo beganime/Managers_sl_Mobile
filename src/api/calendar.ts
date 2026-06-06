@@ -60,11 +60,57 @@ function getEventDate(event: CalendarEventRecord) {
   return event.event_date || event.date || event.start || event.start_date || event.deadline || event.birthday;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function collectCalendarRecords(payload: unknown): CalendarEventRecord[] {
+  if (Array.isArray(payload)) return payload as CalendarEventRecord[];
+  if (!isRecord(payload)) return [];
+
+  const direct = extractItems<CalendarEventRecord>(payload);
+  if (direct.length) return direct;
+
+  const records: CalendarEventRecord[] = [];
+
+  ['events', 'items', 'data', 'results'].forEach((key) => {
+    const value = payload[key];
+    if (Array.isArray(value)) records.push(...(value as CalendarEventRecord[]));
+  });
+
+  const days = payload.days || payload.month_days || payload.calendar;
+  if (Array.isArray(days)) {
+    days.forEach((day) => {
+      if (!isRecord(day)) return;
+
+      const dayDate = String(day.date || day.day || '');
+      const dayEvents = day.events || day.items;
+
+      if (!Array.isArray(dayEvents)) return;
+
+      dayEvents.forEach((event) => {
+        if (isRecord(event)) {
+          records.push({ ...(event as CalendarEventRecord), date: String(event.date || event.event_date || dayDate) });
+        }
+      });
+    });
+  }
+
+  return records;
+}
+
 async function listBackendCalendarEvents(params?: CalendarParams): Promise<CalendarAgenda | null> {
   const range = getMonthRange(params);
-
-  try {
-    const payload = await getJson(v1('/calendar/events/'), {
+  const candidates = [
+    {
+      path: v1('/calendar/month/'),
+      params: {
+        month: range.month,
+        year: range.year,
+      },
+    },
+    {
+      path: v1('/calendar/events/'),
       params: {
         limit: 300,
         month: range.month,
@@ -72,29 +118,37 @@ async function listBackendCalendarEvents(params?: CalendarParams): Promise<Calen
         date_from: range.dateFrom,
         date_to: range.dateTo,
       },
-    });
-    const events = extractItems<CalendarEventRecord>(payload);
+    },
+  ];
 
-    return {
-      items: events.map((event) => {
-        const id = String(event.id || `${getEventDate(event)}-${event.title || event.name}`);
+  for (const candidate of candidates) {
+    try {
+      const payload = await getJson(candidate.path, { params: candidate.params });
+      const events = collectCalendarRecords(payload);
 
-        return {
-          id: `event-${id}`,
-          title: event.title || event.name || 'Событие',
-          subtitle: [event.start_time, event.end_time, event.description].filter(Boolean).join(' - '),
-          date: getEventDate(event),
-          type: 'event',
-          status: event.status || event.event_type || event.type || event.visibility || 'calendar',
-        };
-      }),
-      warnings: [],
-    };
-  } catch (error) {
-    const apiError = toApiError(error);
-    if (apiError.status === 404) return null;
-    throw apiError;
+      return {
+        items: events.map((event) => {
+          const id = String(event.id || `${getEventDate(event)}-${event.title || event.name}`);
+
+          return {
+            id: `event-${id}`,
+            title: event.title || event.name || 'Событие',
+            subtitle: [event.start_time, event.end_time, event.description].filter(Boolean).join(' - '),
+            date: getEventDate(event),
+            type: 'event',
+            status: event.status || event.event_type || event.type || event.visibility || 'calendar',
+          };
+        }),
+        warnings: [],
+      };
+    } catch (error) {
+      const apiError = toApiError(error);
+      if (apiError.status === 404) continue;
+      throw apiError;
+    }
   }
+
+  return null;
 }
 
 async function buildFallbackAgenda(params?: CalendarParams): Promise<CalendarAgenda> {

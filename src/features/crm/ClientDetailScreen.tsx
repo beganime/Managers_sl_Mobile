@@ -12,12 +12,14 @@ import { LoadingState } from '../../components/ui/LoadingState';
 import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { SectionTitle } from '../../components/ui/SectionTitle';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { DetailRow } from './components';
 import { statusLabel } from './constants';
 
 export function ClientDetailScreen() {
   const router = useRouter();
+  const appTheme = useAppTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const loadClient = useCallback(() => getClient(id), [id]);
   const { data, loading, error, reload } = useAsyncResource<ApiListItem>(loadClient);
@@ -32,9 +34,9 @@ export function ClientDetailScreen() {
       {data ? (
         <>
           <Card glass style={styles.hero}>
-            <Text style={styles.name}>{String(data.full_name || 'Клиент')}</Text>
-            <Text style={styles.status}>{statusLabel(data.status_display || data.status)}</Text>
-            <Text style={styles.manager}>
+            <Text style={[styles.name, { color: appTheme.colors.text }]}>{String(data.full_name || 'Клиент')}</Text>
+            <Text style={[styles.status, { color: appTheme.colors.accent }]}>{statusLabel(data.status_display || data.status)}</Text>
+            <Text style={[styles.manager, { color: appTheme.colors.textMuted }]}>
               {data.manager_name ? `Ответственный: ${data.manager_name}` : 'Ответственный не указан'}
             </Text>
           </Card>
