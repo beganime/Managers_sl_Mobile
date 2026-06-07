@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import React, { memo, useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -26,6 +27,7 @@ import { theme } from '../../theme/theme';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
 import { getEntityId, getEntityNumber, getEntityString, getEntityTitle, getEntityValue } from '../../utils/entity';
+import { resolveMediaUrl } from '../../utils/media';
 
 const roleOptions = [
   { label: 'Все', value: 'all' },
@@ -83,6 +85,42 @@ function getRatingScore(item: ApiListItem) {
 
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function getRatingAvatarUrl(item: ApiListItem) {
+  const value = getNestedValue(item, [
+    'avatar_url',
+    'avatar',
+    'photo_url',
+    'photo',
+    'image_url',
+    'image',
+    'user.avatar_url',
+    'user.avatar',
+    'employee.avatar_url',
+    'employee.avatar',
+    'profile.avatar_url',
+    'profile.avatar',
+  ]);
+
+  if (typeof value === 'string') return resolveMediaUrl(value);
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const nested = value as Record<string, unknown>;
+    const nestedValue = nested.url || nested.file || nested.path;
+    if (typeof nestedValue === 'string') return resolveMediaUrl(nestedValue);
+  }
+
+  return null;
+}
+
+function getRatingInitials(item: ApiListItem) {
+  const title = getEntityTitle(item, 'SL').trim();
+  const parts = title.split(/\s+/).filter(Boolean);
+  return parts
+    .slice(0, 2)
+    .map((part) => part.slice(0, 1).toUpperCase())
+    .join('') || 'SL';
 }
 
 export function RatingScreen() {
@@ -216,6 +254,7 @@ function Podium({ items }: { items: ApiListItem[] }) {
             <View style={[styles.podiumRank, { backgroundColor: appTheme.colors.accent }]}>
               <Text style={styles.podiumRankText}>{rank}</Text>
             </View>
+            <RatingAvatar item={item} size={54} />
             <Text style={[styles.podiumName, { color: appTheme.colors.text }]} numberOfLines={2}>
               {getEntityTitle(item, 'Сотрудник')}
             </Text>
@@ -225,6 +264,32 @@ function Podium({ items }: { items: ApiListItem[] }) {
           </Card>
         );
       })}
+    </View>
+  );
+}
+
+function RatingAvatar({ item, size = 48 }: { item: ApiListItem; size?: number }) {
+  const appTheme = useAppTheme();
+  const avatarUrl = getRatingAvatarUrl(item);
+
+  return (
+    <View
+      style={[
+        styles.avatar,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: appTheme.colors.primarySoft,
+          borderColor: appTheme.colors.border,
+        },
+      ]}
+    >
+      {avatarUrl ? (
+        <Image source={{ uri: avatarUrl }} style={styles.avatarImage} contentFit="cover" transition={180} />
+      ) : (
+        <Text style={[styles.avatarText, { color: appTheme.colors.primary }]}>{getRatingInitials(item)}</Text>
+      )}
     </View>
   );
 }
@@ -258,6 +323,7 @@ const RatingRow = memo(function RatingRow({
       >
         <Text style={[styles.rankText, { color: rank <= 3 ? appTheme.colors.white : appTheme.colors.primary }]}>{rank}</Text>
       </View>
+      <RatingAvatar item={item} />
       <View style={styles.rowText}>
         <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Сотрудник')}</Text>
         <Text style={[styles.rowSubtitle, { color: appTheme.colors.accent }]}>{position}</Text>
@@ -378,6 +444,19 @@ const styles = StyleSheet.create({
   rankText: {
     color: theme.colors.primary,
     fontSize: 16,
+    fontWeight: '900',
+  },
+  avatar: {
+    alignItems: 'center',
+    borderWidth: 1,
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  avatarText: {
+    fontSize: 15,
     fontWeight: '900',
   },
   rankTopText: {

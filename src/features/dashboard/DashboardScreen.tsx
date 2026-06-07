@@ -10,6 +10,7 @@ import { extractItems, toApiError } from '../../api/client';
 import { getDashboardSummary } from '../../api/dashboard';
 import { listNotifications } from '../../api/notifications';
 import { listProjectTasks } from '../../api/projects';
+import { listUsers } from '../../api/users';
 import { Card } from '../../components/cards/Card';
 import { StatCard } from '../../components/cards/StatCard';
 import { Input } from '../../components/forms/Input';
@@ -33,6 +34,7 @@ type DashboardData = DashboardSummary & {
   todayTasks: ApiListItem[];
   notifications: ApiListItem[];
   reports: ApiListItem[];
+  teamMembers: ApiListItem[];
   workdays: ApiListItem[];
 };
 
@@ -87,9 +89,18 @@ function getWorkdayEmployeeId(item: ApiListItem, fallback: string | number) {
   );
 }
 
+function getTeamMemberEmployeeId(item: ApiListItem, fallback: string | number) {
+  return (
+    getEntityString(item, ['user_id', 'employee_id', 'manager_id', 'staff_id', 'id']) ||
+    getNestedRecordValue(item, 'user', ['id']) ||
+    getNestedRecordValue(item, 'employee', ['id']) ||
+    fallback
+  );
+}
+
 function getWorkdayEmployeeName(item: ApiListItem) {
   return (
-    getEntityString(item, ['employee_name', 'user_name', 'manager_name', 'full_name', 'name']) ||
+    getEntityString(item, ['employee_name', 'user_name', 'manager_name', 'full_name', 'name', 'email', 'username']) ||
     getNestedRecordValue(item, 'employee', ['full_name', 'name', 'email', 'username']) ||
     getNestedRecordValue(item, 'user', ['full_name', 'name', 'email', 'username']) ||
     'Сотрудник'
@@ -172,12 +183,13 @@ export function DashboardScreen() {
 
   const loadDashboard = useCallback(async (): Promise<DashboardData> => {
     const today = new Date().toISOString().slice(0, 10);
-    const [summary, tasks, notifications, reports, workdays] = await Promise.all([
+    const [summary, tasks, notifications, reports, workdays, teamMembers] = await Promise.all([
       getDashboardSummary(),
       listProjectTasks({ limit: 5 }).catch(() => []),
       listNotifications({ limit: 5 }).catch(() => []),
       listDailyReports({ limit: 50, date: today, date_from: today, date_to: today }).catch(() => []),
       listWorkdays({ limit: 80, date: today, date_from: today, date_to: today }).catch(() => []),
+      isAdmin ? listUsers({ limit: 160 }).catch(() => []) : Promise.resolve([]),
     ]);
 
     return {
@@ -185,9 +197,10 @@ export function DashboardScreen() {
       todayTasks: extractItems<ApiListItem>(tasks),
       notifications: extractItems<ApiListItem>(notifications),
       reports: extractItems<ApiListItem>(reports),
+      teamMembers: extractItems<ApiListItem>(teamMembers),
       workdays: extractItems<ApiListItem>(workdays),
     };
-  }, []);
+  }, [isAdmin]);
 
   const { data, loading, error, reload } = useAsyncResource(loadDashboard);
 
@@ -373,6 +386,7 @@ export function DashboardScreen() {
       {isAdmin ? (
         <AdminWorkdayTable
           reports={data.reports}
+          teamMembers={data.teamMembers}
           workdays={data.workdays}
           onOpenReports={(employeeId, employeeName) =>
             router.push({
@@ -538,10 +552,12 @@ function WorkdayCard({
 
 function AdminWorkdayTable({
   reports,
+  teamMembers,
   workdays,
   onOpenReports,
 }: {
   reports: ApiListItem[];
+  teamMembers: ApiListItem[];
   workdays: ApiListItem[];
   onOpenReports: (employeeId: string | number, employeeName: string) => void;
 }) {
@@ -549,10 +565,22 @@ function AdminWorkdayTable({
   const rows = useMemo(() => {
     const map = new Map<string, ApiListItem>();
 
+    teamMembers.forEach((member, index) => {
+      const employeeId = getTeamMemberEmployeeId(member, `member-${index}`);
+      const key = String(employeeId || getWorkdayEmployeeName(member));
+      map.set(key, {
+        ...member,
+        employee_id: employeeId,
+        employee_name: getWorkdayEmployeeName(member),
+        office_name: getWorkdayOffice(member),
+      });
+    });
+
     workdays.forEach((workday, index) => {
       const employeeId = getWorkdayEmployeeId(workday, `workday-${index}`);
       const key = String(employeeId || getWorkdayEmployeeName(workday));
-      map.set(key, { ...workday, employee_id: employeeId });
+      const previous = map.get(key) || {};
+      map.set(key, { ...previous, ...workday, employee_id: employeeId });
     });
 
     reports.forEach((report, index) => {
@@ -563,7 +591,7 @@ function AdminWorkdayTable({
     });
 
     return Array.from(map.values());
-  }, [reports, workdays]);
+  }, [reports, teamMembers, workdays]);
 
   return (
     <Card glass style={styles.adminTable}>
@@ -613,7 +641,7 @@ function AdminWorkdayTable({
         })
       ) : (
         <Text style={[styles.todayText, { color: appTheme.colors.textMuted }]}>
-          Данные рабочего дня сотрудников недоступны. Проверьте endpoint /api/v1/attendance/workdays/.
+          Список сотрудников пока не загрузился. Потяните экран вниз, чтобы обновить данные.
         </Text>
       )}
     </Card>
