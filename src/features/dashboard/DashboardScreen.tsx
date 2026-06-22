@@ -3,10 +3,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { listDailyReports, listWorkdays } from '../../api/attendance';
-import { extractItems } from '../../api/client';
+import { closeWorkday, listDailyReports, listWorkdays, startWorkday, submitWorkdayReport } from '../../api/attendance';
+import { extractItems, toApiError } from '../../api/client';
 import { getDashboardSummary } from '../../api/dashboard';
 import { listNotifications } from '../../api/notifications';
 import { listProjectTasks } from '../../api/projects';
@@ -62,7 +62,12 @@ function isWorkdayClosed(workday?: Workday | null) {
 
 function hasWorkdayReport(workday?: Workday | null) {
   const record = (workday || {}) as Record<string, unknown>;
-  const reportText = getEntityString(record, ['report', 'report_text', 'daily_report', 'comment']);
+  const dailyReport = getEntityValue(record, ['daily_report', 'report']);
+  const reportText =
+    getEntityString(record, ['report_text', 'daily_report_text', 'content', 'results', 'plans', 'text', 'comment']) ||
+    (dailyReport && typeof dailyReport === 'object' && !Array.isArray(dailyReport)
+      ? getEntityString(dailyReport as Record<string, unknown>, ['content', 'results', 'plans', 'text', 'comment'])
+      : '');
   const reportStatus = String(record.report_status || record.has_report || record.report_submitted || '').toLowerCase();
   return Boolean(reportText || ['true', 'submitted', 'sent', 'done'].includes(reportStatus));
 }
@@ -94,7 +99,7 @@ function getNestedRecordValue(entity: ApiListItem, key: string, fields: string[]
 
 function getWorkdayEmployeeId(item: ApiListItem, fallback: string | number) {
   return (
-    getEntityString(item, ['employee_id', 'user_id', 'manager_id', 'staff_id']) ||
+    getEntityString(item, ['employee_id', 'employee', 'user_id', 'manager_id', 'staff_id']) ||
     getNestedRecordValue(item, 'employee', ['id']) ||
     getNestedRecordValue(item, 'user', ['id']) ||
     fallback
@@ -135,8 +140,26 @@ function getWorkdayClosedAt(item: ApiListItem) {
   return getEntityString(item, ['closed_at', 'end_time', 'time_out', 'finished_at']);
 }
 
+function isWorkdayRowStarted(item: ApiListItem) {
+  const status = getEntityString(item, ['status', 'workday_status']).toLowerCase();
+  return Boolean(getWorkdayStartedAt(item) || ['started', 'report_submitted', 'closed', 'auto_closed'].includes(status));
+}
+
+function isWorkdayRowClosed(item: ApiListItem) {
+  const status = getEntityString(item, ['status', 'workday_status']).toLowerCase();
+  return Boolean(getWorkdayClosedAt(item) || ['closed', 'auto_closed'].includes(status));
+}
+
 function getWorkdayReportText(item: ApiListItem) {
-  return getEntityString(item, ['report', 'report_text', 'daily_report', 'content', 'results', 'plans', 'text', 'comment']);
+  const direct = getEntityString(item, ['report_text', 'daily_report_text', 'content', 'results', 'plans', 'text', 'comment']);
+  if (direct) return direct;
+
+  const nestedReport = getEntityValue(item, ['daily_report', 'report']);
+  if (nestedReport && typeof nestedReport === 'object' && !Array.isArray(nestedReport)) {
+    return getEntityString(nestedReport as Record<string, unknown>, ['content', 'results', 'plans', 'text', 'comment']);
+  }
+
+  return '';
 }
 
 function getWorkdayHasReport(item: ApiListItem) {
@@ -191,6 +214,10 @@ export function DashboardScreen() {
   const appTheme = useAppTheme();
   const { user } = useAuth();
   const isAdmin = isAdminUser(user);
+  const [startingDay, setStartingDay] = useState(false);
+  const [closingDay, setClosingDay] = useState(false);
+  const [sendingReport, setSendingReport] = useState(false);
+  const [reportText, setReportText] = useState('');
   const [quickTaskTitle, setQuickTaskTitle] = useState('');
   const [quickTasks, setQuickTasks] = useState<QuickTask[]>([]);
   const [quickTasksLoading, setQuickTasksLoading] = useState(true);
@@ -205,7 +232,7 @@ export function DashboardScreen() {
       listNotifications({ limit: 5 }).catch(() => []),
       listDailyReports({ limit: 50, date: today, date_from: today, date_to: today }).catch(() => []),
       listWorkdays({ limit: 80, date: today, date_from: today, date_to: today }).catch(() => []),
-      isAdmin ? listUsers({ limit: 160 }).catch(() => []) : Promise.resolve([]),
+      isAdmin ? listUsers({ limit: 500 }).catch(() => []) : Promise.resolve([]),
     ]);
 
     return {
@@ -249,6 +276,59 @@ export function DashboardScreen() {
     },
     [quickTaskKey]
   );
+
+  const handleStartDay = async () => {
+    setStartingDay(true);
+
+    try {
+      await startWorkday();
+      await reload();
+    } catch (requestError) {
+      Alert.alert('Рабочий день', toApiError(requestError).message);
+    } finally {
+      setStartingDay(false);
+    }
+  };
+
+  const handleSubmitReport = async () => {
+    const text = reportText.trim();
+    if (!text) {
+      Alert.alert('Отчёт', 'Напишите короткий отчёт за рабочий день.');
+      return;
+    }
+
+    setSendingReport(true);
+
+    try {
+      await submitWorkdayReport({
+        content: text,
+        report: text,
+        text,
+      });
+      setReportText('');
+      await reload();
+      Alert.alert('Отчёт', 'Отчёт отправлен.');
+    } catch (requestError) {
+      Alert.alert('Отчёт', toApiError(requestError).message);
+    } finally {
+      setSendingReport(false);
+    }
+  };
+
+  const handleCloseDay = async () => {
+    setClosingDay(true);
+
+    try {
+      const text = reportText.trim();
+      await closeWorkday(text ? { comment: text, report: text, content: text } : {});
+      setReportText('');
+      await reload();
+    } catch (requestError) {
+      Alert.alert('Рабочий день', toApiError(requestError).message);
+    } finally {
+      setClosingDay(false);
+    }
+  };
 
   const addQuickTask = async () => {
     const title = quickTaskTitle.trim();
@@ -341,7 +421,15 @@ export function DashboardScreen() {
 
       <WorkdayCard
         workday={data.workday}
+        reportText={reportText}
+        onReportTextChange={setReportText}
+        onStart={handleStartDay}
+        onSubmitReport={handleSubmitReport}
+        onClose={handleCloseDay}
         onHistory={() => router.push('/(app)/reports-history' as any)}
+        starting={startingDay}
+        sendingReport={sendingReport}
+        closing={closingDay}
       />
 
       {isAdmin ? (
@@ -422,10 +510,26 @@ export function DashboardScreen() {
 
 function WorkdayCard({
   workday,
+  reportText,
+  onReportTextChange,
+  onStart,
+  onSubmitReport,
+  onClose,
   onHistory,
+  starting,
+  sendingReport,
+  closing,
 }: {
   workday: Workday | null;
+  reportText: string;
+  onReportTextChange: (value: string) => void;
+  onStart: () => void;
+  onSubmitReport: () => void;
+  onClose: () => void;
   onHistory: () => void;
+  starting: boolean;
+  sendingReport: boolean;
+  closing: boolean;
 }) {
   const appTheme = useAppTheme();
   const started = isWorkdayStarted(workday);
@@ -469,6 +573,45 @@ function WorkdayCard({
             Сегодня рабочий день ещё не отмечен.
           </Text>
         </View>
+      ) : null}
+
+      {closed ? (
+        <View style={[styles.reportSent, { backgroundColor: appTheme.colors.primarySoft }]}>
+          <Ionicons name="checkmark-circle-outline" size={18} color={appTheme.colors.primary} />
+          <Text style={[styles.reportSentText, { color: appTheme.colors.primary }]}>Рабочий день закрыт</Text>
+        </View>
+      ) : null}
+
+      {!started && !closed ? (
+        <Button title="Начать день" loading={starting} onPress={onStart} />
+      ) : null}
+
+      {started && !closed ? (
+        <>
+          {!reportSent ? (
+            <Input
+              label="Отчёт за день"
+              placeholder="Коротко напишите, что сделано сегодня"
+              value={reportText}
+              onChangeText={onReportTextChange}
+              multiline
+              numberOfLines={4}
+              style={styles.textarea}
+            />
+          ) : (
+            <View style={[styles.reportSent, { backgroundColor: appTheme.colors.successSoft }]}>
+              <Ionicons name="checkmark-done-outline" size={18} color={appTheme.colors.success} />
+              <Text style={[styles.reportSentText, { color: appTheme.colors.success }]}>Отчёт отправлен</Text>
+            </View>
+          )}
+
+          <View style={styles.workdayActions}>
+            {!reportSent ? (
+              <Button title="Написать отчёт" loading={sendingReport} onPress={onSubmitReport} style={styles.flexButton} />
+            ) : null}
+            <Button title="Закрыть день" variant="secondary" loading={closing} onPress={onClose} style={styles.flexButton} />
+          </View>
+        </>
       ) : null}
 
       <Button title="История отчётов" variant="ghost" onPress={onHistory} />
@@ -516,11 +659,21 @@ function AdminWorkdayTable({
       map.set(key, { ...previous, ...report, employee_id: employeeId });
     });
 
-    return Array.from(map.values());
+    return Array.from(map.values()).sort((left, right) => {
+      const leftStarted = isWorkdayRowStarted(left);
+      const rightStarted = isWorkdayRowStarted(right);
+      if (leftStarted !== rightStarted) return leftStarted ? -1 : 1;
+
+      const leftClosed = isWorkdayRowClosed(left);
+      const rightClosed = isWorkdayRowClosed(right);
+      if (leftClosed !== rightClosed) return leftClosed ? 1 : -1;
+
+      return getWorkdayEmployeeName(left).localeCompare(getWorkdayEmployeeName(right), 'ru');
+    });
   }, [reports, teamMembers, workdays]);
-  const startedCount = rows.filter((row) => Boolean(getWorkdayStartedAt(row))).length;
-  const closedCount = rows.filter((row) => Boolean(getWorkdayClosedAt(row))).length;
-  const reportMissingCount = rows.filter((row) => Boolean(getWorkdayStartedAt(row)) && !getWorkdayHasReport(row)).length;
+  const startedCount = rows.filter((row) => isWorkdayRowStarted(row)).length;
+  const closedCount = rows.filter((row) => isWorkdayRowClosed(row)).length;
+  const reportMissingCount = rows.filter((row) => isWorkdayRowStarted(row) && !getWorkdayHasReport(row)).length;
   const notStartedCount = Math.max(rows.length - startedCount, 0);
 
   return (
@@ -545,12 +698,12 @@ function AdminWorkdayTable({
       ) : null}
 
       {rows.length ? (
-        rows.slice(0, 10).map((row, index) => {
+        rows.map((row, index) => {
           const employeeId = getWorkdayEmployeeId(row, getEntityId(row) || index);
           const employeeName = getWorkdayEmployeeName(row);
           const office = getWorkdayOffice(row);
-          const startedAt = getWorkdayStartedAt(row);
-          const closedAt = getWorkdayClosedAt(row);
+          const started = isWorkdayRowStarted(row);
+          const closed = isWorkdayRowClosed(row);
           const hasReport = getWorkdayHasReport(row);
 
           return (
@@ -568,11 +721,11 @@ function AdminWorkdayTable({
                 <Text style={[styles.tableOffice, { color: appTheme.colors.textMuted }]}>{office}</Text>
               </View>
               <View style={styles.tablePills}>
-                <StatusPill label={startedAt ? 'Начал' : 'Не начал'} tone={startedAt ? 'success' : 'warning'} />
+                <StatusPill label={started ? 'Начал' : 'Не начал'} tone={started ? 'success' : 'warning'} />
                 <StatusPill label={hasReport ? 'Отчёт есть' : 'Без отчёта'} tone={hasReport ? 'success' : 'muted'} />
                 <StatusPill
-                  label={closedAt ? 'Закрыл' : startedAt ? 'День открыт' : 'Смена не начата'}
-                  tone={closedAt ? 'muted' : startedAt ? 'primary' : 'warning'}
+                  label={closed ? 'Закрыл' : started ? 'День открыт' : 'Смена не начата'}
+                  tone={closed ? 'muted' : started ? 'primary' : 'warning'}
                 />
               </View>
               <Ionicons name="chevron-forward" size={18} color={appTheme.colors.textMuted} />
@@ -808,6 +961,11 @@ const styles = StyleSheet.create({
   flexButton: {
     flex: 1,
     minWidth: 142,
+  },
+  textarea: {
+    minHeight: 112,
+    paddingTop: theme.spacing.md,
+    textAlignVertical: 'top',
   },
   reportSent: {
     alignItems: 'center',
