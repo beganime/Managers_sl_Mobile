@@ -1,8 +1,8 @@
 {
   "expo": {
     "name": "ManagerSL",
-    "slug": "managersl",
-    "version": "2.3.2",
+    "slug": "ManagersSL",
+    "version": "2.3.3",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "managerssl",
@@ -52,14 +52,14 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "9ca4f4db-3b3a-4c85-a00e-eb42c96d371d"
+        "projectId": "98911d49-c99a-492c-94d9-c6c566ba4687"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/9ca4f4db-3b3a-4c85-a00e-eb42c96d371d"
+      "url": "https://u.expo.dev/98911d49-c99a-492c-94d9-c6c566ba4687"
     }
   }
 }
