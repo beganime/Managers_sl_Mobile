@@ -26,7 +26,7 @@ import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
-import { getEntityId, getEntityNumber, getEntityString, getEntityTitle, getEntityValue } from '../../utils/entity';
+import { getEntityId, getEntityNumber, getEntityString, getEntityTitle } from '../../utils/entity';
 import { resolveMediaUrl } from '../../utils/media';
 
 const roleOptions = [
@@ -80,11 +80,35 @@ function getOfficeKey(item: ApiListItem) {
 }
 
 function getRatingScore(item: ApiListItem) {
-  const value = getEntityValue(item, ['rating_score', 'points', 'score', 'total_score', 'kpi_score', 'rating']);
+  const value = getNestedValue(item, [
+    'rating_score',
+    'points',
+    'score',
+    'total_score',
+    'kpi_score',
+    'rating',
+    'total_points',
+    'rating_points',
+    'points_total',
+    'kpi_points',
+    'employee.rating_score',
+    'employee.points',
+    'employee.score',
+    'employee_profile.rating_score',
+    'employee_profile.points',
+    'employee_profile.score',
+    'profile.rating_score',
+    'profile.points',
+    'profile.score',
+  ]);
   if (value === null || value === undefined || value === '') return null;
 
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function formatRatingScore(score: number | null) {
+  return score === null ? '— баллов' : `${score.toLocaleString('ru-RU')} баллов`;
 }
 
 function getRatingAvatarUrl(item: ApiListItem) {
@@ -259,7 +283,7 @@ function Podium({ items }: { items: ApiListItem[] }) {
               {getEntityTitle(item, 'Сотрудник')}
             </Text>
             <Text style={[styles.podiumScore, { color: appTheme.colors.accent }]}>
-              {score === null ? 'Баллы: нет данных' : `${score.toLocaleString('ru-RU')} баллов`}
+              {formatRatingScore(score)}
             </Text>
           </Card>
         );
@@ -329,7 +353,7 @@ const RatingRow = memo(function RatingRow({
         <Text style={[styles.rowSubtitle, { color: appTheme.colors.accent }]}>{position}</Text>
         <Text style={[styles.rowMeta, { color: appTheme.colors.textMuted }]}>{office || getEntityString(item, ['email'], 'Офис не указан')}</Text>
         <View style={styles.pills}>
-          <StatusPill label={score === null ? 'Баллы: нет данных' : `${score.toLocaleString('ru-RU')} баллов`} tone={rank <= 3 ? 'accent' : 'primary'} />
+          <StatusPill label={formatRatingScore(score)} tone={rank <= 3 ? 'accent' : 'primary'} />
           <StatusPill label={`${leads.toLocaleString('ru-RU')} лидов`} tone="primary" />
           <StatusPill label={`${clients.toLocaleString('ru-RU')} клиентов`} tone="accent" />
           <StatusPill label={`${revenue.toLocaleString('ru-RU')} USD`} tone="success" />

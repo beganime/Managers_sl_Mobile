@@ -712,6 +712,21 @@ function getCatalogImageUrl(item: ApiListItem, keys: string[]) {
   return getEntityMediaUrl(item, keys);
 }
 
+function getCatalogDescription(item: ApiListItem) {
+  return stripHtml(
+    getEntityString(item, [
+      'description',
+      'desc',
+      'content',
+      'about',
+      'summary',
+      'short_description',
+      'body',
+      'text',
+    ])
+  );
+}
+
 function CatalogImage({
   imageUrl,
   icon,
@@ -750,7 +765,7 @@ const CountryCard = memo(function CountryCard({
 }) {
   const appTheme = useAppTheme();
   const code = getEntityString(item, ['code']);
-  const description = stripHtml(getEntityString(item, ['description']));
+  const description = getCatalogDescription(item);
   const imageUrl = getCatalogImageUrl(item, ['flag_url', 'image_url', 'cover_image_url', 'flag']);
 
   return (
@@ -763,7 +778,7 @@ const CountryCard = memo(function CountryCard({
           </View>
           <View style={styles.titleWrap}>
             <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Страна')}</Text>
-            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{description || 'Описание страны пока не заполнено.'}</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{description || 'Описание пока не добавлено'}</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>
@@ -785,7 +800,7 @@ const CityCard = memo(function CityCard({
 }) {
   const appTheme = useAppTheme();
   const country = getEntityString(item, ['country_name']);
-  const description = stripHtml(getEntityString(item, ['description']));
+  const description = getCatalogDescription(item);
   const imageUrl = getCatalogImageUrl(item, ['image_url', 'cover_image_url', 'image', 'cover_image']);
 
   return (
@@ -798,7 +813,9 @@ const CityCard = memo(function CityCard({
           </View>
           <View style={styles.titleWrap}>
             <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>{getEntityTitle(item, 'Город')}</Text>
-            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>{[country, description].filter(Boolean).join(' - ')}</Text>
+            <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>
+              {[country || 'Страна не указана', description || 'Описание пока не добавлено'].filter(Boolean).join(' - ')}
+            </Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={appTheme.colors.textMuted} />
         </View>

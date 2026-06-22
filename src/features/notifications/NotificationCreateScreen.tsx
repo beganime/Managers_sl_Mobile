@@ -43,6 +43,12 @@ function getUserSubtitle(item: ApiListItem) {
     .join(' · ');
 }
 
+function getNotificationPriority(type: string) {
+  if (type === 'error') return 'urgent';
+  if (type === 'warning') return 'high';
+  return 'normal';
+}
+
 export function NotificationCreateScreen() {
   const router = useRouter();
   const appTheme = useAppTheme();
@@ -69,10 +75,16 @@ export function NotificationCreateScreen() {
 
   const { data: users = [], loading: usersLoading, error: usersError, reload } = useAsyncResource(loadRecipients);
   const recipientUsers = users || [];
-  const canSubmit = Boolean(title.trim() && body.trim() && (target === 'all' || selectedUser));
+  const canSubmit = Boolean(title.trim() && body.trim() && target === 'user' && selectedUser);
   const selectedUserId = useMemo(() => (selectedUser ? getEntityId(selectedUser) : undefined), [selectedUser]);
 
   const submit = async () => {
+    if (target === 'all') {
+      setServerNote('Массовая отправка всем сотрудникам требует отдельный backend endpoint для batch-уведомлений. Сейчас доступна отправка одному выбранному сотруднику.');
+      Alert.alert('Уведомление', 'Массовая отправка пока недоступна на сервере.');
+      return;
+    }
+
     if (!canSubmit) {
       Alert.alert('Уведомление', 'Выберите получателя, заголовок и текст.');
       return;
@@ -83,22 +95,22 @@ export function NotificationCreateScreen() {
 
     try {
       await createNotification({
-        target,
-        recipient_id: target === 'user' ? selectedUserId : undefined,
-        user_id: target === 'user' ? selectedUserId : undefined,
-        send_to_all: target === 'all',
+        recipient: selectedUserId,
         title: title.trim(),
         body: body.trim(),
-        message: body.trim(),
-        notification_type: notificationType,
-        type: notificationType,
+        notification_type: 'system',
+        channel: 'in_app',
+        priority: getNotificationPriority(notificationType),
+        data: {
+          mobile_type: notificationType,
+        },
       });
       Alert.alert('Уведомление', 'Уведомление отправлено.');
       router.back();
     } catch (error) {
       const apiError = toApiError(error);
       if (apiError.status === 404 || apiError.status === 405) {
-        setServerNote('Нужно добавить endpoint POST /api/v1/notifications/ или /api/v1/notifications/create/ с поддержкой user_id и send_to_all.');
+        setServerNote('Нужно добавить endpoint POST /api/v1/notifications/ с полями recipient, title, body, notification_type, channel и priority.');
       }
       Alert.alert('Уведомление', apiError.message);
     } finally {
@@ -197,7 +209,7 @@ export function NotificationCreateScreen() {
         <Card style={styles.noteCard}>
           <Text style={[styles.noteText, { color: appTheme.colors.text }]}>Получатель: все сотрудники</Text>
           <Text style={[styles.text, { color: appTheme.colors.textMuted }]}>
-            Сервер получит send_to_all=true. Если backend ещё не поддерживает массовую отправку, приложение покажет мягкую ошибку.
+            В текущем API нет безопасной массовой отправки всем сотрудникам. Для этого нужен batch endpoint на backend.
           </Text>
         </Card>
       )}

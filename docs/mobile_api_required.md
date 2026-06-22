@@ -229,7 +229,8 @@ Required if production backend does not already support these contracts:
 
 - `GET /api/v1/attendance/reports/?employee={id}` or `?user={id}` — employee report history for admin and personal history for staff.
 - `GET /api/v1/attendance/workdays/today/team/` — admin table for employees who started/reported/closed the current workday.
-- `POST /api/v1/notifications/` — create notification with `target`, `recipient_id`/`user_id`, `office_id`, `send_to_all`, `title`, `body`, `notification_type`.
+- `POST /api/v1/notifications/` — confirmed mobile single-recipient create flow uses `recipient`, `title`, `body`, `notification_type=system`, `channel=in_app`, `priority`.
+- Mass notification to all employees still needs a backend batch endpoint such as `POST /api/v1/notifications/batches/` or `POST /api/v1/notifications/send-all/`.
 - `GET /api/v1/documents/generated/{id}/preview/` or `preview_url`/`pdf_preview_url` in `GET /api/v1/documents/generated/{id}/` — mobile document preview before approval.
 - `POST /api/v1/documents/generated/{id}/approve/` and `POST /api/v1/documents/approvals/{id}/approve/` should accept stamp fields: `stamp_position`, `width_mm`, `height_mm`, `x_mm`, `y_mm`.
 - `POST /api/v1/knowledge/articles/` — create article with `title`, `content`, `category_id`, `visibility`, `selected_users`.
@@ -245,7 +246,7 @@ Mobile now uses these safe fallbacks and documented response fields:
 - Calendar tries `GET /api/v1/calendar/month/?year=YYYY&month=MM`, then `GET /api/v1/calendar/events/?year=YYYY&month=MM&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`; if both are absent, it falls back to task deadlines only and never shows workday as an event.
 - Admin workday table now reads `GET /api/v1/attendance/workdays/?date=YYYY-MM-DD` plus `GET /api/v1/attendance/reports/?date=YYYY-MM-DD`.
 - Notification create loads recipients from `GET /api/v1/users/`, then `GET /api/v1/employees/`, then the existing legacy `GET /api/users/users/`.
-- Notification create sends `POST /api/v1/notifications/` with `user_id`/`recipient_id` for one user or `send_to_all=true` for all employees.
+- Notification create sends `POST /api/v1/notifications/` with `recipient` for one selected user. The mobile UI disables mass sending until a confirmed batch endpoint exists.
 - Documents open preview from `preview_url`, `pdf_preview_url`, `preview_file_url`, or available document file URLs; text preview uses `preview_text`, `text_preview`, `document_text`, `rendered_text`, `content`, `body`.
 - Documents show DOCX without approval from `generated_file_url`, `docx_url`, `download_docx_url`, `original_file_url`, `file_url`, or `download_url`.
 - Approved PDF with stamp is shown from `approved_file_url`, `approved_pdf_url`, `sealed_pdf_url`, `pdf_url`, or `stamped_pdf_url`.
@@ -256,7 +257,7 @@ Production backend gaps if any of the above fields/routes are missing:
 
 - `GET /api/v1/calendar/month/` or `GET /api/v1/calendar/events/` with month/date range filters and day/event payloads.
 - `GET /api/v1/users/` or `GET /api/v1/employees/` for mobile notification recipient selection.
-- `POST /api/v1/notifications/` with `send_to_all=true` for sending to every employee.
+- `POST /api/v1/notifications/batches/` or another confirmed endpoint for sending one notification to every employee.
 - Document detail responses should include either preview text fields or preview/download URLs for mobile review before approval.
 - Document approve endpoints should accept stamp size/position fields in millimeters.
 - Rating responses should include leaderboard visibility fields and score fields (`score`, `rating`, `rating_score`, or `points`).
@@ -281,4 +282,4 @@ Implemented in backend branch `rebuild-erp-core` for the mobile app:
 Remaining mobile/backend gaps after this pass:
 
 - `GET /api/v1/users/` or `GET /api/v1/employees/` should be confirmed for notification recipient selection if the legacy users endpoint is removed later.
-- `POST /api/v1/notifications/` with `send_to_all=true` should stay supported for mobile "send to all employees".
+- Mass notification creation should be exposed through a confirmed batch endpoint for mobile "send to all employees".

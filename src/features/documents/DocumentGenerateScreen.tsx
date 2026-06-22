@@ -15,6 +15,7 @@ import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { LoadingState } from '../../components/ui/LoadingState';
+import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { SectionTitle } from '../../components/ui/SectionTitle';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { theme } from '../../theme/theme';
@@ -41,6 +42,13 @@ type GeneratorData = {
   applications: ApiListItem[];
   deals: ApiListItem[];
 };
+
+type ClientMode = 'existing' | 'manual';
+
+const clientModeOptions = [
+  { label: 'Из базы', value: 'existing' },
+  { label: 'Вручную', value: 'manual' },
+];
 
 function normalizeFields(template: ApiListItem): TemplateField[] {
   const raw = getEntityValue(template, ['fields_config', 'fields']);
@@ -79,12 +87,23 @@ function sourceIsCovered(field: TemplateField, selected: { client?: string; appl
   return false;
 }
 
+function isClientFioField(field: TemplateField) {
+  return ['client_fio', 'client_full_name', 'client_name'].includes(field.key) ||
+    ['client_fio', 'client_full_name', 'client_name'].includes(field.jinja_key || '');
+}
+
+function getClientDisplayName(client?: ApiListItem) {
+  if (!client) return '';
+  return getEntityString(client, ['full_name', 'client_name', 'fio', 'name', 'title']) || getEntityTitle(client, '');
+}
+
 export function DocumentGenerateScreen() {
   const router = useRouter();
   const appTheme = useAppTheme();
   const params = useLocalSearchParams<{ id: string }>();
   const id = params.id;
-  const [title, setTitle] = useState('');
+  const [clientMode, setClientMode] = useState<ClientMode>('existing');
+  const [clientFio, setClientFio] = useState('');
   const [comment, setComment] = useState('');
   const [clientId, setClientId] = useState('');
   const [applicationId, setApplicationId] = useState('');
@@ -110,6 +129,14 @@ export function DocumentGenerateScreen() {
 
   const { data, loading, error, reload } = useAsyncResource(loader);
   const fields = useMemo(() => (data ? normalizeFields(data.template) : []), [data]);
+  const visibleFields = useMemo(() => fields.filter((field) => !isClientFioField(field)), [fields]);
+  const selectedClient = useMemo(
+    () => data?.clients.find((client) => String(getEntityId(client) || '') === String(clientId)) || undefined,
+    [clientId, data?.clients]
+  );
+  const templateTitle = getEntityTitle(data?.template, 'Документ');
+  const trimmedClientFio = clientFio.trim();
+  const generatedTitle = trimmedClientFio ? `${templateTitle} - ${trimmedClientFio}` : templateTitle;
 
   useEffect(() => {
     if (!fields.length) return;
@@ -125,11 +152,36 @@ export function DocumentGenerateScreen() {
     });
   }, [fields]);
 
+  useEffect(() => {
+    if (clientMode !== 'existing') return;
+    setClientFio(getClientDisplayName(selectedClient));
+  }, [clientMode, selectedClient]);
+
+  useEffect(() => {
+    setFieldValues((current) => {
+      if (current.client_fio === clientFio && current.client_full_name === clientFio && current.client_name === clientFio) {
+        return current;
+      }
+
+      return {
+        ...current,
+        client_fio: clientFio,
+        client_full_name: clientFio,
+        client_name: clientFio,
+      };
+    });
+  }, [clientFio]);
+
   const submit = async () => {
     const missing = fields.filter((field) => {
       if (!field.is_required) return false;
+      if (isClientFioField(field)) return !trimmedClientFio;
       if (String(fieldValues[field.key] || '').trim()) return false;
-      return !sourceIsCovered(field, { client: clientId, application: applicationId, deal: dealId });
+      return !sourceIsCovered(field, {
+        client: clientMode === 'existing' ? clientId : trimmedClientFio,
+        application: applicationId,
+        deal: dealId,
+      });
     });
 
     if (missing.length) {
@@ -142,6 +194,8 @@ export function DocumentGenerateScreen() {
     try {
       const contextData: Record<string, unknown> = {};
       fields.forEach((field) => {
+        if (isClientFioField(field)) return;
+
         const value = String(fieldValues[field.key] || '').trim();
         if (!value) return;
 
@@ -159,10 +213,17 @@ export function DocumentGenerateScreen() {
         }
       });
 
+      if (trimmedClientFio) {
+        contextData.client_fio = trimmedClientFio;
+        contextData.client_full_name = trimmedClientFio;
+        contextData.client_name = trimmedClientFio;
+      }
+
       const saved = await generateDocumentFromTemplate(id, {
-        title: title.trim() || getEntityTitle(data?.template, 'Документ'),
+        title: generatedTitle,
+        client_fio: trimmedClientFio || undefined,
         comment: comment.trim(),
-        client: clientId || undefined,
+        client: clientMode === 'existing' && clientId ? clientId : undefined,
         application: applicationId || undefined,
         deal: dealId || undefined,
         context_data: contextData,
@@ -221,11 +282,24 @@ export function DocumentGenerateScreen() {
       </Card>
 
       <Card style={styles.form}>
+        <Text style={[styles.fieldLabel, { color: appTheme.colors.textMuted }]}>Название документа</Text>
+        <Text style={[styles.generatedTitle, { color: appTheme.colors.text }]}>{generatedTitle}</Text>
+        <SegmentedControl
+          options={clientModeOptions}
+          value={clientMode}
+          onChange={(value) => {
+            const nextMode = value as ClientMode;
+            setClientMode(nextMode);
+            if (nextMode === 'manual') {
+              setClientId('');
+            }
+          }}
+        />
         <Input
-          label="Название документа"
-          placeholder={getEntityTitle(data.template, 'Документ')}
-          value={title}
-          onChangeText={setTitle}
+          label="ФИО клиента"
+          placeholder="Иванов Иван Иванович"
+          value={clientFio}
+          onChangeText={setClientFio}
         />
         <Input
           label="Комментарий"
@@ -237,14 +311,23 @@ export function DocumentGenerateScreen() {
         />
       </Card>
 
-      <SelectableSection
-        title="Клиент"
-        icon="person-outline"
-        items={data.clients}
-        selectedId={clientId}
-        empty="Клиенты не найдены"
-        onSelect={setClientId}
-      />
+      {clientMode === 'existing' ? (
+        <SelectableSection
+          title="Клиент"
+          icon="person-outline"
+          items={data.clients}
+          selectedId={clientId}
+          empty="Клиенты не найдены"
+          onSelect={setClientId}
+        />
+      ) : (
+        <Card style={styles.selectCard}>
+          <Text style={[styles.selectTitle, { color: appTheme.colors.text }]}>Клиент вручную</Text>
+          <Text style={[styles.emptyText, { color: appTheme.colors.textMuted }]}>
+            Документ будет создан без привязки к клиенту из базы. В веб-кабинете колонка клиента останется пустой, а ФИО попадёт в поле client_fio.
+          </Text>
+        </Card>
+      )}
       <SelectableSection
         title="Заявка"
         icon="school-outline"
@@ -267,8 +350,8 @@ export function DocumentGenerateScreen() {
           title="Поля документа"
           subtitle={fields.length ? 'Заполните данные, которые нужны этому шаблону.' : 'У шаблона нет дополнительных полей.'}
         />
-        {fields.length ? (
-          fields.map((field) => (
+        {visibleFields.length ? (
+          visibleFields.map((field) => (
             <TemplateFieldInput
               key={field.key}
               field={field}
@@ -523,6 +606,11 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 13,
     fontWeight: '800',
+  },
+  generatedTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    lineHeight: 23,
   },
   booleanWrap: {
     gap: theme.spacing.sm,

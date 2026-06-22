@@ -13,6 +13,7 @@ import { SectionTitle } from '../../components/ui/SectionTitle';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
 import { theme } from '../../theme/theme';
+import { useAppTheme } from '../../theme/useAppTheme';
 import { ApiListItem } from '../../types';
 import {
   formatEntityDate,
@@ -25,6 +26,7 @@ import {
 import { formatMoneyValue, formatRateToUsd } from '../../utils/money';
 
 export function ProgramDetailScreen() {
+  const appTheme = useAppTheme();
   const params = useLocalSearchParams<{ id: string }>();
   const id = params.id;
 
@@ -72,9 +74,9 @@ export function ProgramDetailScreen() {
       />
 
       <Card glass style={styles.hero}>
-        <Text style={styles.heroKicker}>{getEntityString(data, ['country_name'], 'Education')}</Text>
-        <Text style={styles.heroTitle}>{getEntityTitle(data, 'Программа')}</Text>
-        <Text style={styles.heroText}>
+        <Text style={[styles.heroKicker, { color: appTheme.colors.accent }]}>{getEntityString(data, ['country_name'], 'Education')}</Text>
+        <Text style={[styles.heroTitle, { color: appTheme.colors.text }]}>{getEntityTitle(data, 'Программа')}</Text>
+        <Text style={[styles.heroText, { color: appTheme.colors.textMuted }]}>
           {stripHtml(getEntityString(data, ['description'])) ||
             getEntityString(data, ['faculty'], 'Описание пока не заполнено.')}
         </Text>
@@ -101,8 +103,8 @@ export function ProgramDetailScreen() {
         <View style={styles.stack}>
           {intakes.map((intake) => (
             <Card key={String(getEntityId(intake))} style={styles.block}>
-              <Text style={styles.rowTitle}>{getEntityTitle(intake, 'Intake')}</Text>
-              <Text style={styles.rowSubtitle}>
+              <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>{getEntityTitle(intake, 'Intake')}</Text>
+              <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>
                 {[
                   formatEntityDate(intake.start_date),
                   formatEntityDate(intake.application_deadline),
@@ -110,7 +112,7 @@ export function ProgramDetailScreen() {
                   .filter(Boolean)
                   .join(' - ')}
               </Text>
-              <Text style={styles.rowSubtitle}>{stripHtml(getEntityString(intake, ['notes']))}</Text>
+              <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>{stripHtml(getEntityString(intake, ['notes']))}</Text>
             </Card>
           ))}
         </View>
@@ -124,8 +126,8 @@ export function ProgramDetailScreen() {
           <View style={styles.stack}>
             {docs.map((doc) => (
               <Card key={String(getEntityId(doc))} style={styles.block}>
-                <Text style={styles.rowTitle}>{getEntityTitle(doc, 'Документ')}</Text>
-                <Text style={styles.rowSubtitle}>{stripHtml(getEntityString(doc, ['description']))}</Text>
+                <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>{getEntityTitle(doc, 'Документ')}</Text>
+                <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>{stripHtml(getEntityString(doc, ['description']))}</Text>
                 <StatusPill
                   label={getEntityString(doc, ['is_mandatory'], 'true') === 'false' ? 'Опционально' : 'Обязательно'}
                   tone="accent"
@@ -140,32 +142,34 @@ export function ProgramDetailScreen() {
 }
 
 function FeeCard({ fee }: { fee: ApiListItem }) {
+  const appTheme = useAppTheme();
   const currency = getEntityString(fee, ['currency_code'], 'USD').toUpperCase();
   const rate = formatRateToUsd(getEntityString(fee, ['currency_rate_to_usd']), currency);
 
   return (
     <Card style={styles.block}>
-      <Text style={styles.rowTitle}>Стоимость программы</Text>
+      <Text style={[styles.rowTitle, { color: appTheme.colors.text }]}>Стоимость программы</Text>
       <FeeRow label="Обучение" value={formatOfficialAndUsd(fee, 'tuition_fee', 'tuition_fee_usd', currency)} />
       <FeeRow label="Услуги компании" value={formatMoneyValue(getEntityString(fee, ['service_fee_usd']), 'USD')} />
       <FeeRow label="Application fee" value={formatOfficialAndUsd(fee, 'application_fee', 'application_fee_usd', currency)} />
       <FeeRow label="Общежитие" value={formatOfficialAndUsd(fee, 'dormitory_fee', 'dormitory_fee_usd', currency)} />
       <FeeRow label="Страховка" value={formatOfficialAndUsd(fee, 'insurance_fee', 'insurance_fee_usd', currency)} />
-      {rate ? <Text style={styles.rowSubtitle}>{rate}</Text> : null}
+      {rate ? <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>{rate}</Text> : null}
       {getEntityString(fee, ['notes']) ? (
-        <Text style={styles.rowSubtitle}>{stripHtml(getEntityString(fee, ['notes']))}</Text>
+        <Text style={[styles.rowSubtitle, { color: appTheme.colors.textMuted }]}>{stripHtml(getEntityString(fee, ['notes']))}</Text>
       ) : null}
     </Card>
   );
 }
 
 function FeeRow({ label, value }: { label: string; value: string }) {
+  const appTheme = useAppTheme();
   if (!value) return null;
 
   return (
     <View style={styles.feeRow}>
-      <Text style={styles.feeLabel}>{label}</Text>
-      <Text style={styles.feeValue}>{value}</Text>
+      <Text style={[styles.feeLabel, { color: appTheme.colors.textMuted }]}>{label}</Text>
+      <Text style={[styles.feeValue, { color: appTheme.colors.text }]}>{value}</Text>
     </View>
   );
 }

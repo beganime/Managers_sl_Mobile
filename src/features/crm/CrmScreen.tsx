@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { listApplications, listClients, listLeads } from '../../api/crm';
@@ -16,6 +16,8 @@ import { StatCard } from '../../components/cards/StatCard';
 import { theme } from '../../theme/theme';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { useAsyncResource } from '../../hooks/useAsyncResource';
+import { useAuth } from '../../store/auth';
+import { AppUser } from '../../types';
 
 type CrmData = {
   counts: {
@@ -53,14 +55,24 @@ const sections = [
   },
 ] as const;
 
+function isAdminUser(user: AppUser | null) {
+  return Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
+}
+
 export function CrmScreen() {
   const router = useRouter();
   const appTheme = useAppTheme();
+  const { user } = useAuth();
+  const isAdmin = isAdminUser(user);
+  const visibleSections = useMemo(
+    () => (isAdmin ? sections.filter((section) => section.route !== '/(app)/crm/clients') : sections),
+    [isAdmin]
+  );
 
   const loadCrm = useCallback(async (): Promise<CrmData> => {
     const [leads, clients, incoming, applications] = await Promise.all([
       listLeads({ limit: 1 }),
-      listClients({ limit: 1 }),
+      isAdmin ? Promise.resolve([]) : listClients({ limit: 1 }),
       listLeads({ status: 'new', limit: 1 }),
       listApplications({ limit: 1 }),
     ]);
@@ -73,7 +85,7 @@ export function CrmScreen() {
         applications: extractCount(applications),
       },
     };
-  }, []);
+  }, [isAdmin]);
 
   const { data, loading, error, reload } = useAsyncResource(loadCrm);
 
@@ -91,14 +103,14 @@ export function CrmScreen() {
       {data ? (
         <View style={styles.stats}>
           <StatCard label="Лиды" value={data.counts.leads} tone="accent" />
-          <StatCard label="Клиенты" value={data.counts.clients} tone="primary" />
+          {!isAdmin ? <StatCard label="Клиенты" value={data.counts.clients} tone="primary" /> : null}
           <StatCard label="Входящие" value={data.counts.incoming} tone="warning" />
           <StatCard label="Заявки" value={data.counts.applications} tone="success" />
         </View>
       ) : null}
 
       <View style={styles.actions}>
-        <Button title="Добавить клиента" onPress={() => router.push('/(app)/crm/clients/create' as any)} />
+        {!isAdmin ? <Button title="Добавить клиента" onPress={() => router.push('/(app)/crm/clients/create' as any)} /> : null}
         <Button
           title="Добавить лид"
           variant="secondary"
@@ -109,7 +121,7 @@ export function CrmScreen() {
       <SectionTitle title="Разделы CRM" subtitle="Лиды, клиенты, входящие заявки и поступления." />
 
       <View style={styles.sections}>
-        {sections.map((section) => (
+        {visibleSections.map((section) => (
           <Pressable
             key={section.title}
             onPress={() => router.push(section.route as any)}
