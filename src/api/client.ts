@@ -1,6 +1,5 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, isAxiosError } from 'axios';
 
-import { clearSession, getToken, saveToken } from '../utils/storage';
 import { CollectionResponse, PaginatedResponse } from '../types';
 import {
   buildApiCacheKey,
@@ -10,8 +9,9 @@ import {
   readApiCache,
   writeApiCache,
 } from '../utils/apiCache';
+import { clearSession, getToken, saveToken } from '../utils/storage';
 
-export const API_BASE_URL = 'https://manager-sl.ru';
+export const API_BASE_URL = 'https://medisinskayaodezhda.ru/manager-sl';
 export const API_V1_PREFIX = '/api/v1';
 export const ACCESS_TOKEN_KEY = 'access_token';
 export const REFRESH_TOKEN_KEY = 'refresh_token';

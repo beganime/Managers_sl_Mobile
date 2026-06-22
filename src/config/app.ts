@@ -1,8 +1,8 @@
 export const APP_CONFIG = {
   appName: 'ManagerSL',
   companyName: "Students Life",
-  domain: 'https://manager-sl.ru',
-  apiBaseUrl: 'https://manager-sl.ru',
+  domain: 'https://medisinskayaodezhda.ru/manager-sl',
+  apiBaseUrl: 'https://medisinskayaodezhda.ru/manager-sl',
   supportEmail: 'begenchyagmurow2008@gmail.com',
 };
 
