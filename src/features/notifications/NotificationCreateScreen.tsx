@@ -161,7 +161,7 @@ export function NotificationCreateScreen() {
           {usersError ? (
             <ErrorState
               title="Список сотрудников недоступен"
-              message="Нужен endpoint GET /api/v1/users/ или GET /api/v1/employees/ для выбора получателя."
+              message="Проверьте доступ к GET /api/users/users/ для выбора получателя."
               actionTitle="Проверить снова"
               onAction={reload}
             />

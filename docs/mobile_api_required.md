@@ -245,7 +245,7 @@ Mobile now uses these safe fallbacks and documented response fields:
 - University API tries `GET /api/v1/education/universities/` first, then `GET /api/client/v1/universities/` only after a 404.
 - Calendar tries `GET /api/v1/calendar/month/?year=YYYY&month=MM`, then `GET /api/v1/calendar/events/?year=YYYY&month=MM&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`; if both are absent, it falls back to task deadlines only and never shows workday as an event.
 - Admin workday table now reads `GET /api/v1/attendance/workdays/?date=YYYY-MM-DD` plus `GET /api/v1/attendance/reports/?date=YYYY-MM-DD`.
-- Notification create loads recipients from `GET /api/v1/users/`, then `GET /api/v1/employees/`, then the existing legacy `GET /api/users/users/`.
+- Notification create loads recipients from the confirmed backend route `GET /api/users/users/`.
 - Notification create sends `POST /api/v1/notifications/` with `recipient` for one selected user. The mobile UI disables mass sending until a confirmed batch endpoint exists.
 - Documents open preview from `preview_url`, `pdf_preview_url`, `preview_file_url`, or available document file URLs; text preview uses `preview_text`, `text_preview`, `document_text`, `rendered_text`, `content`, `body`.
 - Documents show DOCX without approval from `generated_file_url`, `docx_url`, `download_docx_url`, `original_file_url`, `file_url`, or `download_url`.
@@ -256,7 +256,7 @@ Mobile now uses these safe fallbacks and documented response fields:
 Production backend gaps if any of the above fields/routes are missing:
 
 - `GET /api/v1/calendar/month/` or `GET /api/v1/calendar/events/` with month/date range filters and day/event payloads.
-- `GET /api/v1/users/` or `GET /api/v1/employees/` for mobile notification recipient selection.
+- `GET /api/users/users/` is the confirmed mobile recipient selection endpoint. No `/api/v1/users/` or `/api/v1/employees/` route is mounted in the current backend.
 - `POST /api/v1/notifications/batches/` or another confirmed endpoint for sending one notification to every employee.
 - Document detail responses should include either preview text fields or preview/download URLs for mobile review before approval.
 - Document approve endpoints should accept stamp size/position fields in millimeters.
@@ -281,5 +281,5 @@ Implemented in backend branch `rebuild-erp-core` for the mobile app:
 
 Remaining mobile/backend gaps after this pass:
 
-- `GET /api/v1/users/` or `GET /api/v1/employees/` should be confirmed for notification recipient selection if the legacy users endpoint is removed later.
+- If the legacy users endpoint is ever removed later, add and document a replacement before changing mobile recipient selection.
 - Mass notification creation should be exposed through a confirmed batch endpoint for mobile "send to all employees".
