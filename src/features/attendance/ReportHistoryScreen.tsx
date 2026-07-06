@@ -25,8 +25,12 @@ import { usePagedResource } from '../../hooks/usePagedResource';
 import { useAuth } from '../../store/auth';
 import { theme } from '../../theme/theme';
 import { useAppTheme } from '../../theme/useAppTheme';
-import { ApiListItem } from '../../types';
+import { ApiListItem, ApiParams } from '../../types';
 import { formatEntityDate, getEntityId, getEntityNumber, getEntityString, stripHtml } from '../../utils/entity';
+
+function isAdminUser(user: ReturnType<typeof useAuth>['user']) {
+  return Boolean(user?.is_superuser || user?.is_staff || user?.role === 'admin');
+}
 
 function relativeReportDate(value: unknown) {
   if (!value) return 'Дата не указана';
@@ -52,36 +56,48 @@ export function ReportHistoryScreen() {
   const params = useLocalSearchParams<{ employee?: string; name?: string }>();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
-  const employeeId = params.employee || (user?.id ? String(user.id) : undefined);
+  const isAdmin = isAdminUser(user);
+  const selectedEmployeeId = params.employee ? String(params.employee) : undefined;
+  const employeeId = selectedEmployeeId || (!isAdmin && user?.id ? String(user.id) : undefined);
   const employeeName = params.name ? String(params.name) : '';
 
   const loader = useCallback(
     async ({ limit, offset }: { limit: number; offset: number }) => {
+      const historyParams: ApiParams = {
+        limit,
+        offset,
+        search: debouncedSearch || undefined,
+      };
+
+      if (employeeId) {
+        historyParams.user_id = employeeId;
+      }
+
       try {
-        return await listWorkdayHistory({
-          limit,
-          offset,
-          user_id: employeeId,
-          search: debouncedSearch || undefined,
-        });
+        return await listWorkdayHistory(historyParams);
       } catch (requestError) {
         const apiError = toApiError(requestError);
         if (apiError.status !== 404) throw apiError;
 
-        return listDailyReports({
+        const reportParams: ApiParams = {
           limit,
           offset,
-          employee: employeeId,
-          user: employeeId,
           search: debouncedSearch || undefined,
-        });
+        };
+
+        if (employeeId) {
+          reportParams.employee = employeeId;
+          reportParams.user = employeeId;
+        }
+
+        return listDailyReports(reportParams);
       }
     },
     [debouncedSearch, employeeId]
   );
 
   const { items, count, loading, refreshing, loadingMore, error, refresh, loadMore } =
-    usePagedResource<ApiListItem>(loader);
+    usePagedResource<ApiListItem>(loader, 50);
 
   const renderItem = useCallback(({ item }: { item: ApiListItem }) => <ReportCard item={item} />, []);
 
@@ -104,8 +120,12 @@ export function ReportHistoryScreen() {
         ListHeaderComponent={
           <View style={styles.headerStack}>
             <Header
-              title={employeeName ? `Отчёты: ${employeeName}` : 'Мои отчёты'}
-              subtitle="История рабочих отчётов по дням."
+              title={employeeName ? `Отчёты: ${employeeName}` : isAdmin ? 'Все отчёты' : 'Мои отчёты'}
+              subtitle={
+                isAdmin && !employeeId
+                  ? 'Полная история рабочих отчётов сотрудников.'
+                  : 'История рабочих отчётов по дням.'
+              }
               showBack
               parentFallback="/(app)/(tabs)/more"
             />
@@ -137,7 +157,14 @@ export function ReportHistoryScreen() {
           loading ? (
             <LoadingState title="Загружаем отчёты" />
           ) : (
-            <EmptyState title="Отчётов пока нет" message="Когда рабочий отчёт будет отправлен, он появится здесь." />
+            <EmptyState
+              title="Отчётов пока нет"
+              message={
+                isAdmin && !employeeId
+                  ? 'Сервер не вернул рабочие отчёты сотрудников за выбранный период.'
+                  : 'Когда рабочий отчёт будет отправлен, он появится здесь.'
+              }
+            />
           )
         }
         ListFooterComponent={loadingMore ? <ActivityIndicator color={appTheme.colors.primary} /> : null}

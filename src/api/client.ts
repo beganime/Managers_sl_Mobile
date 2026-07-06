@@ -11,7 +11,10 @@ import {
 } from '../utils/apiCache';
 import { clearSession, getToken, saveToken } from '../utils/storage';
 
-export const API_BASE_URL = 'https://medisinskayaodezhda.ru/manager-sl';
+export const API_PROXY_BASE_URL = 'https://medisinskayaodezhda.ru/manager-sl';
+export const API_PRIMARY_BASE_URL = 'https://manager-sl.ru';
+export const API_BASE_URL = API_PROXY_BASE_URL;
+export const API_BASE_URLS = [API_PROXY_BASE_URL, API_PRIMARY_BASE_URL] as const;
 export const API_V1_PREFIX = '/api/v1';
 export const ACCESS_TOKEN_KEY = 'access_token';
 export const REFRESH_TOKEN_KEY = 'refresh_token';
@@ -19,6 +22,7 @@ export const CACHED_PROFILE_KEY = 'cache_my_profile';
 
 export type ApiRequestConfig = AxiosRequestConfig & {
   _retry?: boolean;
+  _baseUrlFallbackAttempted?: boolean;
   skipAuthRefresh?: boolean;
   cache?: boolean;
   cacheTtlMs?: number;
@@ -118,20 +122,34 @@ async function refreshAccessToken(refreshToken: string) {
   let lastError: unknown = null;
 
   for (const endpoint of candidates) {
-    try {
-      const response = await rawApiClient.post(
-        endpoint,
-        { refresh: refreshToken },
-        { skipAuthRefresh: true } as ApiRequestConfig
-      );
+    for (const baseURL of API_BASE_URLS) {
+      try {
+        const response = await rawApiClient.post(
+          endpoint,
+          { refresh: refreshToken },
+          {
+            baseURL,
+            skipAuthRefresh: true,
+            _baseUrlFallbackAttempted: baseURL === API_PRIMARY_BASE_URL,
+          } as ApiRequestConfig
+        );
 
-      return response.data as { access?: string; refresh?: string };
-    } catch (error) {
-      const apiError = toApiError(error);
-      lastError = apiError;
+        return response.data as { access?: string; refresh?: string };
+      } catch (error) {
+        const apiError = toApiError(error);
+        lastError = apiError;
 
-      if (apiError.status && [400, 401, 403].includes(apiError.status)) {
-        throw apiError;
+        if (apiError.status && [400, 401, 403].includes(apiError.status)) {
+          throw apiError;
+        }
+
+        if (
+          apiError.status &&
+          apiError.status < 500 &&
+          ![404, 408, 429].includes(apiError.status)
+        ) {
+          break;
+        }
       }
     }
   }
@@ -158,6 +176,27 @@ function isRefreshRequest(url?: string) {
   return Boolean(url?.includes('/auth/refresh/'));
 }
 
+function isPrimaryBaseUrl(baseURL?: string) {
+  return String(baseURL || API_BASE_URL).replace(/\/+$/, '') === API_PRIMARY_BASE_URL;
+}
+
+function shouldRetryWithPrimaryBase(error: AxiosError, config?: ApiRequestConfig) {
+  if (!config || config._baseUrlFallbackAttempted || isPrimaryBaseUrl(config.baseURL)) return false;
+
+  const status = error.response?.status;
+  if (!status) return true;
+
+  return status === 404 || status === 408 || status === 429 || status >= 500;
+}
+
+function withPrimaryBase(config: ApiRequestConfig): ApiRequestConfig {
+  return {
+    ...config,
+    baseURL: API_PRIMARY_BASE_URL,
+    _baseUrlFallbackAttempted: true,
+  };
+}
+
 async function forceLogout() {
   await clearSession();
   await clearApiCache();
@@ -180,6 +219,10 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError & { config?: ApiRequestConfig }) => {
     const originalRequest = error.config;
+
+    if (originalRequest && shouldRetryWithPrimaryBase(error, originalRequest)) {
+      return apiClient(withPrimaryBase(originalRequest));
+    }
 
     if (
       error.response?.status === 401 &&

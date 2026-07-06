@@ -3,6 +3,7 @@ export const APP_CONFIG = {
   companyName: "Students Life",
   domain: 'https://medisinskayaodezhda.ru/manager-sl',
   apiBaseUrl: 'https://medisinskayaodezhda.ru/manager-sl',
+  apiFallbackBaseUrl: 'https://manager-sl.ru',
   supportEmail: 'begenchyagmurow2008@gmail.com',
 };
 
