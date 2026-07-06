@@ -1,7 +1,7 @@
 {
   "name": "managerssl",
   "main": "expo-router/entry",
-  "version": "2.3.2",
+  "version": "2.3.5",
   "scripts": {
     "start": "expo start",
     "start:clear": "expo start --clear",
