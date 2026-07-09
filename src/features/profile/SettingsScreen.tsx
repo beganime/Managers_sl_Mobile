@@ -1,10 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import {
+  API_BASE_URL,
+  API_PRIMARY_BASE_URL,
+  getSelectedApiBaseUrl,
+  resetSelectedApiBaseUrl,
+  saveSelectedApiBaseUrl,
+} from '../../api/client';
 import { Card } from '../../components/cards/Card';
+import { Input } from '../../components/forms/Input';
 import { Header } from '../../components/layout/Header';
 import { ScreenContainer } from '../../components/layout/ScreenContainer';
 import { ProfileAvatar } from '../../components/profile/ProfileAvatar';
@@ -21,6 +29,14 @@ export function SettingsScreen() {
   const { user } = useAuth();
   const [pushLoading, setPushLoading] = useState(false);
   const [pushStatus, setPushStatus] = useState('Готово к подключению на реальном устройстве.');
+  const [serverUrl, setServerUrl] = useState(API_BASE_URL);
+  const [serverSaving, setServerSaving] = useState(false);
+
+  useEffect(() => {
+    getSelectedApiBaseUrl()
+      .then(setServerUrl)
+      .catch(() => setServerUrl(API_BASE_URL));
+  }, []);
 
   const registerPush = async () => {
     setPushLoading(true);
@@ -31,6 +47,44 @@ export function SettingsScreen() {
         : 'Не удалось подключить push. Проверьте разрешения iOS/Android или запустите приложение на реальном устройстве.'
     );
     setPushLoading(false);
+  };
+
+  const saveServer = async (value = serverUrl) => {
+    const normalized = value.trim().replace(/\/+$/, '');
+
+    if (!/^https?:\/\/.+/i.test(normalized)) {
+      Alert.alert('Неверный адрес', 'Укажите полный адрес сервера, например https://students-life.ru/api1');
+      return;
+    }
+
+    setServerSaving(true);
+
+    try {
+      const saved = await saveSelectedApiBaseUrl(normalized);
+      setServerUrl(saved);
+      Alert.alert(
+        'Сервер обновлён',
+        'Новые запросы будут идти через выбранный адрес. Если авторизация использует другой сервер, выполните выход и войдите заново.'
+      );
+    } catch {
+      Alert.alert('Ошибка', 'Не удалось сохранить адрес сервера.');
+    } finally {
+      setServerSaving(false);
+    }
+  };
+
+  const resetServer = async () => {
+    setServerSaving(true);
+
+    try {
+      const saved = await resetSelectedApiBaseUrl();
+      setServerUrl(saved);
+      Alert.alert('Сервер сброшен', 'Приложение снова использует основной proxy по умолчанию.');
+    } catch {
+      Alert.alert('Ошибка', 'Не удалось сбросить адрес сервера.');
+    } finally {
+      setServerSaving(false);
+    }
   };
 
   return (
@@ -94,6 +148,49 @@ export function SettingsScreen() {
       </Card>
 
       <Card style={styles.card}>
+        <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>Сервер API</Text>
+        <Text style={[styles.cardSubtitle, { color: appTheme.colors.textMuted }]}>
+          По умолчанию приложение подключается к новому proxy. Здесь можно временно вернуть оригинальный домен или указать другой proxy.
+        </Text>
+
+        <View style={styles.serverPresetRow}>
+          <ServerOption
+            active={serverUrl.replace(/\/+$/, '') === API_BASE_URL}
+            title="Новый proxy"
+            subtitle={API_BASE_URL}
+            onPress={() => {
+              setServerUrl(API_BASE_URL);
+              void saveServer(API_BASE_URL);
+            }}
+          />
+          <ServerOption
+            active={serverUrl.replace(/\/+$/, '') === API_PRIMARY_BASE_URL}
+            title="Оригинал"
+            subtitle={API_PRIMARY_BASE_URL}
+            onPress={() => {
+              setServerUrl(API_PRIMARY_BASE_URL);
+              void saveServer(API_PRIMARY_BASE_URL);
+            }}
+          />
+        </View>
+
+        <Input
+          label="Адрес сервера"
+          value={serverUrl}
+          onChangeText={setServerUrl}
+          placeholder="https://students-life.ru/api1"
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+        />
+
+        <View style={styles.serverActions}>
+          <Button title="Сохранить сервер" loading={serverSaving} onPress={() => saveServer()} />
+          <Button title="Сбросить" variant="secondary" disabled={serverSaving} onPress={resetServer} />
+        </View>
+      </Card>
+
+      <Card style={styles.card}>
         <Text style={[styles.cardTitle, { color: appTheme.colors.text }]}>Быстрое управление</Text>
         <SettingsAction icon="person-circle-outline" title="Открыть профиль" onPress={() => router.push('/(app)/profile-v2' as any)} />
         <SettingsAction icon="reader-outline" title="Мои отчёты" onPress={() => router.push('/(app)/reports-history' as any)} />
@@ -144,6 +241,40 @@ function ThemeOption({
     >
       <Text style={[styles.themeText, { color: active ? appTheme.colors.white : appTheme.colors.textMuted }]}>
         {title}
+      </Text>
+    </Pressable>
+  );
+}
+
+function ServerOption({
+  active,
+  title,
+  subtitle,
+  onPress,
+}: {
+  active: boolean;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+}) {
+  const { appTheme } = useTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.serverOption,
+        {
+          borderColor: active ? appTheme.colors.primary : appTheme.colors.border,
+          backgroundColor: active ? appTheme.colors.primarySoft : appTheme.colors.surfaceStrong,
+        },
+      ]}
+    >
+      <Text style={[styles.serverOptionTitle, { color: active ? appTheme.colors.primary : appTheme.colors.text }]}>
+        {title}
+      </Text>
+      <Text style={[styles.serverOptionSubtitle, { color: appTheme.colors.textMuted }]} numberOfLines={2}>
+        {subtitle}
       </Text>
     </Pressable>
   );
@@ -285,6 +416,31 @@ const styles = StyleSheet.create({
   },
   themeTextActive: {
     color: theme.colors.white,
+  },
+  serverPresetRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  serverOption: {
+    flex: 1,
+    minHeight: 82,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    justifyContent: 'center',
+    gap: 5,
+    padding: theme.spacing.md,
+  },
+  serverOptionTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  serverOptionSubtitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 15,
+  },
+  serverActions: {
+    gap: theme.spacing.sm,
   },
   actionRow: {
     minHeight: 52,

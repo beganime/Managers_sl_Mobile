@@ -9,9 +9,10 @@ import {
   readApiCache,
   writeApiCache,
 } from '../utils/apiCache';
-import { clearSession, getToken, saveToken } from '../utils/storage';
+import { clearSession, deleteToken, getToken, saveToken } from '../utils/storage';
 
-export const API_PROXY_BASE_URL = 'https://medisinskayaodezhda.ru/manager-sl';
+export const API_SERVER_STORAGE_KEY = 'api_server_base_url';
+export const API_PROXY_BASE_URL = 'https://students-life.ru/api1';
 export const API_PRIMARY_BASE_URL = 'https://manager-sl.ru';
 export const API_BASE_URL = API_PROXY_BASE_URL;
 export const API_BASE_URLS = [API_PROXY_BASE_URL, API_PRIMARY_BASE_URL] as const;
@@ -44,6 +45,7 @@ export class ApiRequestError extends Error {
 
 let unauthorizedHandler: (() => void) | null = null;
 let refreshTokenRequest: Promise<{ access?: string; refresh?: string }> | null = null;
+let runtimeApiBaseUrl = API_BASE_URL;
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler;
@@ -70,6 +72,52 @@ export function v1(path: string) {
 
 export function normalizeApiPath(path: string) {
   return path.startsWith('/') ? path : `/${path}`;
+}
+
+export function normalizeApiBaseUrl(value: string) {
+  const trimmed = value.trim();
+  return trimmed.replace(/\/+$/, '');
+}
+
+function uniqueBaseUrls(urls: string[]) {
+  const seen = new Set<string>();
+  return urls
+    .map((url) => normalizeApiBaseUrl(url))
+    .filter((url) => {
+      if (!url || seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    });
+}
+
+export function getRuntimeApiBaseUrl() {
+  return runtimeApiBaseUrl;
+}
+
+export async function getSelectedApiBaseUrl() {
+  const saved = await getToken(API_SERVER_STORAGE_KEY);
+  runtimeApiBaseUrl = saved ? normalizeApiBaseUrl(saved) : API_BASE_URL;
+  return runtimeApiBaseUrl;
+}
+
+export async function saveSelectedApiBaseUrl(value: string) {
+  const normalized = normalizeApiBaseUrl(value);
+  await saveToken(API_SERVER_STORAGE_KEY, normalized);
+  runtimeApiBaseUrl = normalized;
+  await clearApiCache();
+  return normalized;
+}
+
+export async function resetSelectedApiBaseUrl() {
+  await deleteToken(API_SERVER_STORAGE_KEY);
+  runtimeApiBaseUrl = API_BASE_URL;
+  await clearApiCache();
+  return runtimeApiBaseUrl;
+}
+
+export async function getApiBaseUrls() {
+  const selected = await getSelectedApiBaseUrl();
+  return uniqueBaseUrls([selected, API_BASE_URL, API_PRIMARY_BASE_URL]);
 }
 
 function getMessageFromPayload(data: unknown): string | null {
@@ -122,7 +170,9 @@ async function refreshAccessToken(refreshToken: string) {
   let lastError: unknown = null;
 
   for (const endpoint of candidates) {
-    for (const baseURL of API_BASE_URLS) {
+    const baseUrls = await getApiBaseUrls();
+
+    for (const baseURL of baseUrls) {
       try {
         const response = await rawApiClient.post(
           endpoint,
@@ -130,7 +180,7 @@ async function refreshAccessToken(refreshToken: string) {
           {
             baseURL,
             skipAuthRefresh: true,
-            _baseUrlFallbackAttempted: baseURL === API_PRIMARY_BASE_URL,
+            _baseUrlFallbackAttempted: baseURL !== baseUrls[0],
           } as ApiRequestConfig
         );
 
@@ -176,12 +226,15 @@ function isRefreshRequest(url?: string) {
   return Boolean(url?.includes('/auth/refresh/'));
 }
 
-function isPrimaryBaseUrl(baseURL?: string) {
-  return String(baseURL || API_BASE_URL).replace(/\/+$/, '') === API_PRIMARY_BASE_URL;
+async function getFallbackBaseUrl(currentBaseUrl?: string) {
+  const selected = await getSelectedApiBaseUrl();
+  const current = normalizeApiBaseUrl(String(currentBaseUrl || selected));
+  const baseUrls = await getApiBaseUrls();
+  return baseUrls.find((baseUrl) => baseUrl !== current) || null;
 }
 
-function shouldRetryWithPrimaryBase(error: AxiosError, config?: ApiRequestConfig) {
-  if (!config || config._baseUrlFallbackAttempted || isPrimaryBaseUrl(config.baseURL)) return false;
+function shouldRetryWithFallbackBase(error: AxiosError, config?: ApiRequestConfig) {
+  if (!config || config._baseUrlFallbackAttempted) return false;
 
   const status = error.response?.status;
   if (!status) return true;
@@ -189,10 +242,10 @@ function shouldRetryWithPrimaryBase(error: AxiosError, config?: ApiRequestConfig
   return status === 404 || status === 408 || status === 429 || status >= 500;
 }
 
-function withPrimaryBase(config: ApiRequestConfig): ApiRequestConfig {
+function withFallbackBase(config: ApiRequestConfig, baseURL: string): ApiRequestConfig {
   return {
     ...config,
-    baseURL: API_PRIMARY_BASE_URL,
+    baseURL,
     _baseUrlFallbackAttempted: true,
   };
 }
@@ -205,6 +258,10 @@ async function forceLogout() {
 
 apiClient.interceptors.request.use(async (config) => {
   const token = await getToken(ACCESS_TOKEN_KEY);
+
+  if (!config.baseURL) {
+    config.baseURL = await getSelectedApiBaseUrl();
+  }
 
   config.headers = config.headers || {};
 
@@ -220,8 +277,12 @@ apiClient.interceptors.response.use(
   async (error: AxiosError & { config?: ApiRequestConfig }) => {
     const originalRequest = error.config;
 
-    if (originalRequest && shouldRetryWithPrimaryBase(error, originalRequest)) {
-      return apiClient(withPrimaryBase(originalRequest));
+    if (originalRequest && shouldRetryWithFallbackBase(error, originalRequest)) {
+      const fallbackBaseUrl = await getFallbackBaseUrl(originalRequest.baseURL);
+
+      if (fallbackBaseUrl) {
+        return apiClient(withFallbackBase(originalRequest, fallbackBaseUrl));
+      }
     }
 
     if (

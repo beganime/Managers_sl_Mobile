@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '../api/client';
+import { getRuntimeApiBaseUrl } from '../api/client';
 import { ApiListItem } from '../types';
 import { getEntityValue } from './entity';
 
@@ -9,7 +9,7 @@ export function resolveMediaUrl(value: string | null | undefined): string | null
   if (/^https?:\/\//i.test(source)) return source;
   if (source.startsWith('//')) return `https:${source}`;
 
-  const base = API_BASE_URL.replace(/\/$/, '');
+  const base = getRuntimeApiBaseUrl().replace(/\/$/, '');
 
   if (source.startsWith('/')) {
     return `${base}${source}`;

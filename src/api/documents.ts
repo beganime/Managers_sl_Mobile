@@ -1,9 +1,9 @@
 import { ApiListItem, ApiParams, CollectionResponse, EntityId } from '../types';
-import { API_BASE_URL, getJson, postJson, v1 } from './client';
+import { getJson, getRuntimeApiBaseUrl, postJson, v1 } from './client';
 
 function absoluteUrl(path: string) {
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+  return `${getRuntimeApiBaseUrl()}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 export function listDocumentTemplates(params?: ApiParams) {

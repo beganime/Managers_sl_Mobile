@@ -6,6 +6,7 @@ import {
   apiClient,
   extractItems,
   getJson,
+  getRuntimeApiBaseUrl,
   normalizeApiPath,
   v1,
 } from './client';
@@ -38,11 +39,13 @@ export function buildAbsoluteFileUrl(value?: string | null) {
     return raw;
   }
 
+  const apiOrigin = getRuntimeApiBaseUrl();
+
   if (raw.startsWith('/')) {
-    return `${API_ORIGIN}${raw}`;
+    return `${apiOrigin}${raw}`;
   }
 
-  return `${API_ORIGIN}/${raw.replace(/^\/+/, '')}`;
+  return `${apiOrigin}/${raw.replace(/^\/+/, '')}`;
 }
 
 export function extractList(payload: unknown): any[] {
@@ -77,9 +80,15 @@ export async function fetchAllPages(path: string, limit = 100) {
     all.push(...extractList(payload));
 
     if (typeof payload?.next === 'string' && payload.next) {
-      nextPath = payload.next.startsWith(API_BASE_URL)
-        ? payload.next.slice(API_BASE_URL.length)
-        : payload.next;
+      const nextUrl = payload.next;
+
+      if (/^https?:\/\//i.test(nextUrl)) {
+        const parsed = new URL(nextUrl);
+        nextPath = `${parsed.pathname}${parsed.search}`;
+      } else {
+        nextPath = nextUrl;
+      }
+
       offset += limit;
     } else {
       nextPath = null;
