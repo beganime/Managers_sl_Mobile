@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "980186028832",
+    "project_id": "students-life-pushes",
+    "storage_bucket": "students-life-pushes.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:980186028832:android:e86349d2fa9e1da4dd5545",
+        "android_client_info": {
+          "package_name": "com.studentslife.managersl"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDuOJx9QrFV55tI_4TTDYhnoaW1Z_cA58Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
