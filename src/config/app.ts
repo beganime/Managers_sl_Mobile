@@ -7,6 +7,14 @@ export const APP_CONFIG = {
   supportEmail: 'begenchyagmurow2008@gmail.com',
 };
 
+export const SERVICE_URLS = {
+  tasks: 'https://task.manager-sl.ru',
+  translate: 'https://translate.manager-sl.ru',
+  disk: 'https://disk.manager-sl.ru',
+  exams: 'https://exam.stud-life.com',
+  managerWeb: 'https://manager-sl.ru',
+} as const;
+
 export const STORAGE_KEYS = {
   accessToken: 'access_token',
   refreshToken: 'refresh_token',

@@ -177,6 +177,9 @@ Current app behavior: mobile rating first tries `GET /api/v1/rating/` and safely
 
 Confirmed in backend `rebuild-erp-core` routing and used by the mobile app:
 
+- `GET /api/app/clients/<client_id>/exams/` — список экзаменов клиента через защищённый серверный прокси;
+- `POST /api/app/clients/<client_id>/exams/` — создание экзамена и отправка push клиенту без раскрытия service API key в приложении;
+
 - `GET /api/v1/education/countries/`
 - `GET /api/v1/education/cities/`
 - `GET /api/v1/education/currencies/`

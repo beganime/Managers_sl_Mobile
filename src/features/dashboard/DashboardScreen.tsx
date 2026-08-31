@@ -477,6 +477,8 @@ export function DashboardScreen() {
         <QuickAction title="Добавить доход" icon="cash-outline" onPress={() => router.push('/(app)/finance-v2/incomes/create' as any)} />
         <QuickAction title="Добавить задачу" icon="add-circle-outline" onPress={() => router.push('/(app)/tasks-v2/create' as any)} />
         <QuickAction title="Мои отчёты" icon="reader-outline" onPress={() => router.push('/(app)/reports-history' as any)} />
+        <QuickAction title="Сервисы" icon="apps-outline" onPress={() => router.push('/(app)/services-hub' as any)} />
+        <QuickAction title="Экзамены" icon="school-outline" onPress={() => router.push('/(app)/exams' as any)} />
       </View>
 
       <QuickLocalTasks

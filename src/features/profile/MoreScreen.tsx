@@ -40,6 +40,18 @@ export function MoreScreen() {
 
   const items: MoreItem[] = [
     {
+      title: 'Сервисы Students Life',
+      subtitle: 'Задачи, переводы, диск и экзамены',
+      icon: 'apps-outline',
+      route: '/(app)/services-hub',
+    },
+    {
+      title: 'Экзамены',
+      subtitle: 'Назначить экзамен и отправить push клиенту',
+      icon: 'school-outline',
+      route: '/(app)/exams',
+    },
+    {
       title: 'Задачи',
       subtitle: 'Мои задачи, проекты и командная работа',
       icon: 'checkbox-outline',

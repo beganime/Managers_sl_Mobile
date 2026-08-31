@@ -112,7 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await saveJSON(CACHED_PROFILE_KEY, profile);
       setUser(profile);
       setStatus('authenticated');
-      void ensurePushNotificationsRegistered(profile.id, { requestPermission: false });
+      void ensurePushNotificationsRegistered(profile.id, { requestPermission: true });
 
       return profile;
     } catch (requestError) {
