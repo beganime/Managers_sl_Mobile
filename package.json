@@ -10,6 +10,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "web:preview:build": "expo export --platform web --output-dir dist",
+    "web:preview": "node scripts/serve-web-preview.mjs",
     "lint": "expo lint"
   },
   "dependencies": {

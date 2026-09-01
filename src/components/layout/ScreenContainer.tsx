@@ -1,4 +1,3 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { ScrollView, StyleSheet, View, ViewProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,10 +22,6 @@ export function ScreenContainer({
   if (!scroll) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: appTheme.colors.background }]}>
-        <LinearGradient
-          colors={appTheme.gradients.screen as [string, string, ...string[]]}
-          style={StyleSheet.absoluteFillObject}
-        />
         <View style={contentStyle}>{children}</View>
       </SafeAreaView>
     );
@@ -34,10 +29,6 @@ export function ScreenContainer({
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: appTheme.colors.background }]}>
-      <LinearGradient
-        colors={appTheme.gradients.screen as [string, string, ...string[]]}
-        style={StyleSheet.absoluteFillObject}
-      />
       <ScrollView
         contentContainerStyle={[contentStyle, styles.scrollContent]}
         keyboardShouldPersistTaps="handled"
@@ -54,10 +45,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
+    alignSelf: 'center',
     flexGrow: 1,
     gap: theme.spacing.lg,
+    maxWidth: 1180,
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.md,
+    width: '100%',
   },
   noPadding: {
     paddingHorizontal: 0,

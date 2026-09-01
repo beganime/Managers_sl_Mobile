@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { theme } from '../../../src/theme/theme';
@@ -48,8 +48,13 @@ function TabLabel({ title, color, focused }: { title: string; color: string; foc
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const appTheme = useAppTheme();
   const useBlur = Platform.OS === 'ios';
+  const webBarWidth = Math.min(Math.max(width - 20, 320), 720);
+  const webBarPosition = Platform.OS === 'web'
+    ? { left: (width - webBarWidth) / 2, right: undefined, width: webBarWidth }
+    : null;
 
   return (
     <Tabs
@@ -79,6 +84,7 @@ export default function TabsLayout() {
           paddingTop: 7,
           paddingBottom: Platform.OS === 'ios' ? 13 : 8,
           ...appTheme.shadow.floating,
+          ...webBarPosition,
         },
         tabBarBackground: () =>
           useBlur ? (

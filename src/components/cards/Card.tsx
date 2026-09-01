@@ -1,5 +1,4 @@
 import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { Platform, StyleSheet, View, ViewProps } from 'react-native';
 
@@ -31,20 +30,6 @@ export function Card({ glass = false, style, children, ...props }: CardProps) {
     );
   }
 
-  if (!appTheme.dark) {
-    return (
-      <LinearGradient
-        colors={['#FFFFFF', '#F7FBFF', '#FFF7F8']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.card, dynamicStyle, style]}
-        {...props}
-      >
-        {children}
-      </LinearGradient>
-    );
-  }
-
   return (
     <View style={[styles.card, dynamicStyle, style]} {...props}>
       {children}
@@ -55,9 +40,8 @@ export function Card({ glass = false, style, children, ...props }: CardProps) {
 const styles = StyleSheet.create({
   card: {
     overflow: 'hidden',
-    borderRadius: theme.radius.lg,
+    borderRadius: 18,
     borderWidth: 1,
     padding: theme.spacing.lg,
-    ...theme.shadow.card,
   },
 });

@@ -27,6 +27,17 @@ npx expo-doctor
 
 Ожидаемый результат: TypeScript и lint без ошибок, Expo Doctor — 18/18.
 
+## Web-preview
+
+Web-preview собирается как статическая production-версия и работает без Metro:
+
+```powershell
+npm run web:preview:build
+npm run web:preview
+```
+
+После запуска открыть `http://127.0.0.1:19006/login`. Локальный сервер поддерживает чистые маршруты Expo Router и fallback после обновления страницы.
+
 ## Сборка
 
 Локальный `eas-cli` удалён из зависимостей проекта. Для сборки используйте:
